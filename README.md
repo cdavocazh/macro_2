@@ -2,18 +2,159 @@
 
 A comprehensive Streamlit dashboard for tracking 10 key macroeconomic indicators in real-time. This tool consolidates data from multiple sources including FRED, Yahoo Finance, OpenBB, CBOE, and Robert Shiller's database.
 
-## 📊 Indicators Tracked
+## 🔑 Quick Setup
 
-1. **S&P 500 Forward P/E Ratio** - Forward-looking valuation metric (Source: MacroMicro)
-2. **Russell 2000 Value & Growth Indices** - Small-cap market performance (Source: Yahoo Finance)
-3. **S&P 500 Trailing P/E & P/B** - Fundamental valuation metrics (Source: OpenBB)
-4. **S&P 500 Put/Call Ratio** - Options market sentiment (Source: CBOE)
-5. **SPX Call Skew (CBOE SKEW)** - Tail risk indicator (Source: CBOE)
-6. **S&P 500 / 200-Day MA** - Technical momentum indicator (Calculated)
-7. **S&P 500 Market Cap / US GDP** - Buffett Indicator (Source: FRED)
-8. **Shiller CAPE Ratio** - Cyclically adjusted P/E (Source: Robert Shiller/Yale)
-9. **VIX & VIX/MOVE Ratio** - Equity and bond volatility (Source: Yahoo Finance/CBOE)
-10. **MOVE Index & DXY** - Treasury volatility and US Dollar strength (Source: Yahoo Finance)
+**Minimum Requirements:**
+- Python 3.8+
+- `pip install -r requirements.txt`
+- **FRED API Key** (free) - Required for GDP/Market Cap data: https://fred.stlouisfed.org/docs/api/api_key.html
+
+**Optional but Recommended:**
+- OpenBB Platform (for S&P 500 fundamentals)
+
+**Run Dashboard:**
+```bash
+export FRED_API_KEY='your_key_here'
+streamlit run app.py
+```
+
+## 📊 Indicators Tracked & Data Sources
+
+### Detailed Source Information
+
+| # | Indicator | Primary Source | Method | Ticker/Endpoint | API Key | Update Freq | Notes |
+|---|-----------|---------------|--------|-----------------|---------|-------------|-------|
+| 1 | **S&P 500 Forward P/E** | MacroMicro | Web Scraping | https://en.macromicro.me/charts/11/sp-500-forward-pe-ratio | No | Daily | May require authentication; fallback to trailing P/E recommended |
+| 2a | **Russell 2000 Value Index** | Yahoo Finance | yfinance | IWN (ETF proxy) | No | Real-time | Using iShares Russell 2000 Value ETF as proxy |
+| 2b | **Russell 2000 Growth Index** | Yahoo Finance | yfinance | IWO (ETF proxy) | No | Real-time | Using iShares Russell 2000 Growth ETF as proxy |
+| 3a | **S&P 500 Trailing P/E** | OpenBB / Yahoo Finance | OpenBB Platform | SPY fundamentals | No | Daily | Using SPY ETF as S&P 500 proxy |
+| 3b | **S&P 500 P/B Ratio** | OpenBB / Yahoo Finance | OpenBB Platform | SPY fundamentals | No | Daily | Using SPY ETF as S&P 500 proxy |
+| 4 | **S&P 500 Put/Call Ratio** | CBOE | Web Scraping | https://www.cboe.com/us/options/market_statistics/daily/ | No | Daily | May require data subscription; web scraping has limitations |
+| 5 | **SPX Call Skew (CBOE SKEW)** | CBOE / Yahoo Finance | yfinance | ^SKEW | No | Daily | CBOE SKEW Index measuring tail risk |
+| 6a | **S&P 500 / 200-Day MA** | Yahoo Finance (calculated) | yfinance | ^GSPC | No | Real-time | Price divided by 200-day moving average |
+| 6b | **S&P 500 Market Cap / GDP** | FRED | FRED API | GDP (series: GDP)<br>Market Cap (series: DDDM01USA156NWDB or WILL5000INDFC) | **Yes** | Quarterly (GDP)<br>Annual (Market Cap) | Buffett Indicator; may use Wilshire 5000 as proxy |
+| 7 | **Shiller CAPE Ratio** | Robert Shiller (Yale) | HTTP/Excel Download | http://www.econ.yale.edu/~shiller/data/ie_data.xls | No | Monthly | Cyclically Adjusted P/E Ratio dating back to 1871 |
+| 8a | **VIX (Volatility Index)** | Yahoo Finance | yfinance | ^VIX | No | Real-time | CBOE Volatility Index |
+| 8b | **VIX/MOVE Ratio** | Yahoo Finance (calculated) | yfinance | ^VIX / ^MOVE | No | Real-time | Equity volatility vs. bond volatility ratio |
+| 9 | **MOVE Index** | Yahoo Finance | yfinance | ^MOVE | No | Daily | ICE BofA MOVE Index (Treasury Volatility) |
+| 10 | **DXY (US Dollar Index)** | Yahoo Finance | yfinance | DX-Y.NYB | No | Real-time | ICE U.S. Dollar Index |
+
+### Data Source Summary
+
+#### 1. S&P 500 Forward P/E Ratio
+- **Source**: MacroMicro (S&P Dow Jones Indices LLC)
+- **URL**: https://en.macromicro.me/charts/11/sp-500-forward-pe-ratio
+- **Access Method**: Web scraping (with limitations)
+- **Implemented In**: `data_extractors/web_scrapers.py::get_sp500_forward_pe_macromicro()`
+- **API Key Required**: No
+- **Limitations**: MacroMicro may require authentication or have rate limits. Consider manual download or using trailing P/E as alternative.
+
+#### 2. Russell 2000 Value & Growth Indices
+- **Source**: Yahoo Finance (via yfinance)
+- **Tickers**:
+  - Value: `IWN` (iShares Russell 2000 Value ETF)
+  - Growth: `IWO` (iShares Russell 2000 Growth ETF)
+- **Access Method**: Yahoo Finance API via `yfinance` Python library
+- **Implemented In**: `data_extractors/yfinance_extractors.py::get_russell_2000_indices()`
+- **Alternative**: `data_extractors/openbb_extractors.py::get_russell_2000_via_openbb()` (using OpenBB Platform)
+- **API Key Required**: No
+- **Update Frequency**: Real-time during market hours
+
+#### 3. S&P 500 Trailing P/E & P/B Ratios
+- **Source**: OpenBB Platform (via Yahoo Finance provider)
+- **Ticker**: `SPY` (S&P 500 ETF as proxy)
+- **Access Method**: OpenBB `equity.fundamental.metrics()` with yfinance provider
+- **Implemented In**: `data_extractors/openbb_extractors.py::get_sp500_fundamentals()`
+- **API Key Required**: No
+- **Data Points**: Trailing P/E ratio, Price-to-Book ratio
+- **Note**: Uses SPY ETF fundamentals as proxy for S&P 500
+
+#### 4. S&P 500 Put/Call Ratio
+- **Source**: CBOE (Chicago Board Options Exchange)
+- **URL**: https://www.cboe.com/us/options/market_statistics/daily/
+- **Access Method**: Web scraping
+- **Implemented In**: `data_extractors/web_scrapers.py::get_sp500_put_call_ratio()`
+- **API Key Required**: No (but access limited)
+- **Limitations**: CBOE website scraping may fail. Professional market data subscriptions recommended for reliable access.
+- **Alternative Sources**: Options chain analysis, professional data providers (Bloomberg, Refinitiv)
+
+#### 5. SPX Call Skew (CBOE SKEW Index)
+- **Source**: CBOE via Yahoo Finance
+- **Ticker**: `^SKEW`
+- **Access Method**: Yahoo Finance API via `yfinance`
+- **Implemented In**: `data_extractors/web_scrapers.py::get_spx_call_skew()` and `get_cboe_skew_index()`
+- **API Key Required**: No
+- **Description**: Measures tail risk in S&P 500 options (higher = more tail risk)
+- **Interpretation**: 100-115 (normal), 115-135 (elevated), >135 (high tail risk)
+
+#### 6a. S&P 500 / 200-Day Moving Average
+- **Source**: Yahoo Finance (calculated)
+- **Ticker**: `^GSPC` (S&P 500 Index)
+- **Access Method**: Yahoo Finance API via `yfinance`, with 200-day MA calculated
+- **Implemented In**: `data_extractors/yfinance_extractors.py::get_sp500_data()`
+- **API Key Required**: No
+- **Calculation**: Current S&P 500 price divided by 200-day simple moving average
+- **Interpretation**: >1.1 (overbought), <0.9 (oversold)
+
+#### 6b. S&P 500 Market Cap / US GDP (Buffett Indicator)
+- **Source**: FRED (Federal Reserve Economic Data)
+- **FRED Series**:
+  - GDP: `GDP` (Gross Domestic Product)
+  - Market Cap: `DDDM01USA156NWDB` (Market Cap of Listed Companies) or `WILL5000INDFC` (Wilshire 5000 as proxy)
+- **Access Method**: FRED API via `fredapi` Python library
+- **Implemented In**: `data_extractors/fred_extractors.py::calculate_sp500_marketcap_to_gdp()`
+- **API Key Required**: **YES** (free FRED API key)
+- **Get API Key**: https://fred.stlouisfed.org/docs/api/api_key.html
+- **Update Frequency**: Quarterly (GDP), varies (Market Cap)
+- **Interpretation**: >100% suggests overvaluation (Buffett Indicator)
+
+#### 7. Shiller CAPE Ratio
+- **Source**: Professor Robert Shiller, Yale University
+- **URL**: http://www.econ.yale.edu/~shiller/data/ie_data.xls
+- **Access Method**: Direct Excel file download via HTTP
+- **Implemented In**: `data_extractors/shiller_extractor.py::get_shiller_cape()`
+- **API Key Required**: No
+- **Data Format**: Excel (.xls) file with historical data since 1871
+- **Update Frequency**: Monthly
+- **Description**: Cyclically Adjusted Price-to-Earnings Ratio (10-year average earnings)
+- **Interpretation**: <15 (undervalued), 15-25 (normal), 25-35 (overvalued), >35 (extremely overvalued)
+
+#### 8a. VIX (CBOE Volatility Index)
+- **Source**: Yahoo Finance / CBOE
+- **Ticker**: `^VIX`
+- **Access Method**: Yahoo Finance API via `yfinance`
+- **Implemented In**: `data_extractors/yfinance_extractors.py::get_vix()`
+- **Alternative**: `data_extractors/fred_extractors.py::get_vix_from_fred()` (FRED series: VIXCLS)
+- **API Key Required**: No (Yahoo Finance), Yes (FRED alternative)
+- **Update Frequency**: Real-time during market hours
+- **Interpretation**: <15 (low volatility), 15-25 (normal), >25 (elevated risk)
+
+#### 8b. VIX/MOVE Ratio
+- **Source**: Calculated from Yahoo Finance data
+- **Components**: VIX (^VIX) / MOVE (^MOVE)
+- **Access Method**: Yahoo Finance API via `yfinance`, ratio calculated
+- **Implemented In**: `data_extractors/yfinance_extractors.py::calculate_vix_move_ratio()`
+- **API Key Required**: No
+- **Description**: Compares equity volatility (VIX) to bond volatility (MOVE)
+- **Interpretation**: Higher ratio = equity volatility elevated relative to bond volatility
+
+#### 9. ICE BofA MOVE Index
+- **Source**: Yahoo Finance (ICE Data Indices)
+- **Ticker**: `^MOVE`
+- **Access Method**: Yahoo Finance API via `yfinance`
+- **Implemented In**: `data_extractors/yfinance_extractors.py::get_move_index()`
+- **API Key Required**: No
+- **Description**: Treasury volatility index (bond market equivalent of VIX)
+- **Update Frequency**: Daily
+
+#### 10. U.S. Dollar Index (DXY)
+- **Source**: Yahoo Finance (ICE)
+- **Ticker**: `DX-Y.NYB`
+- **Access Method**: Yahoo Finance API via `yfinance`
+- **Implemented In**: `data_extractors/yfinance_extractors.py::get_dxy()`
+- **API Key Required**: No
+- **Description**: Measures value of USD against basket of foreign currencies
+- **Update Frequency**: Real-time during market hours
 
 ## 🚀 Quick Start
 
@@ -93,21 +234,92 @@ macro_2/
 └── data_cache/                   # Cached data (auto-created)
 ```
 
-## 📚 Data Sources
+## 📚 Data Sources Reference
 
-### Primary Sources
+### Quick Reference by Source
 
-- **FRED (Federal Reserve Economic Data)**: US GDP, market capitalization data
-- **Yahoo Finance**: Stock indices, VIX, MOVE, DXY
-- **OpenBB Platform**: S&P 500 fundamentals
-- **Robert Shiller (Yale)**: CAPE ratio data
-- **CBOE**: Volatility indices, options data
+#### Yahoo Finance (via yfinance library)
+**API Key Required**: ❌ No
+**Indicators**:
+- Russell 2000 Value (IWN) & Growth (IWO) indices
+- S&P 500 Index (^GSPC) for 200-day MA calculation
+- VIX (^VIX) - Volatility Index
+- MOVE Index (^MOVE) - Treasury Volatility
+- DXY (DX-Y.NYB) - US Dollar Index
+- CBOE SKEW (^SKEW) - Tail Risk Index
 
-### Data Refresh Frequency
+**Update Frequency**: Real-time during market hours
+**Reliability**: ⭐⭐⭐⭐⭐ Excellent (free, no authentication required)
 
-- Most indicators: Real-time or daily updates
-- GDP data: Quarterly updates
-- CAPE ratio: Monthly updates
+#### OpenBB Platform
+**API Key Required**: ❌ No
+**Indicators**:
+- S&P 500 Trailing P/E Ratio (via SPY fundamentals)
+- S&P 500 P/B Ratio (via SPY fundamentals)
+
+**Update Frequency**: Daily
+**Reliability**: ⭐⭐⭐⭐ Good (requires OpenBB installation)
+
+#### FRED (Federal Reserve Economic Data)
+**API Key Required**: ✅ **Yes** (free)
+**Get API Key**: https://fred.stlouisfed.org/docs/api/api_key.html
+**Indicators**:
+- US GDP (series: GDP)
+- Market Capitalization (series: DDDM01USA156NWDB or WILL5000INDFC)
+- Market Cap / GDP Ratio (calculated)
+- VIX (alternative source, series: VIXCLS)
+
+**Update Frequency**: Quarterly (GDP), varies by series
+**Reliability**: ⭐⭐⭐⭐⭐ Excellent (official government data)
+
+#### Robert Shiller / Yale University
+**API Key Required**: ❌ No
+**Indicators**:
+- Shiller CAPE Ratio (Cyclically Adjusted P/E)
+
+**URL**: http://www.econ.yale.edu/~shiller/data/ie_data.xls
+**Update Frequency**: Monthly
+**Reliability**: ⭐⭐⭐⭐⭐ Excellent (academic source, historical data since 1871)
+
+#### MacroMicro
+**API Key Required**: ❌ No (but limited access)
+**Indicators**:
+- S&P 500 Forward P/E Ratio
+
+**URL**: https://en.macromicro.me/charts/11/sp-500-forward-pe-ratio
+**Update Frequency**: Daily
+**Reliability**: ⭐⭐ Limited (web scraping, may require authentication)
+**Note**: Consider using trailing P/E as fallback
+
+#### CBOE (Chicago Board Options Exchange)
+**API Key Required**: ❌ No (but limited access)
+**Indicators**:
+- S&P 500 Put/Call Ratio
+- SPX Call Skew (available via Yahoo Finance as ^SKEW)
+
+**URL**: https://www.cboe.com/us/options/market_statistics/daily/
+**Update Frequency**: Daily
+**Reliability**: ⭐⭐ Limited (web scraping for Put/Call ratio)
+**Note**: SKEW index accessible via Yahoo Finance; Put/Call ratio may require subscription
+
+### API Key Requirements Summary
+
+| Source | API Key Required | Cost | How to Obtain |
+|--------|-----------------|------|---------------|
+| Yahoo Finance | ❌ No | Free | No registration needed |
+| OpenBB | ❌ No | Free | `pip install openbb` |
+| FRED | ✅ **Yes** | Free | https://fred.stlouisfed.org/docs/api/api_key.html |
+| Robert Shiller | ❌ No | Free | Public data file |
+| MacroMicro | ❌ No* | Free* | *May require account for reliable access |
+| CBOE | ❌ No* | Free* | *Limited web access; subscriptions available |
+
+### Data Refresh Frequency by Indicator
+
+- **Real-time**: Russell 2000, S&P 500/200MA, VIX, MOVE, DXY (during market hours)
+- **Daily**: Forward P/E, Trailing P/E, P/B, Put/Call Ratio, SKEW
+- **Monthly**: Shiller CAPE
+- **Quarterly**: US GDP
+- **Annual/Varies**: Market Capitalization data
 
 ## 🔧 Configuration
 
