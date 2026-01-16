@@ -10,7 +10,7 @@ import re
 def get_sp500_forward_pe_macromicro():
     """
     Attempt to get S&P 500 Forward P/E from MacroMicro.
-    Note: This may require authentication or have rate limits.
+    Falls back to using trailing P/E from yfinance as approximation.
     Returns: dict with forward P/E ratio
     """
     try:
@@ -24,10 +24,8 @@ def get_sp500_forward_pe_macromicro():
         response = requests.get(url, headers=headers, timeout=15)
 
         if response.status_code != 200:
-            return {
-                'error': f'MacroMicro returned status code {response.status_code}',
-                'note': 'MacroMicro may require authentication or API access. Consider using alternative sources.'
-            }
+            # Use fallback method
+            return get_sp500_forward_pe_fallback()
 
         soup = BeautifulSoup(response.content, 'html.parser')
 
@@ -51,24 +49,52 @@ def get_sp500_forward_pe_macromicro():
                         'note': 'Data scraped from website, may not be reliable'
                     }
 
-        return {
-            'error': 'Could not extract Forward P/E from MacroMicro',
-            'note': 'MacroMicro scraping may not work without API access. Consider manual download or API.',
-            'fallback': 'Use S&P 500 trailing P/E as approximation'
-        }
+        # If scraping failed, use fallback
+        return get_sp500_forward_pe_fallback()
 
     except Exception as e:
-        return {'error': f"Error scraping MacroMicro: {str(e)}"}
+        # Use fallback on any error
+        return get_sp500_forward_pe_fallback()
+
+
+def get_sp500_forward_pe_fallback():
+    """
+    Fallback method to get S&P 500 P/E using yfinance.
+    Uses trailing P/E from SPY ETF as proxy for S&P 500.
+    Returns: dict with P/E ratio
+    """
+    try:
+        import yfinance as yf
+
+        spy = yf.Ticker("^GSPC")  # S&P 500 index
+        info = spy.info
+
+        # Try to get trailing P/E
+        trailing_pe = info.get('trailingPE')
+
+        if trailing_pe:
+            return {
+                'sp500_forward_pe': trailing_pe,
+                'source': 'yfinance (S&P 500 Trailing P/E)',
+                'note': 'Using trailing P/E as forward P/E approximation. Forward P/E typically 10-15% lower than trailing.'
+            }
+
+        return {
+            'error': 'Could not get S&P 500 P/E from any source',
+            'note': 'Both MacroMicro scraping and yfinance fallback failed'
+        }
+    except Exception as e:
+        return {'error': f"Error in fallback P/E method: {str(e)}"}
 
 
 def get_sp500_put_call_ratio():
     """
     Attempt to get S&P 500 Put/Call Ratio.
-    This data is typically available from CBOE or market data providers.
+    Tries multiple sources: CBOE website, FRED, and options volume calculation.
     Returns: dict with put/call ratio
     """
     try:
-        # Try to get from CBOE website
+        # First try: CBOE website
         url = "https://www.cboe.com/us/options/market_statistics/daily/"
 
         headers = {
@@ -77,42 +103,94 @@ def get_sp500_put_call_ratio():
 
         response = requests.get(url, headers=headers, timeout=15)
 
-        if response.status_code != 200:
-            return {
-                'error': f'CBOE returned status code {response.status_code}',
-                'note': 'Put/Call ratio requires market data subscription or alternative source'
-            }
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            tables = soup.find_all('table')
 
-        # CBOE website structure may vary, this is a generic approach
-        soup = BeautifulSoup(response.content, 'html.parser')
+            for table in tables:
+                text = table.get_text()
+                if 'PUT/CALL' in text.upper() or 'PUT-CALL' in text.upper():
+                    matches = re.findall(r'(\d+\.?\d*)', text)
+                    if matches:
+                        for match in matches:
+                            value = float(match)
+                            if 0.3 < value < 3.0:
+                                return {
+                                    'sp500_put_call_ratio': value,
+                                    'source': 'CBOE (scraped)',
+                                    'note': 'Data scraped from website'
+                                }
 
-        # Look for tables with put/call data
-        tables = soup.find_all('table')
-
-        for table in tables:
-            text = table.get_text()
-            if 'PUT/CALL' in text.upper() or 'PUT-CALL' in text.upper():
-                # Try to extract the ratio
-                matches = re.findall(r'(\d+\.?\d*)', text)
-                if matches:
-                    # Filter for reasonable put/call ratio values (typically 0.5 to 2.0)
-                    for match in matches:
-                        value = float(match)
-                        if 0.3 < value < 3.0:
-                            return {
-                                'sp500_put_call_ratio': value,
-                                'source': 'CBOE (scraped)',
-                                'note': 'Data scraped from website, verify accuracy'
-                            }
-
-        return {
-            'error': 'Could not extract Put/Call Ratio from CBOE',
-            'note': 'Put/Call ratio typically requires paid data feed. Consider alternative sources like yfinance options data.',
-            'workaround': 'Calculate manually from options chain data'
-        }
+        # If CBOE scraping failed, try FRED fallback
+        return get_put_call_ratio_fallback()
 
     except Exception as e:
-        return {'error': f"Error fetching Put/Call Ratio: {str(e)}"}
+        return get_put_call_ratio_fallback()
+
+
+def get_put_call_ratio_fallback():
+    """
+    Fallback method to get Put/Call Ratio from FRED or calculate from SPY options.
+    Returns: dict with put/call ratio
+    """
+    try:
+        # Try FRED first (CBOE Equity Put/Call Ratio)
+        from fredapi import Fred
+        import config
+
+        if config.FRED_API_KEY:
+            fred = Fred(api_key=config.FRED_API_KEY)
+            pc_data = fred.get_series('PCERTOT')  # Total Put/Call Ratio
+
+            if not pc_data.empty:
+                latest_pc = pc_data.iloc[-1]
+                latest_date = pc_data.index[-1]
+
+                return {
+                    'sp500_put_call_ratio': latest_pc,
+                    'latest_date': latest_date.strftime('%Y-%m-%d'),
+                    'source': 'FRED (CBOE Total Put/Call)',
+                    'note': 'Total market put/call ratio, not S&P 500 specific'
+                }
+    except:
+        pass
+
+    # If all else fails, calculate from SPY options volume
+    try:
+        import yfinance as yf
+        from datetime import datetime, timedelta
+
+        spy = yf.Ticker("SPY")
+
+        # Get options expirations
+        expirations = spy.options
+
+        if expirations:
+            # Use first expiration (nearest term)
+            exp = expirations[0]
+            opt = spy.option_chain(exp)
+
+            # Sum put and call volumes
+            put_volume = opt.puts['volume'].sum() if 'volume' in opt.puts.columns else 0
+            call_volume = opt.calls['volume'].sum() if 'volume' in opt.calls.columns else 0
+
+            if call_volume > 0:
+                pc_ratio = put_volume / call_volume
+
+                return {
+                    'sp500_put_call_ratio': pc_ratio,
+                    'source': 'Calculated from SPY options volume',
+                    'note': f'Based on {exp} expiration. Single expiration snapshot, may not represent full market sentiment.',
+                    'put_volume': int(put_volume),
+                    'call_volume': int(call_volume)
+                }
+    except Exception as e:
+        pass
+
+    return {
+        'error': 'Could not get Put/Call Ratio from any source',
+        'note': 'CBOE scraping, FRED, and SPY options calculation all failed. This metric may require paid data access.'
+    }
 
 
 def get_spx_call_skew():

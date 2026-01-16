@@ -12,10 +12,11 @@ except ImportError:
 def get_sp500_fundamentals():
     """
     Get S&P 500 trailing P/E and P/B ratios using OpenBB.
+    Falls back to yfinance if OpenBB is not available.
     Returns: dict with P/E and P/B ratios
     """
     if not OPENBB_AVAILABLE:
-        return {'error': 'OpenBB not available'}
+        return get_sp500_fundamentals_fallback()
 
     try:
         # Get S&P 500 ETF (SPY) fundamentals as proxy
@@ -33,10 +34,40 @@ def get_sp500_fundamentals():
                 'source': 'OpenBB/YFinance'
             }
         else:
-            return {'error': 'No fundamental data returned from OpenBB'}
+            return get_sp500_fundamentals_fallback()
 
     except Exception as e:
-        return {'error': f"Error fetching S&P 500 fundamentals: {str(e)}"}
+        return get_sp500_fundamentals_fallback()
+
+
+def get_sp500_fundamentals_fallback():
+    """
+    Fallback method to get S&P 500 P/E and P/B using yfinance directly.
+    Uses SPY ETF as proxy for S&P 500.
+    Returns: dict with P/E and P/B ratios
+    """
+    try:
+        import yfinance as yf
+
+        spy = yf.Ticker("SPY")
+        info = spy.info
+
+        pe_ratio = info.get('trailingPE')
+        pb_ratio = info.get('priceToBook')
+
+        if pe_ratio or pb_ratio:
+            return {
+                'sp500_pe_trailing': pe_ratio,
+                'sp500_pb': pb_ratio,
+                'source': 'yfinance (SPY ETF)',
+                'note': 'Using SPY ETF as S&P 500 proxy'
+            }
+
+        return {
+            'error': 'Could not get S&P 500 fundamentals from any source'
+        }
+    except Exception as e:
+        return {'error': f"Error in fallback fundamentals method: {str(e)}"}
 
 
 def get_russell_2000_via_openbb():
