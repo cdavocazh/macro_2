@@ -5,7 +5,7 @@ Set your API keys here or as environment variables.
 import os
 
 # FRED API Key (get free key from https://fred.stlouisfed.org/docs/api/api_key.html)
-FRED_API_KEY = os.getenv('FRED_API_KEY', '')
+FRED_API_KEY = 'REDACTED_FRED_API_KEY'
 
 # Data cache settings
 CACHE_DIR = 'data_cache'
