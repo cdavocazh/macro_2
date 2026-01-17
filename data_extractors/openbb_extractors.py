@@ -6,7 +6,7 @@ try:
     OPENBB_AVAILABLE = True
 except ImportError:
     OPENBB_AVAILABLE = False
-    print("Warning: OpenBB not available. Some indicators will not work.")
+    # OpenBB is optional - fallback methods will be used automatically
 
 
 def get_sp500_fundamentals():
