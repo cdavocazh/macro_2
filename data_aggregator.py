@@ -6,7 +6,8 @@ from data_extractors import (
     openbb_extractors,
     fred_extractors,
     shiller_extractor,
-    web_scrapers
+    web_scrapers,
+    commodities_extractors
 )
 from datetime import datetime
 import traceback
@@ -21,7 +22,7 @@ class MacroIndicatorAggregator:
         self.errors = []
 
     def fetch_all_indicators(self):
-        """Fetch all 10 macroeconomic indicators."""
+        """Fetch all 21 macroeconomic indicators."""
         self.indicators = {}
         self.errors = []
         self.last_update = datetime.now()
@@ -106,10 +107,87 @@ class MacroIndicatorAggregator:
         )
 
         # 10. DXY (U.S. Dollar Index)
-        print("  [10/10] Fetching DXY...")
+        print("  [10/17] Fetching DXY...")
         self._fetch_with_error_handling(
             '10_dxy',
             yfinance_extractors.get_dxy
+        )
+
+        # 11. 10-Year Treasury Yield
+        print("  [11/17] Fetching 10-Year Treasury Yield...")
+        self._fetch_with_error_handling(
+            '11_10y_yield',
+            fred_extractors.get_10y_treasury_yield
+        )
+
+        # 12. ISM Manufacturing PMI
+        print("  [12/17] Fetching ISM Manufacturing PMI...")
+        self._fetch_with_error_handling(
+            '12_ism_pmi',
+            fred_extractors.get_ism_pmi
+        )
+
+        # 13. Gold Futures
+        print("  [13/17] Fetching Gold futures...")
+        self._fetch_with_error_handling(
+            '13_gold',
+            commodities_extractors.get_gold
+        )
+
+        # 14. Silver Futures
+        print("  [14/17] Fetching Silver futures...")
+        self._fetch_with_error_handling(
+            '14_silver',
+            commodities_extractors.get_silver
+        )
+
+        # 15. Crude Oil Futures
+        print("  [15/17] Fetching Crude Oil futures...")
+        self._fetch_with_error_handling(
+            '15_crude_oil',
+            commodities_extractors.get_crude_oil
+        )
+
+        # 16. Copper Futures
+        print("  [16/19] Fetching Copper futures...")
+        self._fetch_with_error_handling(
+            '16_copper',
+            commodities_extractors.get_copper
+        )
+
+        # 17. ES Futures (S&P 500 E-mini)
+        print("  [17/19] Fetching ES futures (S&P 500 E-mini)...")
+        self._fetch_with_error_handling(
+            '17_es_futures',
+            yfinance_extractors.get_es_futures
+        )
+
+        # 18. RTY Futures (Russell 2000 E-mini)
+        print("  [18/20] Fetching RTY futures (Russell 2000 E-mini)...")
+        self._fetch_with_error_handling(
+            '18_rty_futures',
+            yfinance_extractors.get_rty_futures
+        )
+
+        # 19. S&P 500 Breadth (Advance/Decline)
+        print("  [19/21] Fetching S&P 500 market breadth...")
+        self._fetch_with_error_handling(
+            '19_sp500_breadth',
+            web_scrapers.get_sp500_breadth_indicator
+        )
+
+        # 20. JPY Exchange Rate
+        print("  [20/21] Fetching JPY exchange rate...")
+        self._fetch_with_error_handling(
+            '20_jpy',
+            yfinance_extractors.get_jpy_exchange_rate
+        )
+
+        # 21. All Commodities (for convenience)
+        print("  [21/21] Fetching all commodities...")
+        self._fetch_with_error_handling(
+            '21_all_commodities',
+            commodities_extractors.get_all_commodities
         )
 
         print(f"\nCompleted! Last update: {self.last_update.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -141,7 +219,7 @@ class MacroIndicatorAggregator:
         """Get a summary of all indicators."""
         summary = {
             'last_update': self.last_update.strftime('%Y-%m-%d %H:%M:%S') if self.last_update else 'Never',
-            'total_indicators': 10,
+            'total_indicators': 17,
             'successful': 0,
             'failed': 0,
             'indicators': {}
@@ -159,7 +237,14 @@ class MacroIndicatorAggregator:
             '8_vix': 'VIX',
             '8b_vix_move_ratio': 'VIX/MOVE Ratio',
             '9_move_index': 'MOVE Index',
-            '10_dxy': 'DXY (US Dollar Index)'
+            '10_dxy': 'DXY (US Dollar Index)',
+            '11_10y_yield': '10-Year Treasury Yield',
+            '12_ism_pmi': 'ISM Manufacturing PMI',
+            '13_gold': 'Gold Futures',
+            '14_silver': 'Silver Futures',
+            '15_crude_oil': 'Crude Oil Futures',
+            '16_copper': 'Copper Futures',
+            '17_all_commodities': 'All Commodities'
         }
 
         for key, name in indicator_names.items():
