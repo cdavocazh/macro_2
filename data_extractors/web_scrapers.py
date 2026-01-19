@@ -316,3 +316,85 @@ def get_cboe_skew_index():
         }
     except Exception as e:
         return {'error': f"Error fetching CBOE SKEW: {str(e)}"}
+
+
+def get_sp500_breadth_indicator():
+    """
+    Calculate S&P 500 market breadth using a representative sample of stocks.
+    Returns Advance/Decline metrics and breadth ratio.
+
+    Note: Full S&P 500 calculation would be slow. Using top 50 stocks as representative sample.
+    """
+    try:
+        import yfinance as yf
+        from datetime import datetime, timedelta
+
+        # Representative sample of S&P 500 stocks (top 50 by market cap)
+        sp500_sample = [
+            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'BRK-B', 'TSLA', 'LLY', 'V',
+            'UNH', 'XOM', 'JPM', 'JNJ', 'WMT', 'MA', 'PG', 'AVGO', 'HD', 'CVX',
+            'MRK', 'ABBV', 'COST', 'KO', 'PEP', 'ADBE', 'NFLX', 'CRM', 'TMO', 'MCD',
+            'ABT', 'CSCO', 'ACN', 'LIN', 'ORCL', 'NKE', 'DHR', 'WFC', 'TXN', 'DIS',
+            'PM', 'VZ', 'INTU', 'CMCSA', 'AMD', 'QCOM', 'IBM', 'AMGN', 'HON', 'UNP'
+        ]
+
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=5)
+
+        advancing = 0
+        declining = 0
+        unchanged = 0
+        total_checked = 0
+
+        for symbol in sp500_sample:
+            try:
+                ticker = yf.Ticker(symbol)
+                hist = ticker.history(start=start_date, end=end_date)
+
+                if len(hist) >= 2:
+                    last_close = hist['Close'].iloc[-1]
+                    prev_close = hist['Close'].iloc[-2]
+
+                    if last_close > prev_close:
+                        advancing += 1
+                    elif last_close < prev_close:
+                        declining += 1
+                    else:
+                        unchanged += 1
+                    total_checked += 1
+            except:
+                continue
+
+        if total_checked == 0:
+            return {'error': 'Unable to calculate market breadth - no stock data available'}
+
+        # Calculate metrics
+        net_advances = advancing - declining
+        ad_ratio = advancing / declining if declining > 0 else float('inf')
+        breadth_pct = (advancing / total_checked * 100) if total_checked > 0 else 0
+
+        # Interpretation
+        if breadth_pct > 60:
+            interpretation = 'Strong bullish breadth - broad market participation'
+        elif breadth_pct > 50:
+            interpretation = 'Moderate bullish breadth - more stocks advancing'
+        elif breadth_pct >= 40:
+            interpretation = 'Moderate bearish breadth - more stocks declining'
+        else:
+            interpretation = 'Weak bearish breadth - broad market weakness'
+
+        return {
+            'advancing_stocks': advancing,
+            'declining_stocks': declining,
+            'unchanged_stocks': unchanged,
+            'total_stocks': total_checked,
+            'net_advances': net_advances,
+            'ad_ratio': ad_ratio,
+            'breadth_percentage': breadth_pct,
+            'interpretation': interpretation,
+            'latest_date': datetime.now().strftime('%Y-%m-%d'),
+            'source': 'Calculated from S&P 500 sample (top 50 stocks)',
+            'note': f'Sample size: {total_checked} stocks out of 50'
+        }
+    except Exception as e:
+        return {'error': f"Error calculating S&P 500 breadth: {str(e)}"}
