@@ -191,3 +191,153 @@ def calculate_vix_move_ratio():
         }
     except Exception as e:
         return {'error': f"Error calculating VIX/MOVE ratio: {str(e)}"}
+
+
+def get_es_futures():
+    """
+    Get E-mini S&P 500 Futures (ES) data.
+    Returns: dict with latest price and contract info
+    """
+    try:
+        es = yf.Ticker("ES=F")
+
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=60)
+
+        hist_data = es.history(start=start_date, end=end_date)
+
+        if hist_data.empty:
+            start_date = end_date - timedelta(days=730)
+            hist_data = es.history(start=start_date, end=end_date)
+            if hist_data.empty:
+                return {'error': 'No ES futures data available'}
+
+        latest_price = hist_data['Close'].iloc[-1]
+        latest_date = hist_data.index[-1]
+
+        # Calculate 1-day change
+        if len(hist_data) > 1:
+            prev_price = hist_data['Close'].iloc[-2]
+            change_1d = ((latest_price / prev_price - 1) * 100)
+        else:
+            change_1d = 0.0
+
+        # Get contract expiry
+        expiry_date = None
+        try:
+            info = es.info
+            if 'expireIsoDate' in info:
+                expiry_date = info['expireIsoDate']
+            elif 'expireDate' in info and info['expireDate']:
+                expiry_date = datetime.fromtimestamp(info['expireDate']).strftime('%Y-%m-%d')
+        except:
+            pass
+
+        result = {
+            'price': float(latest_price),
+            'latest_date': latest_date.strftime('%Y-%m-%d %H:%M'),
+            'change_1d': float(change_1d),
+            'historical': hist_data['Close'],
+            'source': 'yfinance'
+        }
+
+        if expiry_date:
+            result['expiry_date'] = expiry_date
+
+        return result
+    except Exception as e:
+        return {'error': f"Error fetching ES futures: {str(e)}"}
+
+
+def get_rty_futures():
+    """
+    Get Russell 2000 E-mini Futures (RTY) data.
+    Returns: dict with latest price and contract info
+    """
+    try:
+        rty = yf.Ticker("RTY=F")
+
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=60)
+
+        hist_data = rty.history(start=start_date, end=end_date)
+
+        if hist_data.empty:
+            start_date = end_date - timedelta(days=730)
+            hist_data = rty.history(start=start_date, end=end_date)
+            if hist_data.empty:
+                return {'error': 'No RTY futures data available'}
+
+        latest_price = hist_data['Close'].iloc[-1]
+        latest_date = hist_data.index[-1]
+
+        # Calculate 1-day change
+        if len(hist_data) > 1:
+            prev_price = hist_data['Close'].iloc[-2]
+            change_1d = ((latest_price / prev_price - 1) * 100)
+        else:
+            change_1d = 0.0
+
+        # Get contract expiry
+        expiry_date = None
+        try:
+            info = rty.info
+            if 'expireIsoDate' in info:
+                expiry_date = info['expireIsoDate']
+            elif 'expireDate' in info and info['expireDate']:
+                expiry_date = datetime.fromtimestamp(info['expireDate']).strftime('%Y-%m-%d')
+        except:
+            pass
+
+        result = {
+            'price': float(latest_price),
+            'latest_date': latest_date.strftime('%Y-%m-%d %H:%M'),
+            'change_1d': float(change_1d),
+            'historical': hist_data['Close'],
+            'source': 'yfinance'
+        }
+
+        if expiry_date:
+            result['expiry_date'] = expiry_date
+
+        return result
+    except Exception as e:
+        return {'error': f"Error fetching RTY futures: {str(e)}"}
+
+
+def get_jpy_exchange_rate():
+    """
+    Get USD/JPY exchange rate.
+    Returns: dict with latest exchange rate
+    """
+    try:
+        jpy = yf.Ticker("JPY=X")
+
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=365)
+
+        hist_data = jpy.history(start=start_date, end=end_date)
+
+        if hist_data.empty:
+            return {'error': 'No JPY exchange rate data available'}
+
+        latest_rate = hist_data['Close'].iloc[-1]
+        latest_date = hist_data.index[-1]
+
+        # Calculate 1-day change
+        if len(hist_data) > 1:
+            prev_rate = hist_data['Close'].iloc[-2]
+            change_1d = ((latest_rate / prev_rate - 1) * 100)
+        else:
+            change_1d = 0.0
+
+        return {
+            'jpy_rate': latest_rate,
+            'latest_date': latest_date.strftime('%Y-%m-%d'),
+            'change_1d': float(change_1d),
+            'historical': hist_data['Close'],
+            'source': 'yfinance',
+            'units': 'JPY per USD'
+        }
+    except Exception as e:
+        return {'error': f"Error fetching JPY exchange rate: {str(e)}"}
