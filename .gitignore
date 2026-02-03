@@ -31,6 +31,11 @@ wheels/
 data_cache/
 *.cache
 
+# Historical data exports
+historical_data/
+*.csv
+data_metadata.json
+
 # IDEs
 .vscode/
 .idea/
