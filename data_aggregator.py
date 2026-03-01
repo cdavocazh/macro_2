@@ -1,5 +1,6 @@
 """
 Main data aggregator that consolidates all macroeconomic indicators.
+Supports local caching for faster dashboard startup and CSV export.
 """
 from data_extractors import (
     yfinance_extractors,
@@ -7,10 +8,18 @@ from data_extractors import (
     fred_extractors,
     shiller_extractor,
     web_scrapers,
-    commodities_extractors
+    commodities_extractors,
+    cot_extractor,
+    japan_yield_extractor,
+    equity_financials_extractor
 )
+from utils.helpers import save_to_cache, load_from_cache, get_cache_timestamp, export_indicators_to_csv
 from datetime import datetime
 import traceback
+
+CACHE_KEY = 'all_indicators'
+CACHE_DIR = 'data_cache'
+CACHE_MAX_AGE_HOURS = 24
 
 
 class MacroIndicatorAggregator:
@@ -20,12 +29,37 @@ class MacroIndicatorAggregator:
         self.indicators = {}
         self.last_update = None
         self.errors = []
+        self.loaded_from_cache = False
+
+    def load_from_local_cache(self):
+        """
+        Try to load indicators from local cache.
+        Returns True if cache was loaded, False otherwise.
+        """
+        cached = load_from_cache(CACHE_KEY, cache_dir=CACHE_DIR, max_age_hours=CACHE_MAX_AGE_HOURS)
+        if cached is not None:
+            self.indicators = cached
+            self.last_update = get_cache_timestamp(CACHE_KEY, cache_dir=CACHE_DIR)
+            self.loaded_from_cache = True
+            self.errors = []
+            print(f"Loaded {len(self.indicators)} indicators from local cache (saved {self.last_update})")
+            return True
+        return False
+
+    def _save_to_local_cache(self):
+        """Save current indicators to local cache."""
+        try:
+            save_to_cache(self.indicators, CACHE_KEY, cache_dir=CACHE_DIR)
+            print(f"Saved {len(self.indicators)} indicators to local cache")
+        except Exception as e:
+            print(f"Warning: failed to save cache: {e}")
 
     def fetch_all_indicators(self):
-        """Fetch all 21 macroeconomic indicators."""
+        """Fetch all 21 macroeconomic indicators and save to local cache."""
         self.indicators = {}
         self.errors = []
         self.last_update = datetime.now()
+        self.loaded_from_cache = False
 
         print("Fetching macroeconomic indicators...")
 
@@ -184,10 +218,66 @@ class MacroIndicatorAggregator:
         )
 
         # 21. All Commodities (for convenience)
-        print("  [21/21] Fetching all commodities...")
+        print("  [21/22] Fetching all commodities...")
         self._fetch_with_error_handling(
             '21_all_commodities',
             commodities_extractors.get_all_commodities
+        )
+
+        # 22. CFTC COT Positioning (Gold & Silver)
+        print("  [22/26] Fetching CFTC COT positioning data (Gold & Silver)...")
+        self._fetch_with_error_handling(
+            '22_cot_positioning',
+            cot_extractor.get_cot_gold_silver
+        )
+
+        # 23. TGA Balance
+        print("  [23/26] Fetching TGA Balance...")
+        self._fetch_with_error_handling(
+            '23_tga_balance',
+            fred_extractors.get_tga_balance
+        )
+
+        # 24. Fed Net Liquidity
+        print("  [24/26] Fetching Fed Net Liquidity...")
+        self._fetch_with_error_handling(
+            '24_net_liquidity',
+            fred_extractors.get_fed_net_liquidity
+        )
+
+        # 25. SOFR
+        print("  [25/26] Fetching SOFR...")
+        self._fetch_with_error_handling(
+            '25_sofr',
+            fred_extractors.get_sofr
+        )
+
+        # 26. US 2-Year Treasury Yield
+        print("  [26/28] Fetching US 2-Year Treasury Yield...")
+        self._fetch_with_error_handling(
+            '26_us_2y_yield',
+            fred_extractors.get_us_2y_yield
+        )
+
+        # 27. Japan 2-Year Government Bond Yield
+        print("  [27/28] Fetching Japan 2Y Yield...")
+        self._fetch_with_error_handling(
+            '27_japan_2y_yield',
+            japan_yield_extractor.get_japan_2y_yield
+        )
+
+        # 28. US 2Y - Japan 2Y Yield Spread
+        print("  [28/29] Fetching US2Y-JP2Y Spread...")
+        self._fetch_with_error_handling(
+            '28_us2y_jp2y_spread',
+            japan_yield_extractor.get_us2y_jp2y_spread
+        )
+
+        # 29. Large-cap Equity Financials (Top 20)
+        print("  [29/29] Fetching Large-cap Equity Financials (Top 20)...")
+        self._fetch_with_error_handling(
+            '29_equity_financials',
+            equity_financials_extractor.get_top20_financials
         )
 
         print(f"\nCompleted! Last update: {self.last_update.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -197,7 +287,16 @@ class MacroIndicatorAggregator:
             for error in self.errors:
                 print(f"  - {error}")
 
+        # Save to local cache after fetching
+        self._save_to_local_cache()
+
         return self.indicators
+
+    def export_to_csv(self, output_dir='data_export'):
+        """Export current indicators to CSV files."""
+        if not self.indicators:
+            return {'error': 'No data to export. Fetch or load data first.'}
+        return export_indicators_to_csv(self.indicators, output_dir=output_dir)
 
     def _fetch_with_error_handling(self, indicator_key, fetch_function):
         """Fetch indicator with error handling."""
@@ -219,6 +318,7 @@ class MacroIndicatorAggregator:
         """Get a summary of all indicators."""
         summary = {
             'last_update': self.last_update.strftime('%Y-%m-%d %H:%M:%S') if self.last_update else 'Never',
+            'loaded_from_cache': self.loaded_from_cache,
             'total_indicators': 17,
             'successful': 0,
             'failed': 0,
@@ -244,7 +344,15 @@ class MacroIndicatorAggregator:
             '14_silver': 'Silver Futures',
             '15_crude_oil': 'Crude Oil Futures',
             '16_copper': 'Copper Futures',
-            '17_all_commodities': 'All Commodities'
+            '17_all_commodities': 'All Commodities',
+            '22_cot_positioning': 'CFTC COT Positioning (Gold & Silver)',
+            '23_tga_balance': 'TGA Balance',
+            '24_net_liquidity': 'Fed Net Liquidity',
+            '25_sofr': 'SOFR',
+            '26_us_2y_yield': 'US 2-Year Treasury Yield',
+            '27_japan_2y_yield': 'Japan 2-Year Government Bond Yield',
+            '28_us2y_jp2y_spread': 'US 2Y - Japan 2Y Yield Spread',
+            '29_equity_financials': 'Large-cap Equity Financials (Top 20)',
         }
 
         for key, name in indicator_names.items():

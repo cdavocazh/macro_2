@@ -1,10 +1,13 @@
 """
 Historical Data Extraction Script for Macroeconomic Indicators
 
-Downloads all 10 indicators and saves to CSV files with:
+Downloads all 28 indicators and saves to CSV files with:
 - Append-only mode (adds new data without overwriting)
 - Last timestamp tracking
 - Historical data preservation
+
+Each indicator is saved to a separate CSV in historical_data/.
+New data is appended (never overwrites existing rows).
 """
 
 import os
@@ -19,7 +22,11 @@ from data_extractors import (
     openbb_extractors,
     fred_extractors,
     shiller_extractor,
-    web_scrapers
+    web_scrapers,
+    commodities_extractors,
+    cot_extractor,
+    japan_yield_extractor,
+    equity_financials_extractor
 )
 
 
@@ -54,7 +61,7 @@ def save_metadata(metadata):
     metadata['last_extraction'] = datetime.now().isoformat()
 
     with open(metadata_path, 'w') as f:
-        json.dump(metadata, f, indent=2)
+        json.dump(metadata, f, indent=2, default=str)
 
 
 def append_to_csv(filename, new_data, timestamp_col='timestamp'):
@@ -74,6 +81,9 @@ def append_to_csv(filename, new_data, timestamp_col='timestamp'):
 
         # Combine and remove duplicates based on timestamp
         if timestamp_col in new_data.columns and timestamp_col in existing_data.columns:
+            # Normalize timestamp types to avoid comparison errors
+            existing_data[timestamp_col] = pd.to_datetime(existing_data[timestamp_col], errors='coerce')
+            new_data[timestamp_col] = pd.to_datetime(new_data[timestamp_col], errors='coerce')
             combined = pd.concat([existing_data, new_data], ignore_index=True)
             combined = combined.drop_duplicates(subset=[timestamp_col], keep='last')
             combined = combined.sort_values(timestamp_col)
@@ -404,13 +414,449 @@ def extract_fred_indicators():
         return None
 
 
+def _extract_simple_series(name, fetch_fn, csv_filename, value_col):
+    """Generic extraction for indicators returning a 'historical' pd.Series."""
+    print(f"\n📊 Extracting {name}...")
+    try:
+        data = fetch_fn()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+
+        hist = data.get('historical')
+        if hist is None:
+            print(f"  ⚠️  No historical data for {name}")
+            return None
+
+        if isinstance(hist, pd.Series):
+            if hist.empty:
+                print(f"  ⚠️  Empty historical series for {name}")
+                return None
+            df = pd.DataFrame({
+                'timestamp': hist.index,
+                'date': [d.date() if hasattr(d, 'date') else d for d in hist.index],
+                value_col: hist.values
+            })
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+        else:
+            print(f"  ⚠️  Unexpected historical type for {name}: {type(hist)}")
+            return None
+
+        append_to_csv(csv_filename, df)
+        return {
+            'indicator': name,
+            'last_date': df['date'].max(),
+            'rows': len(df)
+        }
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+def extract_10y_yield():
+    """Extract 10-Year Treasury Yield historical data."""
+    return _extract_simple_series(
+        '10-Year Treasury Yield',
+        fred_extractors.get_10y_treasury_yield,
+        '10y_treasury_yield.csv',
+        '10y_yield'
+    )
+
+
+def extract_ism_pmi():
+    """Extract ISM Manufacturing PMI (proxy) historical data."""
+    return _extract_simple_series(
+        'ISM Manufacturing PMI',
+        fred_extractors.get_ism_pmi,
+        'ism_pmi.csv',
+        'ism_pmi'
+    )
+
+
+def extract_gold():
+    """Extract Gold futures historical data."""
+    return _extract_simple_series(
+        'Gold Futures',
+        commodities_extractors.get_gold,
+        'gold.csv',
+        'gold_price'
+    )
+
+
+def extract_silver():
+    """Extract Silver futures historical data."""
+    return _extract_simple_series(
+        'Silver Futures',
+        commodities_extractors.get_silver,
+        'silver.csv',
+        'silver_price'
+    )
+
+
+def extract_crude_oil():
+    """Extract Crude Oil futures historical data."""
+    return _extract_simple_series(
+        'Crude Oil Futures',
+        commodities_extractors.get_crude_oil,
+        'crude_oil.csv',
+        'crude_oil_price'
+    )
+
+
+def extract_copper():
+    """Extract Copper futures historical data."""
+    return _extract_simple_series(
+        'Copper Futures',
+        commodities_extractors.get_copper,
+        'copper.csv',
+        'copper_price'
+    )
+
+
+def extract_es_futures():
+    """Extract ES Futures (S&P 500 E-mini) historical data."""
+    return _extract_simple_series(
+        'ES Futures',
+        yfinance_extractors.get_es_futures,
+        'es_futures.csv',
+        'es_price'
+    )
+
+
+def extract_rty_futures():
+    """Extract RTY Futures (Russell 2000 E-mini) historical data."""
+    return _extract_simple_series(
+        'RTY Futures',
+        yfinance_extractors.get_rty_futures,
+        'rty_futures.csv',
+        'rty_price'
+    )
+
+
+def extract_jpy():
+    """Extract USD/JPY exchange rate historical data."""
+    return _extract_simple_series(
+        'USD/JPY Exchange Rate',
+        yfinance_extractors.get_jpy_exchange_rate,
+        'jpy.csv',
+        'jpy_rate'
+    )
+
+
+def extract_cot_positioning():
+    """Extract CFTC COT positioning data for Gold and Silver."""
+    print("\n📊 Extracting CFTC COT Positioning...")
+    try:
+        data = cot_extractor.get_cot_gold_silver()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+
+        results = []
+        for metal_key, csv_name in [('gold', 'cot_gold.csv'), ('silver', 'cot_silver.csv')]:
+            metal_data = data.get(metal_key, {})
+            if not isinstance(metal_data, dict) or 'error' in metal_data:
+                continue
+
+            hist = metal_data.get('historical')
+            if hist is None or not isinstance(hist, pd.Series) or hist.empty:
+                continue
+
+            df = pd.DataFrame({
+                'timestamp': hist.index,
+                'date': [d.date() if hasattr(d, 'date') else d for d in hist.index],
+                'managed_money_net': hist.values,
+            })
+
+            # Add open interest if available
+            hist_oi = metal_data.get('historical_oi')
+            if hist_oi is not None and isinstance(hist_oi, pd.Series) and not hist_oi.empty:
+                oi_df = pd.DataFrame({
+                    'timestamp': hist_oi.index,
+                    'open_interest': hist_oi.values,
+                })
+                df = pd.merge(df, oi_df, on='timestamp', how='left')
+
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            append_to_csv(csv_name, df)
+            results.append({
+                'indicator': f'COT {metal_key.title()}',
+                'last_date': df['date'].max(),
+                'rows': len(df)
+            })
+
+        return results if results else None
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+def extract_tga_balance():
+    """Extract TGA Balance historical data."""
+    return _extract_simple_series(
+        'TGA Balance',
+        fred_extractors.get_tga_balance,
+        'tga_balance.csv',
+        'tga_balance'
+    )
+
+
+def extract_net_liquidity():
+    """Extract Fed Net Liquidity historical data."""
+    return _extract_simple_series(
+        'Fed Net Liquidity',
+        fred_extractors.get_fed_net_liquidity,
+        'net_liquidity.csv',
+        'net_liquidity'
+    )
+
+
+def extract_sofr():
+    """Extract SOFR historical data."""
+    return _extract_simple_series(
+        'SOFR',
+        fred_extractors.get_sofr,
+        'sofr.csv',
+        'sofr'
+    )
+
+
+def extract_us_2y_yield():
+    """Extract US 2-Year Treasury Yield historical data."""
+    return _extract_simple_series(
+        'US 2-Year Treasury Yield',
+        fred_extractors.get_us_2y_yield,
+        'us_2y_yield.csv',
+        'us_2y_yield'
+    )
+
+
+def extract_japan_2y_yield():
+    """Extract Japan 2-Year Government Bond Yield historical data."""
+    return _extract_simple_series(
+        'Japan 2Y Government Bond Yield',
+        japan_yield_extractor.get_japan_2y_yield,
+        'japan_2y_yield.csv',
+        'japan_2y_yield'
+    )
+
+
+def extract_us2y_jp2y_spread():
+    """Extract US 2Y - Japan 2Y yield spread historical data."""
+    return _extract_simple_series(
+        'US 2Y - Japan 2Y Spread',
+        japan_yield_extractor.get_us2y_jp2y_spread,
+        'us2y_jp2y_spread.csv',
+        'spread'
+    )
+
+
+def _save_equity_source(companies, source_dir, source_label):
+    """Save equity quarterly + valuation data for one source into a directory.
+
+    Args:
+        companies: dict of {ticker: company_data}
+        source_dir: absolute path to output directory (e.g. .../yahoo_finance)
+        source_label: display name for logging (e.g. 'Yahoo Finance')
+
+    Returns:
+        list of result dicts
+    """
+    Path(source_dir).mkdir(parents=True, exist_ok=True)
+
+    INCOME_KEYS = [
+        'total_revenue', 'cost_of_revenue', 'gross_profit', 'operating_expense',
+        'research_development', 'selling_general_admin', 'operating_income',
+        'ebitda', 'ebit', 'pretax_income', 'tax_provision', 'net_income',
+        'diluted_eps', 'basic_eps', 'diluted_shares', 'basic_shares',
+    ]
+    BALANCE_KEYS = [
+        'total_assets', 'current_assets', 'cash_and_short_term_investments',
+        'cash_and_equivalents', 'accounts_receivable', 'inventory', 'goodwill',
+        'net_ppe', 'total_liabilities', 'current_liabilities', 'non_current_liabilities',
+        'long_term_debt', 'current_debt', 'total_debt', 'accounts_payable',
+        'accrued_expenses', 'net_debt', 'stockholders_equity', 'retained_earnings',
+        'invested_capital', 'debt_ratio', 'debt_to_equity', 'current_ratio',
+    ]
+    CASHFLOW_KEYS = [
+        'operating_cash_flow', 'capital_expenditure', 'free_cash_flow',
+        'share_repurchases', 'dividends_paid', 'investing_cash_flow',
+        'financing_cash_flow', 'depreciation_amortization', 'stock_based_compensation',
+    ]
+
+    results = []
+    for ticker, co in companies.items():
+        if 'error' in co:
+            continue
+
+        quarters = co.get('quarters', [])
+        if not quarters:
+            continue
+
+        rows = []
+        for i, q in enumerate(quarters):
+            row = {
+                'timestamp': datetime.now().isoformat(),
+                'quarter': q,
+                'ticker': ticker,
+                'company_name': co.get('company_name', ticker),
+                'source': source_label,
+            }
+            inc = co.get('income_statement', {}) or {}
+            for key in INCOME_KEYS:
+                vals = inc.get(key, [])
+                row[key] = vals[i] if i < len(vals) else None
+
+            bs = co.get('balance_sheet', {}) or {}
+            for key in BALANCE_KEYS:
+                vals = bs.get(key, [])
+                row[key] = vals[i] if i < len(vals) else None
+
+            cf = co.get('cash_flow', {}) or {}
+            for key in CASHFLOW_KEYS:
+                vals = cf.get(key, [])
+                row[key] = vals[i] if i < len(vals) else None
+
+            rows.append(row)
+
+        if rows:
+            df = pd.DataFrame(rows)
+            csv_path = os.path.join(source_dir, f"{ticker}_quarterly.csv")
+
+            if os.path.exists(csv_path):
+                existing = pd.read_csv(csv_path)
+                combined = pd.concat([existing, df], ignore_index=True)
+                combined = combined.drop_duplicates(subset=['quarter'], keep='last')
+                combined = combined.sort_values('quarter', ascending=False)
+            else:
+                combined = df
+
+            combined.to_csv(csv_path, index=False)
+            results.append({'indicator': f'Equity {ticker} ({source_label})', 'last_date': quarters[0], 'rows': len(combined)})
+
+    # Save valuation + analysis snapshot
+    val_rows = []
+    for ticker, co in companies.items():
+        if 'error' in co:
+            continue
+        val = co.get('valuation', {})
+        fa = co.get('financial_analysis', {})
+        prof = fa.get('profitability', {})
+        returns = fa.get('returns', {})
+        turnover = fa.get('turnover', {})
+        gr = fa.get('growth', {})
+        val_rows.append({
+            'timestamp': datetime.now().isoformat(),
+            'ticker': ticker,
+            'company_name': co.get('company_name', ticker),
+            'source': source_label,
+            'market_cap': co.get('market_cap'),
+            'forward_pe': val.get('forward_pe'),
+            'trailing_pe': val.get('trailing_pe'),
+            'peg_ratio': val.get('peg_ratio'),
+            'price_to_book': val.get('price_to_book'),
+            'price_to_sales': val.get('price_to_sales'),
+            'ev_to_ebitda': val.get('ev_to_ebitda'),
+            'ev_to_revenue': val.get('ev_to_revenue'),
+            'ev_to_fcf': val.get('ev_to_fcf'),
+            'enterprise_value': val.get('enterprise_value'),
+            'beta': val.get('beta'),
+            'dividend_yield': val.get('dividend_yield'),
+            'gross_margin': prof.get('gross_margin'),
+            'operating_margin': prof.get('operating_margin'),
+            'ebitda_margin': prof.get('ebitda_margin'),
+            'fcf_margin': prof.get('fcf_margin'),
+            'net_margin': prof.get('net_margin'),
+            'roe': returns.get('roe'),
+            'roa': returns.get('roa'),
+            'roic': returns.get('roic'),
+            'asset_turnover': turnover.get('asset_turnover'),
+            'debt_to_equity': turnover.get('debt_to_equity'),
+            'current_ratio': turnover.get('current_ratio'),
+            'eps_growth': gr.get('eps_growth'),
+            'revenue_growth': gr.get('revenue_growth'),
+            'revenue_qoq': gr.get('revenue_qoq'),
+            'revenue_yoy': gr.get('revenue_yoy'),
+        })
+
+    if val_rows:
+        val_df = pd.DataFrame(val_rows)
+        val_path = os.path.join(source_dir, '_valuation_snapshot.csv')
+        if os.path.exists(val_path):
+            existing = pd.read_csv(val_path)
+            existing['timestamp'] = pd.to_datetime(existing['timestamp'], errors='coerce')
+            val_df['timestamp'] = pd.to_datetime(val_df['timestamp'], errors='coerce')
+            combined = pd.concat([existing, val_df], ignore_index=True)
+            combined['date'] = combined['timestamp'].dt.date
+            combined = combined.drop_duplicates(subset=['ticker', 'date'], keep='last')
+            combined = combined.drop(columns=['date'])
+            combined = combined.sort_values(['ticker', 'timestamp'])
+        else:
+            combined = val_df
+        combined.to_csv(val_path, index=False)
+
+    return results
+
+
+def extract_equity_financials():
+    """Extract financial data for top 20 large-cap companies from both Yahoo Finance
+    and SEC EDGAR, saving per-company CSVs into source-specific subdirectories.
+
+    Output layout:
+        historical_data/equity_financials/yahoo_finance/{TICKER}_quarterly.csv
+        historical_data/equity_financials/sec_edgar/{TICKER}_quarterly.csv
+    """
+    from data_extractors import sec_extractor
+
+    eq_base = os.path.join(OUTPUT_DIR, 'equity_financials')
+    all_results = []
+
+    # ── Yahoo Finance ──────────────────────────────────────────
+    print("\n📊 Extracting Large-cap Equity Financials — Yahoo Finance...")
+    try:
+        yf_data = equity_financials_extractor.get_top20_financials()
+        if isinstance(yf_data, dict) and 'error' not in yf_data:
+            yf_dir = os.path.join(eq_base, 'yahoo_finance')
+            yf_results = _save_equity_source(yf_data.get('companies', {}), yf_dir, 'Yahoo Finance')
+            all_results.extend(yf_results)
+            print(f"  💾 Yahoo Finance: {len(yf_results)} companies → equity_financials/yahoo_finance/")
+        else:
+            print(f"  ❌ Yahoo Finance error: {yf_data.get('error', 'unknown')}")
+    except Exception as e:
+        print(f"  ❌ Yahoo Finance error: {e}")
+
+    # ── SEC EDGAR ──────────────────────────────────────────────
+    print("\n📊 Extracting Large-cap Equity Financials — SEC EDGAR...")
+    try:
+        sec_data = sec_extractor.get_top20_financials_sec()
+        if isinstance(sec_data, dict) and 'error' not in sec_data:
+            sec_dir = os.path.join(eq_base, 'sec_edgar')
+            sec_results = _save_equity_source(sec_data.get('companies', {}), sec_dir, 'SEC EDGAR')
+            all_results.extend(sec_results)
+            print(f"  💾 SEC EDGAR: {len(sec_results)} companies → equity_financials/sec_edgar/")
+        else:
+            print(f"  ❌ SEC EDGAR error: {sec_data.get('error', 'unknown')}")
+    except Exception as e:
+        print(f"  ❌ SEC EDGAR error: {e}")
+
+    if all_results:
+        return {
+            'indicator': 'Equity Financials (Top 20, dual-source)',
+            'last_date': datetime.now().strftime('%Y-%m-%d'),
+            'rows': len(all_results),
+        }
+    return None
+
+
 def create_summary_file(results):
     """Create a summary CSV with latest values from all indicators."""
     print("\n📊 Creating summary file...")
 
     try:
         aggregator = get_aggregator()
-        aggregator.fetch_all_indicators()
+        # Reuse existing data if already fetched (avoids redundant API calls)
+        if not aggregator.indicators:
+            aggregator.fetch_all_indicators()
 
         summary_data = []
 
@@ -502,46 +948,60 @@ def extract_all_historical_data():
 
     results = []
 
-    # Extract each indicator
-    result = extract_russell_2000_historical()
-    if result:
-        results.append(result)
-        metadata['indicators']['russell_2000'] = result
+    # Helper to run an extraction and record the result
+    def _run(extract_fn, meta_key):
+        r = extract_fn()
+        if r is not None:
+            if isinstance(r, list):
+                results.extend(r)
+                for item in r:
+                    metadata['indicators'][item['indicator']] = item
+            else:
+                results.append(r)
+                metadata['indicators'][meta_key] = r
 
-    result = extract_sp500_with_ma200()
-    if result:
-        results.append(result)
-        metadata['indicators']['sp500_ma200'] = result
+    # ── Original indicators ──────────────────────────────────
+    _run(extract_russell_2000_historical, 'russell_2000')
+    _run(extract_sp500_with_ma200, 'sp500_ma200')
+    _run(extract_vix_move, 'vix_move')
+    _run(extract_dxy, 'dxy')
+    _run(extract_shiller_cape, 'shiller_cape')
+    _run(extract_sp500_fundamentals, 'sp500_fundamentals')
+    _run(extract_cboe_skew, 'cboe_skew')
+    _run(extract_fred_indicators, 'fred')
 
-    result = extract_vix_move()
-    if result:
-        results.append(result)
-        metadata['indicators']['vix_move'] = result
+    # ── Indicators 11-12: FRED (10Y yield, ISM PMI) ─────────
+    _run(extract_10y_yield, '10y_yield')
+    _run(extract_ism_pmi, 'ism_pmi')
 
-    result = extract_dxy()
-    if result:
-        results.append(result)
-        metadata['indicators']['dxy'] = result
+    # ── Indicators 13-16: Commodities ────────────────────────
+    _run(extract_gold, 'gold')
+    _run(extract_silver, 'silver')
+    _run(extract_crude_oil, 'crude_oil')
+    _run(extract_copper, 'copper')
 
-    result = extract_shiller_cape()
-    if result:
-        results.append(result)
-        metadata['indicators']['shiller_cape'] = result
+    # ── Indicators 17-18: Futures ────────────────────────────
+    _run(extract_es_futures, 'es_futures')
+    _run(extract_rty_futures, 'rty_futures')
 
-    result = extract_sp500_fundamentals()
-    if result:
-        results.append(result)
-        metadata['indicators']['sp500_fundamentals'] = result
+    # ── Indicator 20: JPY Exchange Rate ──────────────────────
+    _run(extract_jpy, 'jpy')
 
-    result = extract_cboe_skew()
-    if result:
-        results.append(result)
-        metadata['indicators']['cboe_skew'] = result
+    # ── Indicator 22: CFTC COT Positioning ───────────────────
+    _run(extract_cot_positioning, 'cot_positioning')
 
-    result = extract_fred_indicators()
-    if result:
-        results.append(result)
-        metadata['indicators']['fred'] = result
+    # ── Indicators 23-25: TGA, Net Liquidity, SOFR ──────────
+    _run(extract_tga_balance, 'tga_balance')
+    _run(extract_net_liquidity, 'net_liquidity')
+    _run(extract_sofr, 'sofr')
+
+    # ── Indicators 26-28: US 2Y, Japan 2Y, Spread ───────────
+    _run(extract_us_2y_yield, 'us_2y_yield')
+    _run(extract_japan_2y_yield, 'japan_2y_yield')
+    _run(extract_us2y_jp2y_spread, 'us2y_jp2y_spread')
+
+    # ── Indicator 29: Large-cap Equity Financials ────────────
+    _run(extract_equity_financials, 'equity_financials')
 
     # Create summary file
     create_summary_file(results)

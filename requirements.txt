@@ -9,3 +9,4 @@ lxml>=5.1.0
 plotly>=5.18.0
 openpyxl>=3.1.2
 xlrd>=2.0.1
+cot-reports>=1.1.0

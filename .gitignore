@@ -31,6 +31,9 @@ wheels/
 data_cache/
 *.cache
 
+# Data exports
+data_export/
+
 # Historical data exports
 historical_data/
 *.csv
@@ -51,6 +54,7 @@ data_metadata.json
 .streamlit/secrets.toml
 
 # Logs
+logs/
 *.log
 
 # Database
