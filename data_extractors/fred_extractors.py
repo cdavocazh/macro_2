@@ -2,6 +2,7 @@
 Data extractors using FRED (Federal Reserve Economic Data) API.
 """
 from fredapi import Fred
+import pandas as pd
 import config
 
 
@@ -300,3 +301,208 @@ def get_ism_pmi():
         return {'error': str(e)}
     except Exception as e:
         return {'error': f"Error fetching manufacturing indicator: {str(e)}"}
+
+
+def get_tga_balance():
+    """
+    Get US Treasury General Account (TGA) balance from FRED.
+    Series: WTREGEN (weekly, millions USD).
+    High TGA = Treasury draining liquidity; Low TGA = injecting liquidity.
+    """
+    try:
+        fred = get_fred_client()
+        tga_data = fred.get_series('WTREGEN')
+
+        if tga_data.empty:
+            return {'error': 'No TGA data available from FRED'}
+
+        tga_data = tga_data.dropna()
+        latest = tga_data.iloc[-1]
+        latest_date = tga_data.index[-1]
+
+        # Calculate week-over-week change
+        prev = tga_data.iloc[-2] if len(tga_data) >= 2 else latest
+        change_wow = latest - prev
+        change_pct = (change_wow / prev * 100) if prev != 0 else 0
+
+        return {
+            'tga_balance': latest,
+            'tga_balance_billions': round(latest / 1000, 2),
+            'change_wow': change_wow,
+            'change_wow_pct': round(change_pct, 2),
+            'latest_date': latest_date.strftime('%Y-%m-%d'),
+            'source': 'FRED (WTREGEN)',
+            'units': 'Millions USD',
+            'historical': tga_data,
+        }
+    except Exception as e:
+        return {'error': f"Error fetching TGA balance: {str(e)}"}
+
+
+def get_fed_net_liquidity():
+    """
+    Calculate Fed Net Liquidity = Fed Total Assets - TGA - ON RRP.
+    Series: WALCL (weekly, millions), WTREGEN (weekly, millions), RRPONTSYD (daily, billions).
+    Rising net liquidity is bullish for risk assets.
+    """
+    try:
+        fred = get_fred_client()
+
+        walcl = fred.get_series('WALCL').dropna()     # Fed Total Assets (millions)
+        tga = fred.get_series('WTREGEN').dropna()      # TGA (millions)
+        rrp = fred.get_series('RRPONTSYD').dropna()    # ON RRP (billions)
+
+        if walcl.empty or tga.empty or rrp.empty:
+            return {'error': 'Missing FRED series for net liquidity calculation'}
+
+        # Convert ON RRP from billions to millions for consistent units
+        rrp_millions = rrp * 1000
+
+        # Align all series to a common date index (forward-fill weekly into daily gaps)
+        combined = pd.DataFrame({
+            'walcl': walcl,
+            'tga': tga,
+            'rrp': rrp_millions,
+        }).ffill().dropna()
+
+        if combined.empty:
+            return {'error': 'Could not align FRED series for net liquidity'}
+
+        combined['net_liquidity'] = combined['walcl'] - combined['tga'] - combined['rrp']
+
+        latest = combined.iloc[-1]
+        latest_date = combined.index[-1]
+
+        # Week-over-week change (use 5 business days back)
+        prev_idx = max(0, len(combined) - 6)
+        prev = combined.iloc[prev_idx]
+        change = latest['net_liquidity'] - prev['net_liquidity']
+        change_pct = (change / abs(prev['net_liquidity']) * 100) if prev['net_liquidity'] != 0 else 0
+
+        return {
+            'net_liquidity': latest['net_liquidity'],
+            'net_liquidity_trillions': round(latest['net_liquidity'] / 1_000_000, 3),
+            'fed_assets': latest['walcl'],
+            'tga': latest['tga'],
+            'on_rrp': latest['rrp'],
+            'change': change,
+            'change_pct': round(change_pct, 2),
+            'latest_date': latest_date.strftime('%Y-%m-%d'),
+            'source': 'FRED (WALCL - WTREGEN - RRPONTSYD)',
+            'units': 'Millions USD',
+            'historical': combined['net_liquidity'],
+            'interpretation': 'Rising net liquidity = bullish for risk assets',
+        }
+    except Exception as e:
+        return {'error': f"Error calculating net liquidity: {str(e)}"}
+
+
+def get_sofr():
+    """
+    Get Secured Overnight Financing Rate (SOFR) from FRED.
+    Series: SOFR (daily, percent).
+    Key short-term funding rate, replacement for LIBOR.
+    """
+    try:
+        fred = get_fred_client()
+        sofr_data = fred.get_series('SOFR')
+
+        if sofr_data.empty:
+            return {'error': 'No SOFR data available from FRED'}
+
+        sofr_data = sofr_data.dropna()
+        latest = sofr_data.iloc[-1]
+        latest_date = sofr_data.index[-1]
+
+        # Day-over-day change
+        prev = sofr_data.iloc[-2] if len(sofr_data) >= 2 else latest
+        change_1d = latest - prev
+
+        return {
+            'sofr': latest,
+            'change_1d': round(change_1d, 4),
+            'latest_date': latest_date.strftime('%Y-%m-%d'),
+            'source': 'FRED (SOFR)',
+            'units': 'Percent',
+            'historical': sofr_data,
+        }
+    except Exception as e:
+        return {'error': f"Error fetching SOFR: {str(e)}"}
+
+
+def get_us_2y_yield():
+    """
+    Get US 2-Year Treasury Yield from FRED.
+    Series: DGS2 (daily, percent).
+    Key indicator for Fed rate expectations.
+    """
+    try:
+        fred = get_fred_client()
+        yield_data = fred.get_series('DGS2')
+
+        if yield_data.empty:
+            return _get_us_2y_yield_fallback()
+
+        yield_data = yield_data.dropna()
+        latest = yield_data.iloc[-1]
+        latest_date = yield_data.index[-1]
+
+        # Day-over-day change
+        prev = yield_data.iloc[-2] if len(yield_data) >= 2 else latest
+        change_1d = latest - prev
+
+        # Also get 10Y for spread calculation
+        try:
+            ten_y = fred.get_series('DGS10').dropna()
+            if not ten_y.empty:
+                spread_2s10s = ten_y.iloc[-1] - latest
+            else:
+                spread_2s10s = None
+        except Exception:
+            spread_2s10s = None
+
+        result = {
+            'us_2y_yield': latest,
+            'change_1d': round(change_1d, 4),
+            'latest_date': latest_date.strftime('%Y-%m-%d'),
+            'source': 'FRED (DGS2)',
+            'units': 'Percent',
+            'historical': yield_data,
+        }
+        if spread_2s10s is not None:
+            result['spread_2s10s'] = round(spread_2s10s, 4)
+            result['spread_interpretation'] = 'Negative = inverted yield curve (recession signal)'
+
+        return result
+    except Exception as e:
+        return _get_us_2y_yield_fallback()
+
+
+def _get_us_2y_yield_fallback():
+    """Fallback: get 2Y yield from Yahoo Finance (^IRX proxy or 2YY=F)."""
+    try:
+        import yfinance as yf
+        from datetime import datetime, timedelta
+
+        ticker = yf.Ticker("2YY=F")
+        hist = ticker.history(
+            start=datetime.now() - timedelta(days=365 * 5),
+            end=datetime.now()
+        )
+        if hist.empty:
+            return {'error': 'No 2Y yield data available from FRED or Yahoo Finance'}
+
+        latest = hist['Close'].iloc[-1]
+        latest_date = hist.index[-1]
+        prev = hist['Close'].iloc[-2] if len(hist) >= 2 else latest
+
+        return {
+            'us_2y_yield': latest,
+            'change_1d': round(latest - prev, 4),
+            'latest_date': latest_date.strftime('%Y-%m-%d'),
+            'source': 'Yahoo Finance (2YY=F)',
+            'units': 'Percent',
+            'historical': hist['Close'],
+        }
+    except Exception as e:
+        return {'error': f"Error fetching 2Y yield from fallback: {str(e)}"}

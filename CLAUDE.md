@@ -1,641 +1,221 @@
-# Claude AI Development Process Documentation
+# CLAUDE.md
 
-**Project:** Macroeconomic Indicators Dashboard (macro_2)
-**AI Assistant:** Claude (Anthropic)
-**Development Period:** January 11-29, 2026
-**Total Session Time:** ~12 hours across multiple sessions
+## What is this project?
 
----
+Macroeconomic indicators dashboard with large-cap equity financials. Fetches 28+ indicators from financial APIs (yfinance, FRED, SEC EDGAR, web scrapers, MOF Japan), displays them in a Streamlit dashboard with 6 tabs, caches locally for fast startup, and exports to CSV.
 
-## 📋 Overview
+**Repo:** https://github.com/cdavocazh/macro_2
+**Branch:** claude/explain-codebase-mk9u0ailcf2rvksp-7uAZO
 
-This document chronicles how I (Claude, an AI assistant) developed a comprehensive macroeconomic indicators dashboard from scratch, including real-time data extraction, Streamlit visualization, CSV export functionality, and article summarization tools.
+## Quick commands
 
----
+```bash
+# Run the dashboard (loads from cache if available, otherwise fetches live)
+streamlit run app.py
 
-## 🎯 Initial Request
+# Refresh data manually (updates cache + CSVs, skips if <1h old)
+python scheduled_extract.py
+python scheduled_extract.py --force    # ignore freshness guard
 
-**User's Request:**
-> "Write a data extraction workflow for 10 macroeconomic indicators and deploy to Streamlit with a refresh button. Then consolidate these indicators into a dashboard."
+# Extract all historical data to CSV (dual-source equity financials)
+python extract_historical_data.py
 
-**10 Indicators Requested:**
-1. S&P 500 Forward P/E Ratio (MacroMicro)
-2. Russell 2000 Value & Growth Indices (OpenBB/yfinance)
-3. S&P 500 Trailing P/E & P/B (OpenBB)
-4. S&P 500 Put/Call Ratio (CBOE)
-5. SPX Call Skew (CBOE SKEW)
-6a. S&P 500 / 200-Day MA (calculated)
-6b. S&P 500 Market Cap / GDP (FRED)
-7. Shiller CAPE Ratio (Robert Shiller/Yale)
-8. VIX & VIX/MOVE Ratio (Yahoo Finance)
-9. MOVE Index (ICE BofA)
-10. DXY - US Dollar Index (Yahoo Finance)
+# Install macOS launchd auto-scheduler
+bash setup_launchd.sh
+bash setup_launchd.sh --status
+bash setup_launchd.sh --uninstall
 
----
-
-## 🏗️ Development Approach
-
-### Phase 1: Architecture Design (Hour 1-2)
-
-**Initial Planning:**
-1. Analyzed requirements for 10 different data sources
-2. Identified API vs. web scraping needs
-3. Designed modular architecture with separation of concerns
-4. Planned error handling strategy for unreliable sources
-
-**Key Architectural Decisions:**
-- **Modular Extractors:** One file per data source type (yfinance, FRED, OpenBB, web scrapers)
-- **Aggregator Pattern:** Central orchestrator (`data_aggregator.py`) to manage all extractors
-- **Graceful Degradation:** System continues working even if some indicators fail
-- **Singleton Pattern:** Single aggregator instance to prevent duplicate fetches
-
-**File Structure Created:**
-```
-macro_2/
-├── data_extractors/          # 5 specialized extractor modules
-├── utils/                    # Helper functions
-├── app.py                    # Streamlit dashboard
-├── data_aggregator.py        # Central orchestrator
-└── config.py                 # Configuration
+# Run data review agent (requires MINIMAX_API_KEY)
+python -m agent.openai_agents.agent "Scan all companies for missing data"
+python -m agent.langchain_agents.agent "Compare Yahoo vs SEC for AAPL"
 ```
 
-### Phase 2: Data Extractor Implementation (Hour 2-5)
+## Architecture
 
-**Challenges Encountered:**
+```
+app.py                        Streamlit dashboard (6 tabs, read-only UI)
+data_aggregator.py            Orchestrator — fetches all 28+ indicators, saves/loads cache
+  ├── data_extractors/
+  │   ├── yfinance_extractors.py       11 indicators (VIX, DXY, Russell, ES/RTY futures, JPY)
+  │   ├── fred_extractors.py            8 indicators (GDP, 10Y yield, ISM PMI, TGA, liquidity, SOFR, 2Y yield)
+  │   ├── web_scrapers.py               4 indicators (Forward P/E, Put/Call, SKEW, breadth)
+  │   ├── shiller_extractor.py          1 indicator  (CAPE ratio from Yale Excel)
+  │   ├── openbb_extractors.py          1 indicator  (S&P fundamentals, optional dep)
+  │   ├── commodities_extractors.py     4 indicators (gold, silver, oil, copper)
+  │   ├── cot_extractor.py              1 indicator  (CFTC COT positioning, gold & silver)
+  │   ├── japan_yield_extractor.py      2 indicators (Japan 2Y yield, US-JP spread)
+  │   ├── equity_financials_extractor.py  Top 20 company financials (Yahoo Finance)
+  │   └── sec_extractor.py              Top 20 company financials (SEC EDGAR XBRL)
+  └── utils/helpers.py               Cache serialization, CSV export, formatting
 
-1. **Yahoo Finance (yfinance):**
-   - ✅ **Easy:** Direct API access, no authentication
-   - Implemented 7 indicators from Yahoo Finance
-   - Real-time data during market hours
+scheduled_extract.py          Standalone catch-up script (does NOT touch app.py)
+extract_historical_data.py    Append-only historical CSV builder (dual-source equity)
+config.py                     API keys, cache settings
 
-2. **FRED API:**
-   - ✅ **Straightforward:** Free API key required
-   - Quarterly GDP data, annual market cap data
-   - Calculated Market Cap/GDP ratio (Buffett Indicator)
+agent/                        Financial data discrepancy review agent
+  ├── shared/tools.py         8 shared validation tools
+  ├── openai_agents/agent.py  OpenAI Agents SDK + Minimax LLM
+  └── langchain_agents/agent.py  LangChain + LangGraph + Minimax LLM
+```
 
-3. **Robert Shiller's CAPE:**
-   - ✅ **Clever solution:** Direct Excel file download via HTTP
-   - Historical data since 1871
-   - Column detection algorithm to handle varying formats
+## Dashboard tabs
 
-4. **OpenBB Platform:**
-   - ⚠️ **Optional dependency:** Made it non-blocking
-   - Used SPY ETF as S&P 500 proxy for fundamentals
-   - Graceful fallback if not installed
+| Tab | Name | Indicators |
+|-----|------|------------|
+| 1 | Valuation Metrics | Forward P/E, Trailing P/E & P/B, Shiller CAPE, Market Cap/GDP |
+| 2 | Market Indices | ES/RTY futures, breadth, Russell 2000 V/G, S&P 500/200MA |
+| 3 | Volatility & Risk | VIX, MOVE, VIX/MOVE ratio, Put/Call, CBOE SKEW |
+| 4 | Macro & Currency | DXY, USD/JPY, TGA, net liquidity, SOFR, US 2Y, Japan 2Y, spread, 10Y yield, ISM PMI |
+| 5 | Commodities | Gold, Silver, Crude Oil, Copper, CFTC COT positioning |
+| 6 | Large-cap Financials | Top 20 companies, dual-source (Yahoo + SEC EDGAR), quarterly statements |
 
-5. **MacroMicro (Forward P/E):**
-   - ❌ **Blocked:** Website returns 403 Forbidden
-   - Web scraping fails due to bot detection
-   - Implemented with error handling and fallback suggestions
+## Dashboard features
 
-6. **CBOE Put/Call Ratio:**
-   - ❌ **Unreliable:** Website scraping limited
-   - Requires professional data subscription
-   - Documented limitations and alternatives
+- **Expandable 3M price charts**: Every indicator in tabs 1, 3, 4, 5 has a collapsible plotly chart with 1W/1M/3M zoom buttons
+- **QoQ/YoY indicators**: Quarterly financial tables show colored percentage changes (green positive, red negative)
+- **Numerator/denominator display**: Financial analysis and valuation metrics show formula components in small gray text
+- **Multi-source switching**: Tab 6 supports Yahoo Finance and SEC EDGAR with radio button toggle
+- **Revenue segments**: SEC EDGAR source shows business segment breakdown from 10-K filings
 
-**Code Organization:**
+## Data flow
+
+```
+scheduled_extract.py (or app.py Refresh button)
+  → data_aggregator.fetch_all_indicators()
+    → calls each extractor module
+    → saves to data_cache/all_indicators.json  (JSON, 24h TTL)
+    → appends to historical_data/*.csv         (append-only, deduplicated)
+    → writes data_export/*.csv                 (latest snapshot)
+
+app.py startup
+  → tries load_from_local_cache() first       (instant, from JSON)
+  → falls back to fetch_all_indicators()      (slow, ~40s)
+```
+
+## Local storage (3 directories, all gitignored)
+
+| Directory | Purpose | Format |
+|-----------|---------|--------|
+| `data_cache/` | Fast dashboard startup cache | Single JSON file, 24h TTL |
+| `historical_data/` | Append-only archival data | Per-indicator CSVs + equity_financials/{source}/ |
+| `data_export/` | Latest snapshot for export | Per-indicator CSVs + summary |
+
+### Equity financials storage (dual-source)
+
+```
+historical_data/equity_financials/
+  ├── yahoo_finance/
+  │   ├── AAPL_quarterly.csv
+  │   ├── MSFT_quarterly.csv
+  │   ├── ... (20 tickers)
+  │   └── _valuation_snapshot.csv
+  └── sec_edgar/
+      ├── AAPL_quarterly.csv
+      ├── MSFT_quarterly.csv
+      ├── ... (19 tickers, TSM excluded — IFRS)
+      └── _valuation_snapshot.csv
+```
+
+## Top 20 tickers
+
 ```python
-# Example extractor structure
-def get_indicator():
-    """Fetch indicator with error handling."""
-    try:
-        # Fetch data
-        data = source.get_data()
-
-        # Process
-        result = {
-            'value': data,
-            'timestamp': datetime.now(),
-            'success': True
-        }
-        return result
-    except Exception as e:
-        return {
-            'error': str(e),
-            'suggestion': 'Alternative approaches...',
-            'success': False
-        }
+TOP_20_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM',
+                  'LLY', 'AVGO', 'JPM', 'V', 'WMT', 'MA', 'XOM', 'UNH', 'COST', 'HD', 'PG', 'JNJ']
 ```
 
-### Phase 3: Streamlit Dashboard (Hour 5-7)
+## Key design decisions
 
-**Dashboard Design:**
+- **Cache-first startup:** Dashboard loads from `data_cache/all_indicators.json` instantly. Only fetches live when cache is missing or user clicks Refresh.
+- **Pandas serialization:** `helpers.py` has `_serialize_value()` / `_deserialize_value()` to handle `pd.Series`, `pd.DataFrame`, numpy types in JSON cache. These must stay in sync.
+- **Freshness guard:** `scheduled_extract.py` skips if cache is <1 hour old. Prevents duplicate API calls.
+- **Append-only CSVs:** `extract_historical_data.py` uses `append_to_csv()` which deduplicates by timestamp column. Never overwrites.
+- **Graceful degradation:** Every extractor returns `{'error': msg}` on failure. Dashboard renders green cards for success, red for errors.
+- **FY-end quarter derivation (SEC):** Q4 = Annual 10-K value minus (Q1+Q2+Q3). Searches across ALL XBRL concept alternatives to handle companies that switch concepts mid-year (e.g. GOOGL).
+- **Cumulative YTD cash flow (SEC):** NVDA reports cumulative cash flows. `_get_cashflow_quarterly_values()` detects monotonic growth and subtracts prior quarters.
+- **Cross-concept merging (SEC):** Revenue, net income can use different XBRL concepts per company. Merged from all alternatives; first non-None wins.
+- **Dual-source equity storage:** Historical data saves per-company quarterly CSVs into `yahoo_finance/` and `sec_edgar/` subdirectories for cross-validation.
+- **Singleton aggregator:** `get_aggregator()` returns a single global instance to prevent duplicate fetches within a Streamlit session.
 
-1. **4-Tab Organization:**
-   - 📈 Valuation Metrics (P/E ratios, CAPE, Market Cap/GDP)
-   - 📊 Market Indices (Russell 2000, S&P 500/200MA)
-   - ⚡ Volatility & Risk (VIX, MOVE, Put/Call, SKEW)
-   - 🌍 Macro & Currency (DXY)
+## SEC EDGAR XBRL specifics
 
-2. **Sidebar Features:**
-   - 🔄 Manual refresh button (key requirement)
-   - ℹ️ About section with indicator list
-   - 📚 Data sources reference
+- **API:** `https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json` (free, 10 req/sec, User-Agent required)
+- **CIK mapping:** Hardcoded in `sec_extractor.py` for all 20 tickers
+- **Valid forms:** 10-K, 10-Q, 20-F, 6-K
+- **Duration detection:** Quarterly = 80-100 days, Annual = 340-380 days
+- **TSM exception:** Files under `ifrs-full` namespace, not `us-gaap`. Returns error (known limitation).
+- **Company-specific concepts:** JPM uses `RevenuesNetOfInterestExpense`, AVGO/MA use `ProfitLoss` for net income
 
-3. **Error Handling UI:**
-   - Success: Green cards with metrics
-   - Failure: Red error cards with helpful messages
-   - Partial failures don't crash entire dashboard
+## Scheduling (launchd)
 
-**Key UX Decisions:**
-- Show all indicators even if some fail
-- Provide interpretation guides for complex metrics
-- Color-coded tabs for easy navigation
-- Mobile-responsive layout
+**Plist:** `com.macro2.scheduled-extract.plist`
+**Schedule:** 1:00 AM, 8:30 AM, 1:00 PM, 5:00 PM, 10:00 PM GMT+8, Mon-Sat
+**Python path:** `/Users/kriszhang/mambaforge/bin/python3`
+**Logs:** `logs/launchd_stdout.log`, `logs/launchd_stderr.log`
 
-### Phase 4: Streamlit Cloud Deployment (Hour 7-8)
+launchd catches up missed runs after sleep (unlike cron). The freshness guard in `scheduled_extract.py` prevents redundant fetches.
 
-**Initial Deployment Issues:**
+## API keys
 
-1. **Python 3.13 Incompatibility:**
-   ```
-   Error: pandas==2.1.4 compilation failed on Python 3.13
-   ```
+- **FRED:** Hardcoded fallback in `config.py`, overridden by `FRED_API_KEY` env var or Streamlit secrets
+- **SEC EDGAR:** No key needed (User-Agent header required, set in `sec_extractor.py`)
+- **yfinance:** No key needed
+- **Minimax (agent only):** `MINIMAX_API_KEY` env var required for agent subfolder
+- **All others:** No key needed (web scraping or public data)
 
-   **Solution:**
-   - Changed `pandas==2.1.4` to `pandas>=2.2.0`
-   - Updated all pinned versions to minimum versions
-   - Removed OpenBB from requirements (optional)
+## Extractor return format
 
-2. **Secrets Management:**
-   ```python
-   # Enhanced config.py for Streamlit Cloud
-   try:
-       import streamlit as st
-       FRED_API_KEY = st.secrets.get('FRED_API_KEY', os.getenv('FRED_API_KEY', 'fallback'))
-   except (ImportError, FileNotFoundError, KeyError):
-       FRED_API_KEY = os.getenv('FRED_API_KEY', 'fallback')
-   ```
-
-3. **Created `STREAMLIT_CLOUD_SETUP.md`:**
-   - Step-by-step deployment guide
-   - Secrets configuration instructions
-   - Troubleshooting common issues
-
-**Deployment Success:**
-- ✅ Compatible with Python 3.13
-- ✅ Auto-deploys from GitHub
-- ✅ Secrets properly configured
-- ✅ All working indicators load successfully
-
-### Phase 5: Documentation (Hour 8-9)
-
-**Documentation Created:**
-
-1. **README.md (210 lines):**
-   - Comprehensive project overview
-   - Detailed source information table for each indicator
-   - Quick reference by data source
-   - API key requirements
-   - Installation and usage instructions
-
-2. **QUICKSTART.md:**
-   - 5-minute setup guide
-   - Essential commands only
-   - Minimal explanation
-
-3. **STREAMLIT_CLOUD_SETUP.md:**
-   - Cloud deployment specific
-   - Secrets management
-   - Troubleshooting deployment issues
-
-4. **STATUS.md (680+ lines):**
-   - Complete project status
-   - All 10 indicators documented
-   - Architecture diagrams
-   - Production readiness checklist
-
-**Documentation Philosophy:**
-- Multiple entry points (quick start vs. comprehensive)
-- Examples for every feature
-- Troubleshooting sections
-- Clear error messages throughout code
-
-### Phase 6: Historical Data CSV Export (Hour 9-11)
-
-**User Request:**
-> "I want to download the historical data in CSV. Prepare data extraction script that is append-only. Include last_timestamp for easier tracking."
-
-**Implementation:**
-
-1. **Created `extract_historical_data.py` (600+ LOC):**
-   ```python
-   # Append-only mechanism
-   def append_to_csv(filename, new_data, timestamp_col='timestamp'):
-       if os.path.exists(filepath):
-           existing_data = pd.read_csv(filepath)
-           combined = pd.concat([existing_data, new_data])
-           combined = combined.drop_duplicates(subset=[timestamp_col], keep='last')
-       else:
-           combined = new_data
-       combined.to_csv(filepath, index=False)
-   ```
-
-2. **Metadata Tracking:**
-   ```json
-   {
-     "last_extraction": "2026-01-29T10:30:45",
-     "indicators": {
-       "russell_2000": {
-         "last_date": "2026-01-29",
-         "rows": 730
-       }
-     }
-   }
-   ```
-
-3. **Created 11 CSV files:**
-   - 10 indicator-specific files
-   - 1 summary file with latest values
-   - Total historical data: ~3,500 rows across all files
-
-4. **Data Viewer Utility (`view_data.py`):**
-   - Interactive CLI browser
-   - Statistics calculator
-   - File preview functionality
-
-5. **Update Script (`update_data.py`):**
-   - Checks last_timestamp
-   - Fetches only new data
-   - Appends without duplicating
-
-**Key Features:**
-- ✅ Append-only (never overwrites)
-- ✅ Deduplication by timestamp
-- ✅ Incremental updates
-- ✅ Metadata tracking
-- ✅ Standard CSV format (pandas-compatible)
-
-### Phase 7: Article Summarization Toolkit (Hour 11-12)
-
-**User Request:**
-> "Extract text from https://www.citadelsecurities.com/news-and-insights/politics-policy-rba-boe-boj/ and summarize it. Do you need GenAI API?"
-
-**Challenge:**
-- Website returns **403 Forbidden** (blocks automated access)
-
-**Solution - Comprehensive Toolkit:**
-
-1. **Multiple Extraction Methods:**
-   - `extract_article_basic()` - Standard web scraping
-   - `extract_article_advanced()` - Using newspaper3k
-   - `extract_from_clipboard()` - **Workaround for 403 errors**
-
-2. **4 Summarization Approaches:**
-
-   **Free Options (No API needed):**
-   - `summarize_extractive()` - Frequency-based sentence selection
-   - `summarize_with_transformers()` - HuggingFace BART model
-
-   **Paid Options (Best quality):**
-   - `summarize_with_llm()` - Claude API (multiple styles)
-   - `summarize_with_openai()` - GPT-4 API
-
-3. **Answer to "Do you need GenAI API?"**
-   - **NO** for basic use (extractive works great)
-   - **NO** for better quality (Transformers is free)
-   - **YES** for best quality (but optional)
-
-**Implementation Highlights:**
+All extractors return a dict. Successful:
 ```python
-# Handle 403 errors gracefully
-def extract_article_basic(url):
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        # ... extract content
-    except requests.exceptions.HTTPError as e:
-        return {
-            'error': f'HTTP Error {e.response.status_code}',
-            'suggestion': 'Try manual copy-paste or Selenium',
-            'success': False
-        }
+{'vix': 15.5, 'change_1d': -2.1, 'latest_date': '2026-02-28', 'source': 'Yahoo Finance', 'historical': pd.Series(...)}
 ```
-
-**Created Files:**
-- `article_summarizer.py` (400+ LOC)
-- `summarize_citadel_article.py` (100 LOC)
-- `ARTICLE_SUMMARIZER_GUIDE.md` (comprehensive docs)
-
----
-
-## 🤖 AI Development Methodology
-
-### How I Approached This Project
-
-1. **Requirements Analysis:**
-   - Read and understood all 10 indicators
-   - Researched data sources
-   - Identified technical constraints (API keys, rate limits, 403 errors)
-
-2. **Incremental Development:**
-   - Started with core architecture
-   - Implemented working indicators first (Yahoo Finance, FRED)
-   - Added problematic sources later with fallbacks
-   - Tested each module before integration
-
-3. **Error-First Design:**
-   - Assumed sources would fail
-   - Wrapped everything in try-catch
-   - Provided helpful error messages
-   - Documented workarounds
-
-4. **User-Centric Documentation:**
-   - Multiple documentation levels (quick start, comprehensive, technical)
-   - Examples for every feature
-   - Troubleshooting sections
-   - Clear next steps
-
-5. **Proactive Problem Solving:**
-   - Anticipated Streamlit Cloud deployment issues
-   - Created workarounds before user encountered them
-   - Provided multiple solutions for each problem
-
-### Code Quality Practices
-
-**Modularity:**
+Failed:
 ```python
-# Each extractor is self-contained
-def get_indicator():
-    """Fetch indicator with complete error handling."""
-    # Implementation here
-    pass
+{'error': 'HTTP 403', 'note': 'Try manual approach', 'suggestion': '...'}
 ```
 
-**Documentation:**
-```python
-def function(arg):
-    """
-    Clear description.
+Equity financials return a nested dict per company with `income_statement`, `balance_sheet`, `cash_flow`, `valuation`, `financial_analysis` sections, each containing lists aligned to `quarters` list.
 
-    Args:
-        arg: What it does
+## Known-broken indicators
 
-    Returns:
-        Dict with 'value' and 'error' keys
-    """
+| Indicator | Source | Problem | Fallback |
+|-----------|--------|---------|----------|
+| S&P 500 Forward P/E | MacroMicro web scrape | 403 Forbidden (bot detection) | Uses SPY trailing P/E via `get_sp500_forward_pe_fallback()` |
+| S&P 500 Put/Call Ratio | CBOE / ycharts scrape | Unreliable, often blocked | Falls back to FRED `PCERTOT` series or SPY options calc |
+| TSM (SEC EDGAR) | SEC EDGAR XBRL | IFRS namespace, not us-gaap | Yahoo Finance only |
+
+## Common tasks
+
+**Add a new indicator:**
+1. Create a function in the appropriate `data_extractors/*.py` module
+2. Add a `_fetch_with_error_handling()` call in `data_aggregator.py` `fetch_all_indicators()`
+3. Add display logic in `app.py` under the appropriate tab
+4. The cache and CSV export will pick it up automatically
+
+**Add a new equity financial metric:**
+1. Add the XBRL concept(s) to `sec_extractor.py` in `get_company_financials_sec()`
+2. Add the Yahoo Finance key to `equity_financials_extractor.py`
+3. Add the column key to `INCOME_KEYS`, `BALANCE_KEYS`, or `CASHFLOW_KEYS` in `extract_historical_data.py`
+4. Add display logic in `app.py` tab 6
+
+**Debug a failed indicator:**
+```bash
+python -c "from data_extractors.yfinance_extractors import get_vix; print(get_vix())"
+python -c "from data_extractors.sec_extractor import get_company_financials_sec; print(get_company_financials_sec('AAPL'))"
 ```
 
-**Error Handling:**
-```python
-try:
-    result = fetch_data()
-except SpecificError as e:
-    return {
-        'error': str(e),
-        'suggestion': 'How to fix it',
-        'alternative': 'Other options'
-    }
-```
+**Change extraction schedule:**
+1. Edit times in `com.macro2.scheduled-extract.plist`
+2. Update the echo line in `setup_launchd.sh` to match
+3. Run `bash setup_launchd.sh` to reload
 
-### Testing Approach
+## Deployment gotcha (Streamlit Cloud)
 
-**Manual Testing:**
-- Tested each indicator individually
-- Verified error handling for failed sources
-- Checked UI rendering for all tabs
-- Validated CSV export functionality
+`requirements.txt` uses `pandas>=2.2.0` (not pinned). Pinning `pandas==2.1.4` breaks on Python 3.13 (compilation fails). All deps use `>=` minimum versions for this reason.
 
-**Edge Cases Handled:**
-- API keys not set
-- Network failures
-- 403 Forbidden errors
-- Missing optional dependencies
-- Malformed data
-- Empty responses
+## Tech stack
 
----
-
-## 📊 Project Statistics
-
-### Development Metrics
-
-| Metric | Value |
-|--------|-------|
-| **Total Time** | ~12 hours |
-| **Lines of Code** | 2,900+ LOC |
-| **Python Modules** | 12 files |
-| **Documentation Pages** | 7 comprehensive guides |
-| **Data Sources Integrated** | 6 sources (FRED, Yahoo, OpenBB, Shiller, MacroMicro, CBOE) |
-| **Indicators Implemented** | 10 indicators |
-| **CSV Files Generated** | 11 files |
-| **Success Rate** | 80% (8/10 working, 2/10 limited by source) |
-
-### Code Breakdown
-
-| Component | Lines of Code | Files |
-|-----------|--------------|-------|
-| Data Extractors | 1,200 LOC | 5 files |
-| Dashboard UI | 350 LOC | 1 file |
-| Aggregator | 180 LOC | 1 file |
-| CSV Export System | 850 LOC | 3 files |
-| Article Tools | 500 LOC | 2 files |
-| Utilities | 150 LOC | 1 file |
-| Tests/Examples | 320 LOC | 2 files |
-
-### Documentation Breakdown
-
-| Document | Lines | Purpose |
-|----------|-------|---------|
-| README.md | 450 lines | Main documentation |
-| QUICKSTART.md | 80 lines | 5-minute setup |
-| STREAMLIT_CLOUD_SETUP.md | 180 lines | Cloud deployment |
-| DATA_EXTRACTION_GUIDE.md | 600 lines | CSV export guide |
-| ARTICLE_SUMMARIZER_GUIDE.md | 350 lines | Summarization guide |
-| STATUS.md | 750 lines | Project status |
-| CLAUDE.md | 500 lines | This document |
-
-**Total Documentation:** ~2,900 lines (nearly 1:1 with code!)
-
----
-
-## 🎓 Lessons Learned
-
-### What Worked Well
-
-1. **Modular Architecture:**
-   - Easy to add new indicators
-   - Easy to fix individual components
-   - Clear separation of concerns
-
-2. **Error-First Design:**
-   - System remained functional despite source failures
-   - Users got helpful error messages
-   - Alternatives documented
-
-3. **Comprehensive Documentation:**
-   - Multiple entry points for different user needs
-   - Examples reduced support questions
-   - Troubleshooting sections anticipated issues
-
-4. **Incremental Deployment:**
-   - Fixed issues early (Python 3.13 compatibility)
-   - Tested on Streamlit Cloud before finalizing
-   - Iterative improvements
-
-### Challenges Overcome
-
-1. **Web Scraping Limitations:**
-   - MacroMicro 403 errors → Documented manual workaround
-   - CBOE Put/Call unavailable → Provided alternatives
-   - Implemented clipboard extraction fallback
-
-2. **Dependency Management:**
-   - OpenBB build failures → Made it optional
-   - pandas Python 3.13 → Updated to compatible version
-   - Kept requirements minimal
-
-3. **Data Source Reliability:**
-   - Some sources update quarterly → Documented expectations
-   - Some require subscriptions → Clearly marked
-   - Implemented fallback chains
-
-### If I Could Start Over
-
-**Would Keep:**
-- Modular extractor architecture
-- Error-first design philosophy
-- Comprehensive documentation
-- Append-only CSV mechanism
-
-**Would Improve:**
-- Add unit tests from the start (currently none)
-- Implement rate limiting for APIs
-- Add data validation layer
-- Create Docker container for consistent environments
-
----
-
-## 🚀 Deployment Journey
-
-### Initial Deployment (January 11)
-
-```
-User: "Deploy to Streamlit"
-Me: *Creates dashboard, writes docs*
-Deployment: ❌ FAILED (pandas compilation error)
-```
-
-### Fix Deployment (January 16)
-
-```
-Issue: pandas==2.1.4 incompatible with Python 3.13
-Solution: Updated to pandas>=2.2.0, flexible versions
-Result: ✅ SUCCESS
-```
-
-### Production Ready (January 29)
-
-```
-Status: ✅ All working indicators operational
-        ✅ Cloud deployment successful
-        ✅ CSV export functional
-        ✅ Article tools complete
-        ✅ Comprehensive documentation
-```
-
----
-
-## 💡 AI Assistant Capabilities Demonstrated
-
-### What I Did Well
-
-1. **Understood Complex Requirements:**
-   - 10 different data sources
-   - Multiple API integrations
-   - Real-world deployment constraints
-
-2. **Proactive Problem Solving:**
-   - Anticipated Python 3.13 issues
-   - Created workarounds for 403 errors
-   - Provided multiple solution paths
-
-3. **Comprehensive Documentation:**
-   - Wrote ~2,900 lines of documentation
-   - Created guides for different user levels
-   - Included examples and troubleshooting
-
-4. **Error Handling:**
-   - Every function has try-catch
-   - Helpful error messages
-   - Suggested alternatives
-
-5. **Code Quality:**
-   - Modular architecture
-   - Clear naming
-   - Extensive comments
-   - PEP 8 compliant
-
-### Limitations Encountered
-
-1. **Testing:**
-   - Could not run code in real-time
-   - Had to reason through edge cases
-   - No automated test suite created
-
-2. **Dependency Issues:**
-   - Could not predict pandas compilation failure
-   - Required user feedback to fix
-
-3. **API Access:**
-   - Could not test 403 errors directly
-   - Had to infer from error messages
-
----
-
-## 🎯 Final Thoughts
-
-This project demonstrates how an AI assistant can:
-
-1. **Design and implement a full-stack application** from requirements to deployment
-2. **Handle multiple API integrations** with different authentication methods
-3. **Create production-ready code** with error handling and documentation
-4. **Solve real-world problems** like web scraping blocks and deployment issues
-5. **Provide comprehensive documentation** matching code volume
-
-**The result:** A production-ready macroeconomic indicators dashboard with:
-- ✅ 8/10 working indicators (80% success rate)
-- ✅ Real-time Streamlit deployment
-- ✅ CSV export with append-only mechanism
-- ✅ Article summarization toolkit
-- ✅ ~2,900 LOC + ~2,900 lines of documentation
-- ✅ 95% production readiness
-
-**Total value delivered:**
-- Saved weeks of development time
-- Professional-grade code quality
-- Comprehensive documentation
-- Deployment-ready system
-- Multiple bonus features (CSV export, article tools)
-
----
-
-## 📚 How to Use This Document
-
-**For Developers:**
-- See architecture decisions in Phase 1-2
-- Review error handling patterns
-- Learn from deployment fixes
-- Understand modular design
-
-**For Users:**
-- Understand what the system can/cannot do
-- Learn why certain design choices were made
-- See workarounds for limitations
-- Get context for documentation
-
-**For AI Researchers:**
-- Study AI development methodology
-- See capabilities and limitations
-- Understand iterative problem-solving
-- Review error-first design approach
-
----
-
-**Document Version:** 1.0
-**Created:** January 29, 2026
-**By:** Claude (Anthropic AI Assistant)
-**For:** macro_2 - Macroeconomic Indicators Dashboard
-
-**Repository:** https://github.com/cdavocazh/macro_2
-**AI Model:** Claude 3.5 Sonnet (claude-sonnet-4-5-20250929)
+- Python 3.10 (mambaforge), compatible with 3.8-3.13
+- Streamlit, pandas, yfinance, fredapi, beautifulsoup4, plotly, requests
+- SEC EDGAR XBRL API (no key needed)
+- macOS launchd for scheduling
+- Agent: openai-agents, langchain, langgraph, Minimax LLM API
