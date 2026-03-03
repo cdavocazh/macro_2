@@ -5,7 +5,7 @@
 Macroeconomic indicators dashboard with large-cap equity financials. Fetches 28+ indicators from financial APIs (yfinance, FRED, SEC EDGAR, web scrapers, MOF Japan), displays them in a Streamlit dashboard with 6 tabs, caches locally for fast startup, and exports to CSV.
 
 **Repo:** https://github.com/cdavocazh/macro_2
-**Branch:** claude/explain-codebase-mk9u0ailcf2rvksp-7uAZO
+**Branch:** main
 
 ## Quick commands
 
@@ -13,7 +13,7 @@ Macroeconomic indicators dashboard with large-cap equity financials. Fetches 28+
 # Run the dashboard (loads from cache if available, otherwise fetches live)
 streamlit run app.py
 
-# Refresh data manually (updates cache + CSVs, skips if <1h old)
+# Refresh data manually (updates cache + CSVs, skips if <15min old)
 python scheduled_extract.py
 python scheduled_extract.py --force    # ignore freshness guard
 
@@ -127,7 +127,7 @@ TOP_20_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM
 
 - **Cache-first startup:** Dashboard loads from `data_cache/all_indicators.json` instantly. Only fetches live when cache is missing or user clicks Refresh.
 - **Pandas serialization:** `helpers.py` has `_serialize_value()` / `_deserialize_value()` to handle `pd.Series`, `pd.DataFrame`, numpy types in JSON cache. These must stay in sync.
-- **Freshness guard:** `scheduled_extract.py` skips if cache is <1 hour old. Prevents duplicate API calls.
+- **Freshness guard:** `scheduled_extract.py` skips if cache is <15 minutes old. Prevents duplicate API calls.
 - **Append-only CSVs:** `extract_historical_data.py` uses `append_to_csv()` which deduplicates by timestamp column. Never overwrites.
 - **Graceful degradation:** Every extractor returns `{'error': msg}` on failure. Dashboard renders green cards for success, red for errors.
 - **FY-end quarter derivation (SEC):** Q4 = Annual 10-K value minus (Q1+Q2+Q3). Searches across ALL XBRL concept alternatives to handle companies that switch concepts mid-year (e.g. GOOGL).
@@ -152,7 +152,7 @@ TOP_20_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM
 **Python path:** `/Users/kriszhang/mambaforge/bin/python3`
 **Logs:** `logs/launchd_stdout.log`, `logs/launchd_stderr.log`
 
-launchd catches up missed runs after sleep (unlike cron). The freshness guard in `scheduled_extract.py` prevents redundant fetches.
+launchd catches up missed runs after sleep (unlike cron). The freshness guard in `scheduled_extract.py` prevents redundant fetches. A 10-minute `TimeOut` in the plist auto-kills hung processes (e.g., stalled HTTP connections) to prevent blocking subsequent scheduled runs.
 
 ## API keys
 

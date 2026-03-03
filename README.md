@@ -95,7 +95,7 @@ macro_2/
 
 ## Scheduling
 
-**macOS launchd** runs `scheduled_extract.py` at 1:00 AM, 8:30 AM, 1:00 PM, 5:00 PM, 10:00 PM GMT+8, Mon-Sat. Catches up missed runs after sleep (unlike cron). Freshness guard prevents redundant fetches within 1 hour.
+**macOS launchd** runs `scheduled_extract.py` at 1:00 AM, 8:30 AM, 1:00 PM, 5:00 PM, 10:00 PM GMT+8, Mon-Sat. Catches up missed runs after sleep (unlike cron). Freshness guard prevents redundant fetches within 15 minutes. A 10-minute timeout auto-kills hung processes to prevent blocking subsequent runs.
 
 ```bash
 bash setup_launchd.sh              # Install

@@ -1,8 +1,8 @@
 # Project Status Report: Macroeconomic Indicators Dashboard
 
 **Project:** macro_2 - Real-time Macroeconomic Indicators Dashboard
-**Last Updated:** March 1, 2026
-**Version:** 2.0.0
+**Last Updated:** March 3, 2026
+**Version:** 2.0.1
 **Status:** Production Ready
 
 ---
@@ -84,7 +84,7 @@ AI agent in `/agent/` subfolder that reviews financial data quality using 8 shar
 
 ## Scheduling
 
-**macOS launchd** runs `scheduled_extract.py` at 1:00 AM, 8:30 AM, 1:00 PM, 5:00 PM, 10:00 PM GMT+8, Mon-Sat. Catches up missed runs after sleep. Freshness guard prevents redundant fetches within 1 hour.
+**macOS launchd** runs `scheduled_extract.py` at 1:00 AM, 8:30 AM, 1:00 PM, 5:00 PM, 10:00 PM GMT+8, Mon-Sat. Catches up missed runs after sleep. Freshness guard prevents redundant fetches within 15 minutes. A 10-minute `TimeOut` auto-kills hung processes to prevent blocking subsequent runs.
 
 ## File Count
 
@@ -96,6 +96,6 @@ AI agent in `/agent/` subfolder that reviews financial data quality using 8 shar
 
 ---
 
-**Document Version:** 2.0.0
-**Last Updated:** March 1, 2026
+**Document Version:** 2.0.1
+**Last Updated:** March 3, 2026
 **Repository:** https://github.com/cdavocazh/macro_2
