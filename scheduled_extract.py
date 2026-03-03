@@ -62,7 +62,7 @@ def run_extraction(force=False, quiet=False):
     Main extraction routine.
 
     1. Check last cache timestamp
-    2. Skip if data is fresh (< 1 hour), unless --force
+    2. Skip if data is fresh (< 15 min), unless --force
     3. Fetch all 21 indicators -> saves to data_cache/
     4. Append to historical_data/ CSVs
     5. Export latest to data_export/ CSVs
@@ -74,7 +74,7 @@ def run_extraction(force=False, quiet=False):
     last_time = get_last_cache_time()
     print_gap_info(last_time, quiet=quiet)
 
-    freshness_threshold_hours = 1
+    freshness_threshold_hours = 0.25
     if last_time is not None and not force:
         gap_hours = (datetime.now() - last_time).total_seconds() / 3600
         if gap_hours < freshness_threshold_hours:
@@ -160,7 +160,7 @@ def main():
     parser.add_argument(
         '--force', '-f',
         action='store_true',
-        help='Force refresh even if cache is fresh (< 1 hour old)'
+        help='Force refresh even if cache is fresh (< 15 min old)'
     )
     parser.add_argument(
         '--cron',
