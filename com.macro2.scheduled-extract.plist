@@ -66,6 +66,10 @@
     <key>StandardErrorPath</key>
     <string>/Users/kriszhang/Github/macro_2/logs/launchd_stderr.log</string>
 
+    <!-- Kill the process if it runs longer than 10 minutes (600s) -->
+    <key>TimeOut</key>
+    <integer>600</integer>
+
     <!-- Environment variables for the python process -->
     <key>EnvironmentVariables</key>
     <dict>
