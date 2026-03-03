@@ -208,6 +208,21 @@ python -c "from data_extractors.sec_extractor import get_company_financials_sec;
 2. Update the echo line in `setup_launchd.sh` to match
 3. Run `bash setup_launchd.sh` to reload
 
+## Documentation sync rule
+
+**MANDATORY:** When making ANY code change that affects behavior, configuration, or architecture, you MUST update the relevant documentation in the same commit. Specifically:
+
+| What changed | Update these docs |
+|-------------|-------------------|
+| Scheduling config (plist, freshness guard, timeouts) | CLAUDE.md "Scheduling" section, STATUS.md "Scheduling" section, README.md "Scheduling" section |
+| New/removed indicator or extractor | CLAUDE.md "Architecture" + tab table, STATUS.md tab table, README.md "Dashboard Tabs" + "Project Structure" |
+| New/removed agent tool | `agent/README.md` tools table, `agent/CLAUDE.md` tool table, `agent/STATUS.md` checklists |
+| requirements.txt changes | CLAUDE.md "Tech stack", README.md if a new data source |
+| Key design decisions or bug fixes | CLAUDE.md "Key design decisions", STATUS.md "Known Limitations" if relevant |
+| Branch, repo, or deployment changes | All three: CLAUDE.md, STATUS.md, README.md headers/footers |
+
+**Never commit code changes without checking these docs for staleness.** When in doubt, update. Bump the version in STATUS.md for any non-trivial change.
+
 ## Deployment gotcha (Streamlit Cloud)
 
 `requirements.txt` uses `pandas>=2.2.0` (not pinned). Pinning `pandas==2.1.4` breaks on Python 3.13 (compilation fails). All deps use `>=` minimum versions for this reason.
