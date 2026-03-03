@@ -22,6 +22,7 @@ Schedule with launchd (macOS) - see CLAUDE.md for .plist example.
 """
 
 import argparse
+import socket
 import sys
 import os
 import time
@@ -29,6 +30,41 @@ from datetime import datetime
 
 # Ensure we can import project modules when run from any directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# ── Network connectivity check ───────────────────────────────────────────
+# Hosts to probe — one per major data source. If ANY resolves, we proceed.
+_DNS_PROBE_HOSTS = [
+    ('query1.finance.yahoo.com', 443),   # yfinance
+    ('api.stlouisfed.org', 443),          # FRED
+    ('data.sec.gov', 443),               # SEC EDGAR
+]
+_MAX_RETRIES = 6        # total attempts
+_RETRY_DELAY_SECS = 10  # wait between retries (6 × 10s = 60s max wait)
+
+
+def wait_for_network(quiet=False):
+    """Block until at least one data-source host is reachable via DNS.
+
+    Retries up to _MAX_RETRIES times with _RETRY_DELAY_SECS between attempts.
+    Returns True if network became available, False if all retries exhausted.
+    """
+    for attempt in range(1, _MAX_RETRIES + 1):
+        for host, port in _DNS_PROBE_HOSTS:
+            try:
+                socket.create_connection((host, port), timeout=5).close()
+                if attempt > 1 and not quiet:
+                    print(f"  Network available (resolved {host} on attempt {attempt})")
+                return True
+            except (socket.timeout, socket.error, OSError):
+                continue
+        # All hosts failed this round
+        if not quiet:
+            print(f"  Network check {attempt}/{_MAX_RETRIES}: no hosts reachable, "
+                  f"retrying in {_RETRY_DELAY_SECS}s...")
+        if attempt < _MAX_RETRIES:
+            time.sleep(_RETRY_DELAY_SECS)
+
+    return False
 
 
 def get_last_cache_time():
@@ -82,6 +118,19 @@ def run_extraction(force=False, quiet=False):
                 print(f"\nData is fresh (< {freshness_threshold_hours}h old). Skipping.")
                 print("Use --force to refresh anyway.")
             return
+
+    # ── Step 1b: Wait for network connectivity ─────────────────────
+    if not quiet:
+        print("\nChecking network connectivity...")
+    if not wait_for_network(quiet=quiet):
+        ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        msg = f"[{ts}] Aborted: no network after {_MAX_RETRIES} retries ({_MAX_RETRIES * _RETRY_DELAY_SECS}s)"
+        if quiet:
+            print(msg)
+        else:
+            print(f"\n❌ {msg}")
+            print("Check VPN/Wi-Fi connection and try again.")
+        return
 
     if not quiet:
         print("\n" + "=" * 60)
