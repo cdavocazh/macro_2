@@ -135,6 +135,7 @@ TOP_20_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM
 - **Cross-concept merging (SEC):** Revenue, net income can use different XBRL concepts per company. Merged from all alternatives; first non-None wins.
 - **Dual-source equity storage:** Historical data saves per-company quarterly CSVs into `yahoo_finance/` and `sec_edgar/` subdirectories for cross-validation.
 - **Singleton aggregator:** `get_aggregator()` returns a single global instance to prevent duplicate fetches within a Streamlit session.
+- **Network connectivity check:** `scheduled_extract.py` probes Yahoo/FRED/SEC hosts before starting extraction. Retries up to 6 times (10s apart, 60s max) to ride out VPN reconnections. Aborts cleanly if no network.
 
 ## SEC EDGAR XBRL specifics
 
