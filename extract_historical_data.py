@@ -1,7 +1,7 @@
 """
 Historical Data Extraction Script for Macroeconomic Indicators
 
-Downloads all 28 indicators and saves to CSV files with:
+Downloads all 50 indicators and saves to CSV files with:
 - Append-only mode (adds new data without overwriting)
 - Last timestamp tracking
 - Historical data preservation
@@ -798,6 +798,32 @@ def _save_equity_source(companies, source_dir, source_label):
     return results
 
 
+def save_single_company(ticker, company_data, source_label):
+    """Save a single company's financial data to the appropriate CSV.
+
+    Thin wrapper around _save_equity_source() for use by the dashboard (on-demand
+    fetches) and monitoring scripts (auto-update).
+
+    Args:
+        ticker: Ticker symbol (e.g., 'CRM')
+        company_data: Dict from get_company_financials_yahoo() or get_company_financials_sec()
+        source_label: 'Yahoo Finance' or 'SEC EDGAR'
+
+    Returns:
+        list of result dicts, or empty list on error
+    """
+    eq_base = os.path.join(OUTPUT_DIR, 'equity_financials')
+    if source_label == 'Yahoo Finance':
+        source_dir = os.path.join(eq_base, 'yahoo_finance')
+    elif source_label == 'SEC EDGAR':
+        source_dir = os.path.join(eq_base, 'sec_edgar')
+    else:
+        source_dir = os.path.join(eq_base, source_label.lower().replace(' ', '_'))
+
+    companies = {ticker: company_data}
+    return _save_equity_source(companies, source_dir, source_label)
+
+
 def extract_equity_financials():
     """Extract financial data for top 20 large-cap companies from both Yahoo Finance
     and SEC EDGAR, saving per-company CSVs into source-specific subdirectories.
@@ -928,6 +954,262 @@ def create_summary_file(results):
         print(f"  ❌ Error creating summary: {str(e)}")
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Macro-to-Market v1.5 — 22 New Historical CSV Extractors
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── Inflation ─────────────────────────────────────────────────────────────────
+
+def extract_cpi_headline():
+    """Extract Headline CPI YoY% (CPIAUCSL) to CSV."""
+    return _extract_simple_series(
+        'CPI Headline', fred_extractors.get_headline_cpi,
+        'cpi_headline.csv', 'cpi'
+    )
+
+
+def extract_core_cpi():
+    """Extract Core CPI YoY% (CPILFESL) — special handling for multi-series return."""
+    print("\n📊 Extracting Core CPI...")
+    try:
+        data = fred_extractors.get_core_inflation()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+        hist = data.get('historical_core_cpi')
+        if hist is None or (hasattr(hist, 'empty') and hist.empty):
+            print("  ⚠️  No Core CPI historical data")
+            return None
+        df = pd.DataFrame({
+            'timestamp': hist.index,
+            'date': [d.date() if hasattr(d, 'date') else d for d in hist.index],
+            'core_cpi': hist.values
+        })
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        append_to_csv('core_cpi.csv', df)
+        return {'indicator': 'Core CPI', 'last_date': df['date'].max(), 'rows': len(df)}
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+def extract_core_pce():
+    """Extract Core PCE YoY% (PCEPILFE) — special handling for multi-series return."""
+    print("\n📊 Extracting Core PCE...")
+    try:
+        data = fred_extractors.get_core_inflation()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+        hist = data.get('historical_core_pce')
+        if hist is None or (hasattr(hist, 'empty') and hist.empty):
+            print("  ⚠️  No Core PCE historical data")
+            return None
+        df = pd.DataFrame({
+            'timestamp': hist.index,
+            'date': [d.date() if hasattr(d, 'date') else d for d in hist.index],
+            'core_pce': hist.values
+        })
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        append_to_csv('core_pce.csv', df)
+        return {'indicator': 'Core PCE', 'last_date': df['date'].max(), 'rows': len(df)}
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+def extract_pce_headline():
+    """Extract PCE Headline Price Index (PCEPI) to CSV."""
+    return _extract_simple_series(
+        'PCE Headline', fred_extractors.get_pce_headline,
+        'pce_headline.csv', 'pce'
+    )
+
+
+def extract_ppi():
+    """Extract PPI Final Demand YoY% (PPIFIS) to CSV."""
+    return _extract_simple_series(
+        'PPI Final Demand', fred_extractors.get_ppi,
+        'ppi.csv', 'ppi'
+    )
+
+
+def extract_breakeven_5y():
+    """Extract 5Y Breakeven Inflation (T5YIE) — special handling for multi-series return."""
+    print("\n📊 Extracting 5Y Breakeven Inflation...")
+    try:
+        data = fred_extractors.get_breakeven_inflation()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+        hist = data.get('historical_5y')
+        if hist is None or (hasattr(hist, 'empty') and hist.empty):
+            print("  ⚠️  No 5Y breakeven historical data")
+            return None
+        df = pd.DataFrame({
+            'timestamp': hist.index,
+            'date': [d.date() if hasattr(d, 'date') else d for d in hist.index],
+            'breakeven_5y': hist.values
+        })
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        append_to_csv('breakeven_5y.csv', df)
+        return {'indicator': '5Y Breakeven', 'last_date': df['date'].max(), 'rows': len(df)}
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+def extract_breakeven_10y():
+    """Extract 10Y Breakeven Inflation (T10YIE) — from get_breakeven_inflation()."""
+    print("\n📊 Extracting 10Y Breakeven Inflation...")
+    try:
+        data = fred_extractors.get_breakeven_inflation()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+        hist = data.get('historical_10y')
+        if hist is None or (hasattr(hist, 'empty') and hist.empty):
+            print("  ⚠️  No 10Y breakeven historical data")
+            return None
+        df = pd.DataFrame({
+            'timestamp': hist.index,
+            'date': [d.date() if hasattr(d, 'date') else d for d in hist.index],
+            'breakeven_10y': hist.values
+        })
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        append_to_csv('breakeven_10y.csv', df)
+        return {'indicator': '10Y Breakeven', 'last_date': df['date'].max(), 'rows': len(df)}
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+def extract_forward_inflation_5y5y():
+    """Extract 5Y5Y Forward Inflation Expectation (T5YIFR) to CSV."""
+    return _extract_simple_series(
+        '5Y5Y Forward Inflation', fred_extractors.get_5y5y_forward_inflation,
+        'forward_inflation_5y5y.csv', 'forward_inflation_5y5y'
+    )
+
+
+# ── Employment ────────────────────────────────────────────────────────────────
+
+def extract_unemployment_rate():
+    """Extract Unemployment Rate (UNRATE) to CSV."""
+    return _extract_simple_series(
+        'Unemployment Rate', fred_extractors.get_unemployment_rate,
+        'unemployment_rate.csv', 'unemployment_rate'
+    )
+
+
+def extract_nonfarm_payrolls():
+    """Extract Total Nonfarm Payrolls (PAYEMS) to CSV."""
+    return _extract_simple_series(
+        'Nonfarm Payrolls', fred_extractors.get_nonfarm_payrolls,
+        'nonfarm_payrolls.csv', 'nonfarm_payrolls'
+    )
+
+
+def extract_initial_claims():
+    """Extract Initial Jobless Claims (ICSA) to CSV."""
+    return _extract_simple_series(
+        'Initial Claims', fred_extractors.get_initial_jobless_claims,
+        'initial_claims.csv', 'initial_claims'
+    )
+
+
+def extract_continuing_claims():
+    """Extract Continuing Jobless Claims (CCSA) to CSV."""
+    return _extract_simple_series(
+        'Continuing Claims', fred_extractors.get_continuing_claims,
+        'continuing_claims.csv', 'continuing_claims'
+    )
+
+
+# ── Yield Curve ───────────────────────────────────────────────────────────────
+
+def extract_5y_yield():
+    """Extract 5-Year Treasury Yield (DGS5) to CSV."""
+    return _extract_simple_series(
+        '5Y Treasury Yield', fred_extractors.get_5y_treasury_yield,
+        'us_5y_yield.csv', 'us_5y_yield'
+    )
+
+
+def extract_30y_yield():
+    """Extract 30-Year Treasury Yield (DGS30) to CSV."""
+    return _extract_simple_series(
+        '30Y Treasury Yield', fred_extractors.get_30y_treasury_yield,
+        'us_30y_yield.csv', 'us_30y_yield'
+    )
+
+
+def extract_spread_10y3m():
+    """Extract 10Y-3M Treasury Spread (T10Y3M) to CSV."""
+    return _extract_simple_series(
+        '10Y-3M Spread', fred_extractors.get_10y3m_spread,
+        'spread_10y3m.csv', 'spread_10y3m'
+    )
+
+
+def extract_fed_funds_rate():
+    """Extract Effective Fed Funds Rate (DFF) to CSV."""
+    return _extract_simple_series(
+        'Fed Funds Rate', fred_extractors.get_fed_funds_rate,
+        'fed_funds_rate.csv', 'fed_funds_rate'
+    )
+
+
+def extract_fed_target_upper():
+    """Extract Fed Funds Target Rate Upper Bound (DFEDTARU) to CSV."""
+    return _extract_simple_series(
+        'Fed Target Upper', fred_extractors.get_fed_target_upper,
+        'fed_target_upper.csv', 'fed_target_upper'
+    )
+
+
+def extract_real_yield_5y():
+    """Extract 5Y TIPS Real Yield (DFII5) to CSV."""
+    return _extract_simple_series(
+        '5Y TIPS Real Yield', fred_extractors.get_real_yield_5y,
+        'real_yield_5y.csv', 'real_yield_5y'
+    )
+
+
+def extract_real_yield_10y():
+    """Extract 10Y TIPS Real Yield (DFII10) to CSV."""
+    return _extract_simple_series(
+        '10Y TIPS Real Yield', fred_extractors.get_real_yield_10y,
+        'real_yield_10y.csv', 'real_yield_10y'
+    )
+
+
+# ── Credit Spreads ────────────────────────────────────────────────────────────
+
+def extract_hy_oas():
+    """Extract ICE BofA HY OAS (BAMLH0A0HYM2) to CSV."""
+    return _extract_simple_series(
+        'HY OAS', fred_extractors.get_hy_credit_spread,
+        'hy_oas.csv', 'hy_oas'
+    )
+
+
+def extract_ig_oas():
+    """Extract ICE BofA IG OAS (BAMLC0A0CM) to CSV."""
+    return _extract_simple_series(
+        'IG OAS', fred_extractors.get_ig_credit_spread,
+        'ig_oas.csv', 'ig_oas'
+    )
+
+
+def extract_bbb_oas():
+    """Extract ICE BofA BBB OAS (BAMLC0A4CBBB) to CSV."""
+    return _extract_simple_series(
+        'BBB OAS', fred_extractors.get_bbb_credit_spread,
+        'bbb_oas.csv', 'bbb_oas'
+    )
+
+
 def extract_all_historical_data():
     """
     Extract all available historical data and save to CSV files.
@@ -1002,6 +1284,38 @@ def extract_all_historical_data():
 
     # ── Indicator 29: Large-cap Equity Financials ────────────
     _run(extract_equity_financials, 'equity_financials')
+
+    # ── Indicators 30+: Macro-to-Market v1.5 ──────────────────
+
+    # Inflation
+    _run(extract_cpi_headline, 'cpi_headline')
+    _run(extract_core_cpi, 'core_cpi')
+    _run(extract_core_pce, 'core_pce')
+    _run(extract_pce_headline, 'pce_headline')
+    _run(extract_ppi, 'ppi')
+    _run(extract_breakeven_5y, 'breakeven_5y')
+    _run(extract_breakeven_10y, 'breakeven_10y')
+    _run(extract_forward_inflation_5y5y, 'forward_inflation_5y5y')
+
+    # Employment
+    _run(extract_unemployment_rate, 'unemployment_rate')
+    _run(extract_nonfarm_payrolls, 'nonfarm_payrolls')
+    _run(extract_initial_claims, 'initial_claims')
+    _run(extract_continuing_claims, 'continuing_claims')
+
+    # Yield Curve
+    _run(extract_5y_yield, 'us_5y_yield')
+    _run(extract_30y_yield, 'us_30y_yield')
+    _run(extract_spread_10y3m, 'spread_10y3m')
+    _run(extract_fed_funds_rate, 'fed_funds_rate')
+    _run(extract_fed_target_upper, 'fed_target_upper')
+    _run(extract_real_yield_5y, 'real_yield_5y')
+    _run(extract_real_yield_10y, 'real_yield_10y')
+
+    # Credit Spreads
+    _run(extract_hy_oas, 'hy_oas')
+    _run(extract_ig_oas, 'ig_oas')
+    _run(extract_bbb_oas, 'bbb_oas')
 
     # Create summary file
     create_summary_file(results)

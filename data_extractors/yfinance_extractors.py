@@ -341,3 +341,110 @@ def get_jpy_exchange_rate():
         }
     except Exception as e:
         return {'error': f"Error fetching JPY exchange rate: {str(e)}"}
+
+
+# ── v2.3.0: Major FX Pairs + Market Concentration ─────────────────────────
+
+
+def get_major_fx_pairs():
+    """
+    Get major FX pairs: EUR/USD, GBP/USD, EUR/JPY.
+    Returns all three in a single dict to minimize API calls.
+    """
+    try:
+        pairs = {
+            'EURUSD=X': ('eur_usd', 'EUR/USD'),
+            'GBPUSD=X': ('gbp_usd', 'GBP/USD'),
+            'EURJPY=X': ('eur_jpy', 'EUR/JPY'),
+        }
+
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=365)
+        result = {'source': 'yfinance', 'units': 'Exchange rates'}
+
+        for ticker_symbol, (key, label) in pairs.items():
+            try:
+                ticker = yf.Ticker(ticker_symbol)
+                hist = ticker.history(start=start_date, end=end_date)
+                if hist.empty:
+                    hist = ticker.history(start=end_date - timedelta(days=730), end=end_date)
+
+                if not hist.empty:
+                    latest = float(hist['Close'].iloc[-1])
+                    latest_date = hist.index[-1]
+                    prev = float(hist['Close'].iloc[-2]) if len(hist) > 1 else latest
+                    change_pct = round(((latest / prev) - 1) * 100, 2)
+
+                    result[key] = round(latest, 4)
+                    result[f'{key}_change_1d'] = change_pct
+                    result[f'historical_{key}'] = hist['Close']
+                    result['latest_date'] = latest_date.strftime('%Y-%m-%d')
+                else:
+                    result[key] = None
+            except Exception:
+                result[key] = None
+
+        if all(result.get(k) is None for k in ['eur_usd', 'gbp_usd', 'eur_jpy']):
+            return {'error': 'No FX pair data available'}
+
+        return result
+
+    except Exception as e:
+        return {'error': f"Error fetching major FX pairs: {str(e)}"}
+
+
+def get_market_concentration():
+    """
+    Get SPY/RSP ratio — cap-weighted vs equal-weight S&P 500.
+    Rising ratio = increasing mega-cap concentration (Mag 7 dominance).
+    Falling ratio = market broadening.
+    """
+    try:
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=365)
+
+        spy = yf.Ticker("SPY")
+        rsp = yf.Ticker("RSP")
+
+        spy_hist = spy.history(start=start_date, end=end_date)
+        rsp_hist = rsp.history(start=start_date, end=end_date)
+
+        if spy_hist.empty or rsp_hist.empty:
+            return {'error': 'No SPY or RSP data available'}
+
+        # Align dates
+        spy_close = spy_hist['Close']
+        rsp_close = rsp_hist['Close']
+
+        # Compute ratio
+        common_idx = spy_close.index.intersection(rsp_close.index)
+        if len(common_idx) < 2:
+            return {'error': 'Insufficient overlapping data for SPY/RSP ratio'}
+
+        spy_aligned = spy_close[common_idx]
+        rsp_aligned = rsp_close[common_idx]
+        ratio = spy_aligned / rsp_aligned
+
+        latest = round(float(ratio.iloc[-1]), 4)
+        prev = float(ratio.iloc[-2]) if len(ratio) > 1 else latest
+        change_1d = round(((latest / prev) - 1) * 100, 2)
+
+        # 30-day change for trend
+        if len(ratio) >= 22:
+            prev_30d = float(ratio.iloc[-22])
+            change_30d = round(((latest / prev_30d) - 1) * 100, 2)
+        else:
+            change_30d = 0
+
+        return {
+            'spy_rsp_ratio': latest,
+            'change_1d': change_1d,
+            'change_30d': change_30d,
+            'latest_date': ratio.index[-1].strftime('%Y-%m-%d'),
+            'source': 'yfinance (SPY/RSP)',
+            'units': 'Ratio',
+            'historical': ratio,
+            'interpretation': f"30D: {'+' if change_30d >= 0 else ''}{change_30d}%. Rising = mega-cap dominance. Falling = broadening.",
+        }
+    except Exception as e:
+        return {'error': f"Error fetching market concentration: {str(e)}"}

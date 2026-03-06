@@ -488,7 +488,24 @@ def _get_recent_quarters(usgaap, n_quarters=5):
     if not all_dates:
         return []
 
-    return sorted(all_dates, reverse=True)[:n_quarters]
+    # Deduplicate by quarter label — when two dates map to the same quarter
+    # (e.g., AAPL FY-end 2023-09-30 and quarterly 2023-07-01 both → 2023-Q3),
+    # prefer the quarterly filing date (from 10-Q) over the annual-derived date.
+    sorted_dates = sorted(all_dates, reverse=True)
+    seen_quarters = {}
+    for d in sorted_dates:
+        q = _end_date_to_quarter(d)
+        if q not in seen_quarters:
+            seen_quarters[q] = d
+        else:
+            # Keep the date that came from a quarterly filing (in quarterly_dates set)
+            existing = seen_quarters[q]
+            if d in quarterly_dates and existing not in quarterly_dates:
+                seen_quarters[q] = d
+            # Otherwise keep the existing (first encountered, i.e., more recent date)
+
+    deduped = sorted(seen_quarters.values(), reverse=True)
+    return deduped[:n_quarters]
 
 
 def _end_date_to_quarter(end_str):
@@ -801,7 +818,7 @@ def get_company_financials_sec(ticker_symbol):
             return {'ticker': ticker_symbol, 'error': f'No us-gaap data for {ticker_symbol} (CIK {cik})'}
 
         # Step 3: Determine quarter timeline from revenue data
-        end_dates = _get_recent_quarters(usgaap, n_quarters=5)
+        end_dates = _get_recent_quarters(usgaap, n_quarters=24)
         if not end_dates:
             return {'ticker': ticker_symbol, 'error': f'No quarterly revenue data found for {ticker_symbol}'}
 
@@ -1121,6 +1138,86 @@ def get_company_financials_sec(ticker_symbol):
         return {'ticker': ticker_symbol, 'error': f'SEC API request error: {str(e)}'}
     except Exception as e:
         return {'ticker': ticker_symbol, 'error': str(e), 'traceback': traceback.format_exc()}
+
+
+def get_latest_filing_dates(ticker_symbol):
+    """
+    Lightweight: get latest 10-Q and 10-K filing dates from SEC EDGAR.
+
+    Uses the submissions endpoint (~100KB, <200ms) instead of the full
+    companyfacts endpoint (~2-10MB). Ideal for freshness checks.
+
+    Args:
+        ticker_symbol: Ticker symbol (e.g., 'AAPL')
+
+    Returns:
+        dict with:
+            'ticker': str,
+            'cik': str,
+            'latest_10q': {'filing_date': str, 'report_date': str, 'quarter': str} or None,
+            'latest_10k': {'filing_date': str, 'report_date': str, 'fiscal_year': str} or None,
+            'error': str (only on failure)
+    """
+    try:
+        cik = _ticker_to_cik(ticker_symbol)
+        if cik is None:
+            return {'ticker': ticker_symbol, 'error': f'CIK not found for {ticker_symbol}'}
+
+        submissions = _sec_get(f'https://data.sec.gov/submissions/CIK{cik}.json')
+        recent = submissions.get('filings', {}).get('recent', {})
+        forms = recent.get('form', [])
+        filing_dates = recent.get('filingDate', [])
+        report_dates = recent.get('reportDate', [])
+
+        result = {
+            'ticker': ticker_symbol,
+            'cik': cik,
+            'entity_name': submissions.get('name', ticker_symbol),
+            'latest_10q': None,
+            'latest_10k': None,
+        }
+
+        for i, form in enumerate(forms):
+            filing_date = filing_dates[i] if i < len(filing_dates) else None
+            report_date = report_dates[i] if i < len(report_dates) else None
+
+            if form in ('10-Q', '6-K') and result['latest_10q'] is None:
+                quarter_label = None
+                if report_date:
+                    try:
+                        dt = datetime.strptime(report_date, '%Y-%m-%d')
+                        q = (dt.month - 1) // 3 + 1
+                        quarter_label = f"{dt.year}-Q{q}"
+                    except ValueError:
+                        pass
+                result['latest_10q'] = {
+                    'filing_date': filing_date,
+                    'report_date': report_date,
+                    'quarter': quarter_label,
+                    'form': form,
+                }
+
+            elif form in ('10-K', '20-F') and result['latest_10k'] is None:
+                fiscal_year = None
+                if report_date:
+                    try:
+                        fiscal_year = report_date[:4]
+                    except (IndexError, TypeError):
+                        pass
+                result['latest_10k'] = {
+                    'filing_date': filing_date,
+                    'report_date': report_date,
+                    'fiscal_year': fiscal_year,
+                    'form': form,
+                }
+
+            if result['latest_10q'] and result['latest_10k']:
+                break
+
+        return result
+
+    except Exception as e:
+        return {'ticker': ticker_symbol, 'error': str(e)}
 
 
 def get_top20_financials_sec(tickers=None):

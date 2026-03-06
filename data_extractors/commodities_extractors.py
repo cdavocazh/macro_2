@@ -114,6 +114,76 @@ def get_copper():
     return get_commodity_data('HG=F', 'Copper')
 
 
+def get_natural_gas():
+    """
+    Get Natural Gas (NG) futures continuous contract data.
+    Returns: dict with latest price
+    """
+    return get_commodity_data('NG=F', 'Natural Gas')
+
+
+def get_copper_gold_ratio():
+    """
+    Compute Copper/Gold price ratio — classic economic sentiment indicator.
+    Rising = growth optimism (industrial demand). Falling = risk aversion (safe haven demand).
+    Uses existing gold and copper data to avoid extra API calls.
+    """
+    try:
+        gold_data = get_gold()
+        copper_data = get_copper()
+
+        if 'error' in gold_data or 'error' in copper_data:
+            errors = []
+            if 'error' in gold_data:
+                errors.append(f"Gold: {gold_data['error']}")
+            if 'error' in copper_data:
+                errors.append(f"Copper: {copper_data['error']}")
+            return {'error': f"Cannot compute Cu/Au ratio: {'; '.join(errors)}"}
+
+        gold_price = gold_data.get('price')
+        copper_price = copper_data.get('price')
+        if gold_price is None or copper_price is None or gold_price == 0:
+            return {'error': 'Invalid gold/copper prices for ratio'}
+
+        ratio = copper_price / gold_price
+        latest_ratio = round(ratio * 1000, 4)  # Scale ×1000 for readability
+
+        # Compute historical ratio
+        gold_hist = gold_data.get('historical')
+        copper_hist = copper_data.get('historical')
+        hist_ratio = None
+
+        if gold_hist is not None and copper_hist is not None:
+            common_idx = gold_hist.index.intersection(copper_hist.index)
+            if len(common_idx) > 1:
+                g = gold_hist[common_idx]
+                c = copper_hist[common_idx]
+                hist_ratio = (c / g) * 1000  # Scale ×1000
+                hist_ratio = hist_ratio.replace([float('inf'), float('-inf')], float('nan')).dropna()
+
+        # 1D change
+        change_1d = 0
+        if hist_ratio is not None and len(hist_ratio) >= 2:
+            prev = float(hist_ratio.iloc[-2])
+            if prev != 0:
+                change_1d = round(((latest_ratio / prev) - 1) * 100, 2)
+
+        result = {
+            'cu_au_ratio': latest_ratio,
+            'change_1d': change_1d,
+            'latest_date': gold_data.get('latest_date', ''),
+            'source': 'yfinance (HG/GC × 1000)',
+            'units': 'Ratio × 1000',
+            'interpretation': 'Rising = growth optimism; Falling = risk aversion / flight to safety',
+        }
+        if hist_ratio is not None and len(hist_ratio) > 0:
+            result['historical'] = hist_ratio
+        return result
+
+    except Exception as e:
+        return {'error': f"Error computing Cu/Au ratio: {str(e)}"}
+
+
 def get_all_commodities():
     """
     Get all commodity data at once.
@@ -123,5 +193,6 @@ def get_all_commodities():
         'gold': get_gold(),
         'silver': get_silver(),
         'crude_oil': get_crude_oil(),
-        'copper': get_copper()
+        'copper': get_copper(),
+        'natural_gas': get_natural_gas(),
     }
