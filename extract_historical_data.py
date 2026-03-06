@@ -28,6 +28,11 @@ from data_extractors import (
     japan_yield_extractor,
     equity_financials_extractor
 )
+from data_extractors.financial_agent_extractors import (
+    SERIES_MAP as FA_SERIES_MAP,
+    get_all_financial_agent_series,
+    get_gold_price_yfinance,
+)
 
 
 # Configuration
@@ -1210,6 +1215,75 @@ def extract_bbb_oas():
     )
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Financial Agent v1.5-v1.9 — 27 FRED Series Batch Extraction
+# ──────────────────────────────────────────────────────────────────────────────
+
+def extract_financial_agent_historical():
+    """Batch-extract all 27 Financial Agent FRED series to individual CSVs.
+
+    Uses the SERIES_MAP from financial_agent_extractors.py to fetch all series
+    in one pass, then writes each to historical_data/{key}.csv with columns:
+    timestamp, date, {value_column}.
+    """
+    print("\n📊 Extracting Financial Agent FRED series (27 series)...")
+    batch_results = get_all_financial_agent_series()
+    results = []
+
+    for key, (series_id, col_name) in FA_SERIES_MAP.items():
+        data = batch_results.get(key, {})
+        if 'error' in data:
+            print(f"  ❌ {key} ({series_id}): {data['error']}")
+            continue
+
+        hist = data.get('historical')
+        if hist is None or (hasattr(hist, 'empty') and hist.empty):
+            print(f"  ⚠️  {key}: no historical data")
+            continue
+
+        try:
+            df = pd.DataFrame({
+                'timestamp': hist.index,
+                'date': [d.date() if hasattr(d, 'date') else d for d in hist.index],
+                col_name: hist.values
+            })
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            csv_filename = f'{key}.csv'
+            append_to_csv(csv_filename, df)
+            results.append({
+                'indicator': f'{key} ({series_id})',
+                'last_date': df['date'].max(),
+                'rows': len(df),
+            })
+        except Exception as e:
+            print(f"  ❌ {key}: {str(e)}")
+
+    # Gold price via yfinance (FRED LBMA series discontinued)
+    try:
+        gold_data = get_gold_price_yfinance()
+        if 'error' not in gold_data:
+            hist = gold_data['historical']
+            df = pd.DataFrame({
+                'timestamp': hist.index,
+                'date': [d.date() if hasattr(d, 'date') else d for d in hist.index],
+                'gold_price_fred': hist.values
+            })
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            append_to_csv('gold_price_fred.csv', df)
+            results.append({
+                'indicator': 'gold_price_fred (GC=F via yfinance)',
+                'last_date': df['date'].max(),
+                'rows': len(df),
+            })
+        else:
+            print(f"  ❌ gold_price_fred: {gold_data['error']}")
+    except Exception as e:
+        print(f"  ❌ gold_price_fred: {str(e)}")
+
+    print(f"  ✅ Financial Agent: {len(results)}/27 series extracted")
+    return results
+
+
 def extract_all_historical_data():
     """
     Extract all available historical data and save to CSV files.
@@ -1316,6 +1390,9 @@ def extract_all_historical_data():
     _run(extract_hy_oas, 'hy_oas')
     _run(extract_ig_oas, 'ig_oas')
     _run(extract_bbb_oas, 'bbb_oas')
+
+    # ── Financial Agent v1.5-v1.9 — 27 FRED Series ────────────
+    _run(extract_financial_agent_historical, 'financial_agent')
 
     # Create summary file
     create_summary_file(results)
