@@ -1,30 +1,68 @@
 # Project Status Report: Macroeconomic Indicators Dashboard
 
 **Project:** macro_2 - Real-time Macroeconomic Indicators Dashboard
-**Last Updated:** March 3, 2026
-**Version:** 2.0.1
+**Last Updated:** March 5, 2026
+**Version:** 2.3.0
 **Status:** Production Ready
 
 ---
 
 ## Summary
 
-A Streamlit dashboard tracking 28+ macroeconomic indicators and quarterly financials for 20 large-cap companies from multiple data sources (Yahoo Finance, SEC EDGAR, FRED, MOF Japan, web scrapers). Includes dual-source equity financials, expandable price charts, automated launchd scheduling, and a data discrepancy review agent.
+A Streamlit dashboard tracking 62+ macroeconomic indicators and quarterly financials for S&P 500 companies from multiple data sources (Yahoo Finance, SEC EDGAR, FRED, Trading Economics, MOF Japan, web scrapers). Includes global sovereign yields, yield curve regime classification, credit spreads, economic activity indicators (employment, consumer, production), FX pairs, market concentration, dual-source equity financials, expandable price charts, automated launchd scheduling, earnings monitoring, data freshness review, and a data discrepancy review agent.
 
 ---
 
-## Dashboard Tabs (6 tabs)
+## Dashboard Tabs (8 tabs)
 
 | Tab | Name | Indicators | Status |
 |-----|------|------------|--------|
 | 1 | Valuation Metrics | Forward P/E, Trailing P/E & P/B, Shiller CAPE, Market Cap/GDP | Working (Forward P/E unreliable) |
-| 2 | Market Indices | ES/RTY futures, market breadth, Russell 2000 V/G, S&P 500/200MA | Working |
+| 2 | Market Indices | ES/RTY futures, market breadth, Russell 2000 V/G, S&P 500/200MA, SPY/RSP concentration | Working |
 | 3 | Volatility & Risk | VIX, MOVE, VIX/MOVE ratio, Put/Call, CBOE SKEW | Working (Put/Call unreliable) |
-| 4 | Macro & Currency | DXY, USD/JPY, TGA, net liquidity, SOFR, US 2Y, Japan 2Y, yield spread, 10Y yield, ISM PMI | Working |
-| 5 | Commodities | Gold, Silver, Crude Oil, Copper, CFTC COT positioning | Working |
-| 6 | Large-cap Financials | 20 companies, dual-source (Yahoo + SEC EDGAR), income/balance/cash flow, valuation, analysis | Working (TSM SEC only fails — IFRS) |
+| 4 | Macro & Currency | DXY, USD/JPY, EUR/USD, GBP/USD, EUR/JPY, TGA, net liquidity, M2, SOFR, US 2Y, Japan 2Y, yield spread, 10Y yield, ISM PMI | Working |
+| 5 | Commodities | Gold, Silver, Crude Oil, Copper, Natural Gas, Cu/Au ratio, CFTC COT positioning | Working |
+| 6 | Large-cap Financials | Top 20 dropdown + any-ticker text input, S&P 500 batch extraction, dual-source (Yahoo + SEC EDGAR) | Working (TSM SEC only fails — IFRS) |
+| 7 | Rates & Credit | Yield curve regime, 2s10s spread, global yields (US 5Y/10Y, DE/UK/CN 10Y), real yield, breakevens, HY/IG OAS, NFCI, Fed Funds, bank reserves, SLOOS, unemployment, claims (initial+continuing), headline/core CPI, PPI, core PCE | Working |
+| 8 | Economic Activity | Nonfarm Payrolls, JOLTS, Quits Rate, Sahm Rule, Consumer Sentiment, Retail Sales, ISM Services PMI, Industrial Production, Housing Starts | Working |
 
-## Recent Features (v2.0.0)
+## Recent Features (v2.3.0)
+
+### Economic Activity Tab (Tab 8) + 21 New Indicators
+Expanded dashboard from 41 to 62+ indicators across 8 tabs.
+
+**New Tab 8: Economic Activity** — 3 sections:
+1. **Employment & Recession Risk**: Nonfarm Payrolls, JOLTS Job Openings, Quits Rate, Sahm Rule (with 0.50 recession threshold chart)
+2. **Consumer**: UMich Consumer Sentiment, Retail Sales (MoM%)
+3. **Production & Housing**: ISM Services PMI (scraped from Trading Economics), Industrial Production (YoY%), Housing Starts
+
+**Expanded existing tabs:**
+- Tab 2: SPY/RSP Market Concentration ratio (mega-cap vs equal-weight)
+- Tab 4: EUR/USD, GBP/USD, EUR/JPY FX pairs + M2 Money Supply
+- Tab 5: Natural Gas futures + Copper/Gold ratio (economic sentiment indicator)
+- Tab 7: 5Y Treasury Yield, IG Credit Spread (OAS), Bank Reserves, SLOOS Lending Standards, Continuing Claims, Headline CPI YoY%, PPI YoY%
+
+**New extractors:**
+- 16 new functions in `fred_extractors.py` (NFP, JOLTS, Sahm, M2, quits, retail sales, housing starts, industrial production, 5Y yield, bank reserves, IG OAS, continuing claims, headline CPI, PPI, SLOOS, consumer sentiment)
+- 2 new functions in `yfinance_extractors.py` (major FX pairs, SPY/RSP concentration)
+- 2 new functions in `commodities_extractors.py` (natural gas, Cu/Au ratio)
+- 1 new function in `global_yields_extractor.py` (ISM Services PMI scrape)
+
+### Previous: Rates & Credit Tab (Tab 7) — v2.2.0 — 12 New Indicators
+New dashboard tab with 5 sections covering rates, credit, and macro fundamentals:
+
+1. **Yield Curve & Regime Classification**: 2s10s spread with automated regime detection (Bull/Bear Steepener/Flattener) using 20-business-day lookback. Color-coded badge with signal and detail explanation.
+2. **Global 10Y Sovereign Yields**: US, Germany, UK, China 10Y government bond yields. Trading Economics scrape for daily values, FRED OECD for historical charts (Germany/UK).
+3. **Real Yields & Inflation Expectations**: 10Y TIPS real yield, 5Y & 10Y breakeven inflation rates. Includes Nominal vs Real vs Breakeven overlay chart with Fed 2% target line.
+4. **Credit & Financial Conditions**: ICE BofA HY OAS spread, Chicago Fed NFCI, Effective Fed Funds Rate.
+5. **Labor Market & Inflation**: Unemployment rate, initial jobless claims, Core CPI YoY%, Core PCE YoY%.
+
+### New Extractors
+- `global_yields_extractor.py` — Scrapes Trading Economics for Germany/UK/China 10Y yields, FRED OECD monthly fallback
+- `yield_curve_extractor.py` — FRED T10Y2Y + DGS2/DGS10 with regime classification logic
+- 8 new functions in `fred_extractors.py` — HY OAS, breakevens, real yield, NFCI, Fed Funds, claims, unemployment, core inflation (CPI+PCE YoY%)
+
+## Previous Features (v2.0.0)
 
 ### Expandable 3M Price Charts
 Every indicator in tabs 1, 3, 4, 5 has a collapsible plotly chart below the metric card. Users click to expand/collapse. Charts include 1W/1M/3M range selector buttons and a range slider for manual date selection.
@@ -52,6 +90,15 @@ historical_data/equity_financials/
   └── sec_edgar/{TICKER}_quarterly.csv
 ```
 
+### S&P 500 Expansion & Monitoring (v2.1.0)
+- **S&P 500 ticker list**: `sp500_tickers.py` fetches ~503 tickers from Wikipedia, cached with 7-day TTL
+- **Batch extraction**: `extract_sp500_financials.py` extracts financials for all S&P 500 companies (~30-40 min)
+- **Custom ticker input**: Tab 6 text input allows viewing any ticker on-demand (not just Top 20)
+- **Earnings monitoring**: `monitor_earnings.py` compares local data vs yfinance earnings dates, flags stale companies
+- **Data freshness review**: `review_data_freshness.py` compares local data vs SEC EDGAR filing dates
+- **Auto-update**: Both monitoring scripts support `--auto-update` to re-extract stale tickers
+- **Lightweight SEC lookup**: `get_latest_filing_dates()` uses submissions endpoint (~100KB) instead of full companyfacts (~2-10MB)
+
 ### Data Discrepancy Review Agent
 AI agent in `/agent/` subfolder that reviews financial data quality using 8 shared tools. Two implementations:
 - OpenAI Agents SDK + Minimax LLM
@@ -63,9 +110,10 @@ AI agent in `/agent/` subfolder that reviews financial data quality using 8 shar
 
 | Source | Indicators | Key Required | Reliability |
 |--------|------------|-------------|-------------|
-| Yahoo Finance (yfinance) | VIX, MOVE, DXY, Russell 2000, ES/RTY futures, JPY, S&P 500, commodities, equity financials | No | Excellent |
-| FRED API | GDP, 10Y yield, ISM PMI, TGA, net liquidity, SOFR, US 2Y yield, Put/Call fallback | Yes (free) | Excellent |
-| SEC EDGAR XBRL | Quarterly financials for 20 companies | No (User-Agent only) | Excellent |
+| Yahoo Finance (yfinance) | VIX, MOVE, DXY, Russell 2000, ES/RTY futures, JPY, EUR/USD, GBP/USD, EUR/JPY, SPY/RSP, S&P 500, commodities (incl. NG), equity financials | No | Excellent |
+| FRED API | GDP, yields (2Y/5Y/10Y), ISM PMI, TGA, liquidity, SOFR, HY/IG OAS, breakevens, real yield, NFCI, Fed Funds, claims, unemployment, core CPI/PCE, headline CPI, PPI, M2, NFP, JOLTS, Sahm Rule, bank reserves, SLOOS, etc. | Yes (free) | Excellent |
+| Trading Economics | Germany/UK/China 10Y yields, ISM Services PMI (web scrape) | No | Good |
+| SEC EDGAR XBRL | Quarterly financials for S&P 500 companies | No (User-Agent only) | Excellent |
 | MOF Japan | Japan 2Y/10Y yields (CSV download) | No | Good |
 | Robert Shiller (Yale) | CAPE ratio (Excel download) | No | Excellent |
 | CFTC | COT positioning (weekly report) | No | Good |
@@ -88,14 +136,14 @@ AI agent in `/agent/` subfolder that reviews financial data quality using 8 shar
 
 ## File Count
 
-- **Python modules**: 15+ files
-- **Dashboard**: ~1,400 lines (app.py)
-- **SEC extractor**: ~1,150 lines
-- **Total LOC**: ~6,000+
+- **Python modules**: 21+ files
+- **Dashboard**: ~2,350+ lines (app.py)
+- **SEC extractor**: ~1,250 lines
+- **Total LOC**: ~10,000+
 - **Documentation**: 10+ markdown files
 
 ---
 
-**Document Version:** 2.0.1
-**Last Updated:** March 3, 2026
+**Document Version:** 2.3.0
+**Last Updated:** March 5, 2026
 **Repository:** https://github.com/cdavocazh/macro_2

@@ -77,7 +77,7 @@ st.markdown("""
 
 # Title and description
 st.title("📊 Macroeconomic Indicators Dashboard")
-st.markdown("Real-time tracking of 17 key macroeconomic indicators for market analysis")
+st.markdown("Real-time tracking of 59+ macroeconomic indicators for market analysis")
 
 # Sidebar
 with st.sidebar:
@@ -109,35 +109,23 @@ with st.sidebar:
 
     st.header("ℹ️ About")
     st.markdown("""
-    This dashboard tracks 17 key macroeconomic indicators:
+    This dashboard tracks 59+ macroeconomic indicators across 8 tabs:
 
-    **Valuation Metrics:**
-    - S&P 500 Forward P/E
-    - S&P 500 Trailing P/E & P/B
-    - Shiller CAPE
-    - Market Cap / GDP Ratio
+    **Valuation Metrics:** Forward P/E, Trailing P/E & P/B, Shiller CAPE, Market Cap/GDP
 
-    **Market Indices:**
-    - Russell 2000 Value vs Growth
-    - S&P 500 / 200MA
+    **Market Indices:** ES/RTY Futures, Breadth, Russell V/G, S&P 500/200MA, SPY/RSP Concentration
 
-    **Volatility & Risk:**
-    - VIX
-    - MOVE Index
-    - VIX/MOVE Ratio
-    - Put/Call Ratio
-    - SPX Call Skew
+    **Volatility & Risk:** VIX, MOVE, VIX/MOVE, Put/Call, SKEW
 
-    **Macro & Currency:**
-    - DXY (US Dollar Index)
-    - 10-Year Treasury Yield
-    - ISM Manufacturing PMI
-    - TGA Balance, Net Liquidity
-    - SOFR, US 2Y Yield
+    **Macro & Currency:** DXY, USD/JPY, EUR/USD, GBP/USD, EUR/JPY, TGA, Net Liquidity, M2, SOFR, 2Y/10Y Yields
 
-    **Commodities:**
-    - Gold, Silver, Crude Oil, Copper
-    - CFTC COT Positioning
+    **Commodities:** Gold, Silver, Oil, Copper, Natural Gas, Cu/Au Ratio, COT
+
+    **Large-cap Financials:** Top 20 + custom tickers (Yahoo + SEC)
+
+    **Rates & Credit:** Yield Curve, Global Yields (5Y/10Y), Real Yield, Breakevens, HY/IG OAS, NFCI, Fed Funds, Bank Reserves, SLOOS, Labor & Inflation
+
+    **Economic Activity:** NFP, JOLTS, Quits Rate, Sahm Rule, Consumer Sentiment, Retail Sales, ISM Services, Industrial Production, Housing Starts
     """)
 
     st.markdown("---")
@@ -248,13 +236,15 @@ def _render_history_expander(data, label, color='#1f77b4', hist_key='historical'
 
 
 # Create tabs for different indicator categories
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📈 Valuation Metrics",
     "📊 Market Indices",
     "⚡ Volatility & Risk",
     "🌍 Macro & Currency",
     "💰 Commodities",
-    "🏢 Large-cap Financials"
+    "🏢 Large-cap Financials",
+    "📉 Rates & Credit",
+    "📊 Economic Activity",
 ])
 
 # Tab 1: Valuation Metrics
@@ -518,6 +508,30 @@ with tab2:
                 else:
                     st.caption("🟡 Normal range")
 
+    st.divider()
+
+    # SPY/RSP Market Concentration Ratio
+    st.subheader("Market Concentration (SPY/RSP Ratio)")
+    conc_data = aggregator.get_indicator('55_market_concentration')
+    if 'error' in conc_data:
+        st.error(f"⚠️ {conc_data['error']}")
+    else:
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            spy_rsp = conc_data.get('spy_rsp_ratio', 'N/A')
+            chg_1d = conc_data.get('change_1d', 0)
+            st.metric("SPY/RSP Ratio", format_value(spy_rsp, 4), f"{format_value(chg_1d, 2)}%")
+        with col2:
+            chg_30d = conc_data.get('change_30d', 0)
+            st.metric("30-Day Change", f"{format_value(chg_30d, 2)}%")
+        with col3:
+            interp = conc_data.get('interpretation', '')
+            if interp:
+                st.caption(f"ℹ️ {interp}")
+        st.caption(f"As of: {conc_data.get('latest_date', 'N/A')} | SPY (cap-weighted) vs RSP (equal-weight)")
+        st.caption("Rising = mega-cap concentration (Mag 7 dominance). Falling = market broadening.")
+        _render_history_expander(conc_data, 'SPY/RSP Ratio', '#7b1fa2')
+
 # Tab 3: Volatility & Risk
 with tab3:
     st.header("Volatility & Risk Indicators")
@@ -625,6 +639,34 @@ with tab4:
             st.caption(f"Units: {data.get('units', 'JPY per USD')}")
             _render_history_expander(data, 'USD/JPY', '#d84315')
 
+    # Major FX Pairs
+    fx_data = aggregator.get_indicator('54_fx_pairs')
+    if 'error' not in fx_data:
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            eur_usd = fx_data.get('eur_usd', 'N/A')
+            eur_usd_chg = fx_data.get('eur_usd_change_1d', 0)
+            st.metric("EUR/USD", format_value(eur_usd, 4), f"{format_value(eur_usd_chg, 2)}%")
+            if 'historical_eur_usd' in fx_data:
+                _render_history_expander(fx_data, 'EUR/USD', '#1565c0', hist_key='historical_eur_usd')
+
+        with col2:
+            gbp_usd = fx_data.get('gbp_usd', 'N/A')
+            gbp_usd_chg = fx_data.get('gbp_usd_change_1d', 0)
+            st.metric("GBP/USD", format_value(gbp_usd, 4), f"{format_value(gbp_usd_chg, 2)}%")
+            if 'historical_gbp_usd' in fx_data:
+                _render_history_expander(fx_data, 'GBP/USD', '#1b5e20', hist_key='historical_gbp_usd')
+
+        with col3:
+            eur_jpy = fx_data.get('eur_jpy', 'N/A')
+            eur_jpy_chg = fx_data.get('eur_jpy_change_1d', 0)
+            st.metric("EUR/JPY", format_value(eur_jpy, 4), f"{format_value(eur_jpy_chg, 2)}%")
+            if 'historical_eur_jpy' in fx_data:
+                _render_history_expander(fx_data, 'EUR/JPY', '#e65100', hist_key='historical_eur_jpy')
+
+        st.caption(f"As of: {fx_data.get('latest_date', 'N/A')} | Source: {fx_data.get('source', 'N/A')}")
+
     st.markdown("---")
 
     # Liquidity & Rates
@@ -661,6 +703,22 @@ with tab4:
             if 'interpretation' in data:
                 st.caption(f"ℹ️ {data['interpretation']}")
             _render_history_expander(data, 'Net Liquidity ($M)', '#1565c0')
+
+    # M2 Money Supply
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("[M2 Money Supply](https://fred.stlouisfed.org/series/M2SL)")
+        m2_data = aggregator.get_indicator('47_m2')
+        if 'error' in m2_data:
+            st.error(f"⚠️ {m2_data['error']}")
+        else:
+            m2_val = m2_data.get('m2_trillions', 'N/A')
+            m2_yoy = m2_data.get('m2_yoy_growth', 0)
+            st.metric("M2 ($T)", format_value(m2_val, 2), f"{format_value(m2_yoy, 1)}% YoY")
+            st.caption(f"As of: {m2_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in m2_data:
+                st.caption(f"ℹ️ {m2_data['interpretation']}")
+            _render_history_expander(m2_data, 'M2 ($T)', '#00695c')
 
     col1, col2 = st.columns(2)
 
@@ -924,6 +982,41 @@ with tab5:
             if 'note' in data:
                 st.caption(f"ℹ️ {data['note']}")
             _render_history_expander(data, 'Copper (USD/lb)', '#B87333')
+
+    col1, col2 = st.columns(2)
+
+    # Natural Gas
+    with col1:
+        st.subheader("[Natural Gas (NG)](https://finance.yahoo.com/quote/NG%3DF/)")
+        data = aggregator.get_indicator('56_natural_gas')
+        if 'error' in data:
+            st.error(f"⚠️ {data['error']}")
+        else:
+            price = data.get('price', 'N/A')
+            change = data.get('change_1d', 0)
+            st.metric("Natural Gas Price (USD/MMBtu)", format_value(price, 3), f"{format_value(change, 2)}%")
+            st.caption(f"As of: {data.get('latest_date', 'N/A')}")
+            if 'expiry_date' in data:
+                st.caption(f"📅 Contract Expiry: {data['expiry_date']}")
+            if 'note' in data:
+                st.caption(f"ℹ️ {data['note']}")
+            _render_history_expander(data, 'Natural Gas (USD/MMBtu)', '#4a148c')
+
+    # Copper/Gold Ratio
+    with col2:
+        st.subheader("Copper/Gold Ratio (Economic Sentiment)")
+        cu_au_data = aggregator.get_indicator('57_cu_au_ratio')
+        if 'error' in cu_au_data:
+            st.error(f"⚠️ {cu_au_data['error']}")
+        else:
+            ratio_val = cu_au_data.get('cu_au_ratio', 'N/A')
+            ratio_chg = cu_au_data.get('change_1d', 0)
+            st.metric("Cu/Au Ratio (×1000)", format_value(ratio_val, 4), f"{format_value(ratio_chg, 2)}%")
+            st.caption(f"As of: {cu_au_data.get('latest_date', 'N/A')}")
+            st.caption(f"Units: {cu_au_data.get('units', 'Ratio × 1000')}")
+            if 'interpretation' in cu_au_data:
+                st.caption(f"ℹ️ {cu_au_data['interpretation']}")
+            _render_history_expander(cu_au_data, 'Cu/Au Ratio ×1000', '#ef6c00')
 
     # CFTC COT Positioning
     st.divider()
@@ -1219,17 +1312,49 @@ def _build_quarterly_table(data_dict, metrics, quarters):
         return pd.DataFrame(rows).set_index('Metric')
     return None
 
-def _fetch_source_data(source_name, ticker, eq_data):
-    """Fetch company data from the selected source."""
+def _fetch_source_data(source_name, ticker, eq_data, is_custom=False):
+    """Fetch company data from the selected source.
+
+    Args:
+        source_name: 'Yahoo Finance', 'SEC EDGAR', 'Finnhub', or 'Simfin'
+        ticker: Ticker symbol
+        eq_data: The cached equity financials data (from aggregator)
+        is_custom: If True, this is a non-Top-20 ticker that needs on-demand fetching
+    """
     if source_name == "Yahoo Finance":
-        companies = eq_data.get('companies', {})
-        return companies.get(ticker)
+        if is_custom:
+            # On-demand fetch for custom tickers
+            cache_key = f'yahoo_custom_{ticker}'
+            if cache_key not in st.session_state:
+                with st.spinner(f"Fetching Yahoo Finance data for {ticker}..."):
+                    from data_extractors.equity_financials_extractor import get_company_financials_yahoo
+                    data = get_company_financials_yahoo(ticker)
+                    st.session_state[cache_key] = data
+                    # Auto-save to historical_data
+                    if 'error' not in data:
+                        try:
+                            from extract_historical_data import save_single_company
+                            save_single_company(ticker, data, 'Yahoo Finance')
+                        except Exception:
+                            pass
+            return st.session_state[cache_key]
+        else:
+            companies = eq_data.get('companies', {})
+            return companies.get(ticker)
     elif source_name == "SEC EDGAR":
         cache_key = f'sec_{ticker}'
         if cache_key not in st.session_state:
             with st.spinner(f"Fetching SEC data for {ticker}..."):
                 from data_extractors.sec_extractor import get_company_financials_sec
-                st.session_state[cache_key] = get_company_financials_sec(ticker)
+                data = get_company_financials_sec(ticker)
+                st.session_state[cache_key] = data
+                # Auto-save to historical_data
+                if 'error' not in data:
+                    try:
+                        from extract_historical_data import save_single_company
+                        save_single_company(ticker, data, 'SEC EDGAR')
+                    except Exception:
+                        pass
         return st.session_state[cache_key]
     elif source_name == "Finnhub":
         cache_key = f'finnhub_{ticker}'
@@ -1248,7 +1373,7 @@ def _fetch_source_data(source_name, ticker, eq_data):
     return None
 
 with tab6:
-    st.header("Large-cap Financials (Top 20 by Market Cap)")
+    st.header("Large-cap Financials")
 
     eq_data = aggregator.get_indicator('29_equity_financials')
 
@@ -1287,19 +1412,38 @@ with tab6:
                 f"❌ {eq_data.get('failed', 0)} failed"
             )
 
-            # Ticker selector
+            # Ticker selector — Top 20 dropdown + custom ticker input
             available = [t for t in tickers if t in companies and 'error' not in companies[t]]
             if not available:
                 st.warning("No company data available.")
             else:
-                selected = st.selectbox(
-                    "Select Company",
-                    available,
-                    format_func=lambda t: f"{t} — {companies[t].get('company_name', t)}",
-                )
+                sel_col, custom_col = st.columns([3, 2])
+                with sel_col:
+                    dropdown_selected = st.selectbox(
+                        "Top 20 Companies",
+                        available,
+                        format_func=lambda t: f"{t} — {companies[t].get('company_name', t)}",
+                    )
+                with custom_col:
+                    custom_ticker = st.text_input(
+                        "Or type any ticker",
+                        value="",
+                        placeholder="e.g. CRM, NFLX, AMD",
+                        key="custom_ticker_input",
+                    ).strip().upper()
+
+                # Priority: custom ticker > dropdown
+                is_custom = False
+                if custom_ticker:
+                    selected = custom_ticker.replace('.', '-')
+                    is_custom = selected not in set(available)
+                    if is_custom:
+                        st.info(f"Viewing **{selected}** (not in Top 20 — data fetched on demand)")
+                else:
+                    selected = dropdown_selected
 
                 # Fetch data from selected source
-                co = _fetch_source_data(data_source, selected, eq_data)
+                co = _fetch_source_data(data_source, selected, eq_data, is_custom=is_custom)
 
                 if co is None or (isinstance(co, dict) and 'error' in co):
                     err_msg = co.get('error', 'Unknown error') if co else 'No data returned'
@@ -1621,11 +1765,637 @@ with tab6:
                         note = co.get('revenue_segments_note', 'Revenue segment data not available from this source.')
                         st.caption(note)
 
+# Tab 7: Rates & Credit
+with tab7:
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
+    st.header("Rates & Credit")
+
+    # ── Section 1: Yield Curve & Regime ──────────────────────────────────
+    st.subheader("Yield Curve & Regime")
+
+    yc_data = aggregator.get_indicator('33_yield_curve')
+
+    if 'error' in yc_data:
+        st.error(f"⚠️ Yield Curve: {yc_data['error']}")
+    else:
+        col1, col2 = st.columns([1, 2])
+
+        with col1:
+            spread_val = yc_data.get('spread_2s10s', 0)
+            change = yc_data.get('change_1d', 0)
+            inverted = yc_data.get('is_inverted', False)
+            st.metric(
+                "2s10s Spread",
+                f"{format_value(spread_val, 2)}%",
+                f"{format_value(change, 4)}",
+            )
+            if inverted:
+                st.markdown("🔴 **Yield curve is INVERTED** (recession signal)")
+            st.caption(f"As of: {yc_data.get('latest_date', 'N/A')} | Source: {yc_data.get('source', 'N/A')}")
+            _render_history_expander(yc_data, '2s10s Spread (%)', '#ff7f0e', value_suffix='%')
+
+        with col2:
+            regime = yc_data.get('regime', 'Neutral')
+            emoji = yc_data.get('regime_emoji', '⚪')
+            color = yc_data.get('regime_color', '#9e9e9e')
+            signal = yc_data.get('regime_signal', '')
+            detail = yc_data.get('regime_detail', '')
+            lookback = yc_data.get('lookback_days', 20)
+
+            st.markdown(
+                f"<div style='background-color: {color}22; border-left: 4px solid {color}; "
+                f"padding: 12px 16px; border-radius: 4px; margin-bottom: 12px;'>"
+                f"<span style='font-size: 1.6em;'>{emoji}</span> "
+                f"<strong style='font-size: 1.3em;'>{regime}</strong>"
+                f"<br><span style='color: {color}; font-weight: 600;'>{signal}</span>"
+                f"<br><span style='font-size: 0.9em; color: #555;'>{detail}</span>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+            d2y = yc_data.get('delta_2y', 0)
+            d10y = yc_data.get('delta_10y', 0)
+            ds = yc_data.get('delta_spread', 0)
+            st.caption(
+                f"**{lookback}-day changes:** "
+                f"2Y: {'+' if d2y >= 0 else ''}{d2y:.2f}% | "
+                f"10Y: {'+' if d10y >= 0 else ''}{d10y:.2f}% | "
+                f"Spread: {'+' if ds >= 0 else ''}{ds:.2f}%"
+            )
+
+        # 2s10s Spread historical chart with inverted shading
+        hist_spread = yc_data.get('historical')
+        if hist_spread is not None and len(hist_spread) > 0:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=hist_spread.index, y=hist_spread.values,
+                name='2s10s Spread', line=dict(color='#ff7f0e', width=1.5),
+                fill='tozeroy', fillcolor='rgba(255,127,14,0.08)',
+            ))
+            fig.add_hline(y=0, line_dash="dash", line_color="red", opacity=0.6,
+                          annotation_text="Inversion threshold")
+            fig.update_layout(
+                title="US Treasury 2s10s Yield Spread (10Y − 2Y)",
+                xaxis_title="Date", yaxis_title="Spread (%)",
+                hovermode='x unified', height=400,
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── Section 2: Global 10Y Sovereign Yields ──────────────────────────
+    st.subheader("Global 10-Year Sovereign Yields")
+
+    col1, col2, col3, col4, col5 = st.columns(5)
+
+    # US 10Y (reuse existing indicator)
+    with col1:
+        us10y_data = aggregator.get_indicator('11_10y_yield')
+        if 'error' in us10y_data:
+            st.error("⚠️ US 10Y unavailable")
+        else:
+            us10y_val = us10y_data.get('10y_yield', us10y_data.get('value', 'N/A'))
+            st.metric("🇺🇸 US 10Y", f"{format_value(us10y_val, 2)}%")
+            st.caption(f"As of: {us10y_data.get('latest_date', 'N/A')}")
+            _render_history_expander(us10y_data, 'US 10Y Yield (%)', '#1565c0', value_suffix='%')
+
+    # US 5Y
+    with col2:
+        us5y_data = aggregator.get_indicator('61_5y_yield')
+        if 'error' in us5y_data:
+            st.error("⚠️ US 5Y unavailable")
+        else:
+            us5y_val = us5y_data.get('5y_yield', 'N/A')
+            us5y_chg = us5y_data.get('change_1d', 0)
+            st.metric("🇺🇸 US 5Y", f"{format_value(us5y_val, 2)}%", f"{format_value(us5y_chg, 3)}")
+            st.caption(f"As of: {us5y_data.get('latest_date', 'N/A')}")
+            _render_history_expander(us5y_data, 'US 5Y Yield (%)', '#0d47a1', value_suffix='%')
+
+    # Germany 10Y
+    with col3:
+        de_data = aggregator.get_indicator('30_germany_10y')
+        if 'error' in de_data:
+            st.error(f"⚠️ {de_data['error']}")
+        else:
+            de_val = de_data.get('germany_10y_yield', 'N/A')
+            de_chg = de_data.get('change_1d', 0)
+            st.metric("🇩🇪 Germany 10Y", f"{format_value(de_val, 2)}%", f"{format_value(de_chg, 3)}")
+            st.caption(f"Source: {de_data.get('source', 'N/A')}")
+            _render_history_expander(de_data, 'Germany 10Y (%)', '#d32f2f', value_suffix='%')
+
+    # UK 10Y
+    with col4:
+        uk_data = aggregator.get_indicator('31_uk_10y')
+        if 'error' in uk_data:
+            st.error(f"⚠️ {uk_data['error']}")
+        else:
+            uk_val = uk_data.get('uk_10y_yield', 'N/A')
+            uk_chg = uk_data.get('change_1d', 0)
+            st.metric("🇬🇧 UK 10Y", f"{format_value(uk_val, 2)}%", f"{format_value(uk_chg, 3)}")
+            st.caption(f"Source: {uk_data.get('source', 'N/A')}")
+            _render_history_expander(uk_data, 'UK 10Y (%)', '#1b5e20', value_suffix='%')
+
+    # China 10Y
+    with col5:
+        cn_data = aggregator.get_indicator('32_china_10y')
+        if 'error' in cn_data:
+            st.error(f"⚠️ {cn_data['error']}")
+        else:
+            cn_val = cn_data.get('china_10y_yield', 'N/A')
+            cn_chg = cn_data.get('change_1d', 0)
+            st.metric("🇨🇳 China 10Y", f"{format_value(cn_val, 2)}%", f"{format_value(cn_chg, 3)}")
+            st.caption(f"Source: {cn_data.get('source', 'N/A')}")
+            if 'note' in cn_data:
+                st.caption(f"ℹ️ {cn_data['note']}")
+
+    # Overlaid global 10Y yields chart (from yield curve historical data + FRED historical for DE/UK)
+    if 'error' not in yc_data and 'historical_10y' in yc_data:
+        fig = go.Figure()
+        # US 10Y
+        h10y = yc_data['historical_10y']
+        fig.add_trace(go.Scatter(
+            x=h10y.index, y=h10y.values,
+            name='US 10Y', line=dict(color='#1565c0', width=2),
+        ))
+        # Germany
+        if 'error' not in de_data and 'historical' in de_data:
+            de_h = de_data['historical']
+            fig.add_trace(go.Scatter(
+                x=de_h.index, y=de_h.values,
+                name='Germany 10Y', line=dict(color='#d32f2f', width=1.5, dash='dash'),
+            ))
+        # UK
+        if 'error' not in uk_data and 'historical' in uk_data:
+            uk_h = uk_data['historical']
+            fig.add_trace(go.Scatter(
+                x=uk_h.index, y=uk_h.values,
+                name='UK 10Y', line=dict(color='#1b5e20', width=1.5, dash='dot'),
+            ))
+
+        fig.update_layout(
+            title="Global 10-Year Sovereign Yields",
+            xaxis_title="Date", yaxis_title="Yield (%)",
+            hovermode='x unified', height=420,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── Section 3: Real Yields & Inflation Expectations ─────────────────
+    st.subheader("Real Yields & Inflation Expectations")
+
+    col1, col2, col3 = st.columns(3)
+
+    # 10Y Real Yield (TIPS)
+    with col1:
+        ry_data = aggregator.get_indicator('36_real_yield')
+        if 'error' in ry_data:
+            st.error(f"⚠️ {ry_data['error']}")
+        else:
+            ry_val = ry_data.get('real_yield_10y', 'N/A')
+            ry_chg = ry_data.get('change_1d', 0)
+            st.metric("10Y Real Yield (TIPS)", f"{format_value(ry_val, 2)}%", f"{format_value(ry_chg, 4)}")
+            st.caption(f"As of: {ry_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in ry_data:
+                st.caption(f"ℹ️ {ry_data['interpretation']}")
+            _render_history_expander(ry_data, 'Real Yield (%)', '#6a1b9a', value_suffix='%')
+
+    # 5Y Breakeven
+    be_data = aggregator.get_indicator('35_breakeven_inflation')
+    with col2:
+        if 'error' in be_data:
+            st.error(f"⚠️ {be_data['error']}")
+        else:
+            be5 = be_data.get('breakeven_5y', 'N/A')
+            be5_chg = be_data.get('change_5y_1d', 0)
+            st.metric("5Y Breakeven Inflation", f"{format_value(be5, 2)}%", f"{format_value(be5_chg, 4)}")
+            st.caption(f"As of: {be_data.get('latest_date', 'N/A')}")
+            if 'historical_5y' in be_data:
+                _render_history_expander(be_data, '5Y Breakeven (%)', '#e65100',
+                                         hist_key='historical_5y', value_suffix='%')
+
+    # 10Y Breakeven
+    with col3:
+        if 'error' not in be_data:
+            be10 = be_data.get('breakeven_10y', 'N/A')
+            be10_chg = be_data.get('change_10y_1d', 0)
+            st.metric("10Y Breakeven Inflation", f"{format_value(be10, 2)}%", f"{format_value(be10_chg, 4)}")
+            st.caption(f"As of: {be_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in be_data:
+                st.caption(f"ℹ️ {be_data['interpretation']}")
+            if 'historical_10y' in be_data:
+                _render_history_expander(be_data, '10Y Breakeven (%)', '#bf360c',
+                                         hist_key='historical_10y', value_suffix='%')
+
+    # Nominal vs Real vs Breakeven chart
+    if ('error' not in yc_data and 'historical_10y' in yc_data
+            and 'error' not in ry_data and 'historical' in ry_data):
+        fig = go.Figure()
+        # Nominal 10Y
+        h10 = yc_data['historical_10y']
+        fig.add_trace(go.Scatter(
+            x=h10.index, y=h10.values,
+            name='Nominal 10Y', line=dict(color='#1565c0', width=2),
+        ))
+        # Real 10Y
+        hr = ry_data['historical']
+        fig.add_trace(go.Scatter(
+            x=hr.index, y=hr.values,
+            name='Real 10Y (TIPS)', line=dict(color='#6a1b9a', width=2),
+        ))
+        # 10Y Breakeven
+        if 'error' not in be_data and 'historical_10y' in be_data:
+            hbe = be_data['historical_10y']
+            fig.add_trace(go.Scatter(
+                x=hbe.index, y=hbe.values,
+                name='10Y Breakeven', line=dict(color='#e65100', width=1.5, dash='dash'),
+            ))
+        fig.add_hline(y=2.0, line_dash="dot", line_color="gray", opacity=0.4,
+                      annotation_text="Fed 2% target")
+        fig.update_layout(
+            title="Nominal 10Y vs Real 10Y vs 10Y Breakeven Inflation",
+            xaxis_title="Date", yaxis_title="Yield / Rate (%)",
+            hovermode='x unified', height=420,
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── Section 4: Credit & Financial Conditions ────────────────────────
+    st.subheader("Credit & Financial Conditions")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    # HY OAS
+    with col1:
+        hy_data = aggregator.get_indicator('34_hy_oas')
+        if 'error' in hy_data:
+            st.error(f"⚠️ {hy_data['error']}")
+        else:
+            hy_val = hy_data.get('hy_oas', 'N/A')
+            hy_chg = hy_data.get('change_1d', 0)
+            st.metric("HY Credit Spread (OAS)", f"{format_value(hy_val, 2)}%", f"{format_value(hy_chg, 2)}")
+            st.caption(f"As of: {hy_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in hy_data:
+                st.caption(f"ℹ️ {hy_data['interpretation']}")
+            _render_history_expander(hy_data, 'HY OAS (%)', '#c62828', value_suffix='%')
+
+    # NFCI
+    with col2:
+        nfci_data = aggregator.get_indicator('37_nfci')
+        if 'error' in nfci_data:
+            st.error(f"⚠️ {nfci_data['error']}")
+        else:
+            nfci_val = nfci_data.get('nfci', 'N/A')
+            nfci_chg = nfci_data.get('change_1w', 0)
+            st.metric("NFCI", format_value(nfci_val, 4), f"{format_value(nfci_chg, 4)} WoW")
+            st.caption(f"As of: {nfci_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in nfci_data:
+                st.caption(f"ℹ️ {nfci_data['interpretation']}")
+            _render_history_expander(nfci_data, 'NFCI', '#4527a0')
+
+    # Fed Funds Rate
+    with col3:
+        ff_data = aggregator.get_indicator('38_fed_funds')
+        if 'error' in ff_data:
+            st.error(f"⚠️ {ff_data['error']}")
+        else:
+            ff_val = ff_data.get('fed_funds_rate', 'N/A')
+            ff_chg = ff_data.get('change_1d', 0)
+            st.metric("Fed Funds Rate", f"{format_value(ff_val, 2)}%", f"{format_value(ff_chg, 4)}")
+            st.caption(f"As of: {ff_data.get('latest_date', 'N/A')}")
+            _render_history_expander(ff_data, 'Fed Funds Rate (%)', '#00695c', value_suffix='%')
+
+    # IG Credit Spread
+    with col4:
+        ig_data = aggregator.get_indicator('45_ig_oas')
+        if 'error' in ig_data:
+            st.error(f"⚠️ {ig_data['error']}")
+        else:
+            ig_val = ig_data.get('ig_oas', 'N/A')
+            ig_chg = ig_data.get('change_1d', 0)
+            st.metric("IG Credit Spread (OAS)", f"{format_value(ig_val, 2)}%", f"{format_value(ig_chg, 2)}")
+            st.caption(f"As of: {ig_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in ig_data:
+                st.caption(f"ℹ️ {ig_data['interpretation']}")
+            _render_history_expander(ig_data, 'IG OAS (%)', '#4e342e', value_suffix='%')
+
+    # Bank Reserves + SLOOS row
+    col1, col2 = st.columns(2)
+
+    with col1:
+        reserves_data = aggregator.get_indicator('58_bank_reserves')
+        if 'error' in reserves_data:
+            st.error(f"⚠️ Bank Reserves: {reserves_data['error']}")
+        else:
+            res_val = reserves_data.get('reserves_trillions', 'N/A')
+            res_chg = reserves_data.get('change_wow_pct', 0)
+            st.metric("Bank Reserves ($T)", format_value(res_val, 3), f"{format_value(res_chg, 1)}% WoW")
+            st.caption(f"As of: {reserves_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in reserves_data:
+                st.caption(f"ℹ️ {reserves_data['interpretation']}")
+            _render_history_expander(reserves_data, 'Bank Reserves ($T)', '#1a237e')
+
+    with col2:
+        sloos_data = aggregator.get_indicator('62_sloos')
+        if 'error' in sloos_data:
+            st.caption(f"SLOOS: {sloos_data.get('error', 'Data unavailable')} (quarterly, may be delayed)")
+        else:
+            sloos_val = sloos_data.get('sloos_tightening', 'N/A')
+            sloos_chg = sloos_data.get('change_qoq', 0)
+            st.metric("SLOOS Lending Standards", f"{format_value(sloos_val, 1)}%", f"{format_value(sloos_chg, 1)} QoQ")
+            st.caption(f"As of: {sloos_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in sloos_data:
+                st.caption(f"ℹ️ {sloos_data['interpretation']}")
+            _render_history_expander(sloos_data, 'SLOOS Net Tightening (%)', '#3e2723', value_suffix='%')
+
+    st.markdown("---")
+
+    # ── Section 5: Labor Market & Inflation ─────────────────────────────
+    st.subheader("Labor Market & Inflation")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    # Unemployment Rate
+    with col1:
+        unemp_data = aggregator.get_indicator('40_unemployment')
+        if 'error' in unemp_data:
+            st.error(f"⚠️ {unemp_data['error']}")
+        else:
+            unemp_val = unemp_data.get('unemployment_rate', 'N/A')
+            unemp_chg = unemp_data.get('change_mom', 0)
+            st.metric("Unemployment Rate", f"{format_value(unemp_val, 1)}%", f"{format_value(unemp_chg, 1)} MoM")
+            st.caption(f"As of: {unemp_data.get('latest_date', 'N/A')}")
+            _render_history_expander(unemp_data, 'Unemployment (%)', '#283593', value_suffix='%')
+
+    # Initial Jobless Claims
+    with col2:
+        claims_data = aggregator.get_indicator('39_initial_claims')
+        if 'error' in claims_data:
+            st.error(f"⚠️ {claims_data['error']}")
+        else:
+            claims_k = claims_data.get('initial_claims_k', 'N/A')
+            claims_chg = claims_data.get('change_wow_pct', 0)
+            st.metric("Initial Claims (K)", format_value(claims_k, 1), f"{format_value(claims_chg, 1)}% WoW")
+            st.caption(f"As of: {claims_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in claims_data:
+                st.caption(f"ℹ️ {claims_data['interpretation']}")
+            _render_history_expander(claims_data, 'Initial Claims', '#37474f')
+
+    # Core CPI YoY%
+    infl_data = aggregator.get_indicator('41_core_inflation')
+    with col3:
+        if 'error' in infl_data:
+            st.error(f"⚠️ {infl_data['error']}")
+        else:
+            cpi_yoy = infl_data.get('core_cpi_yoy', 'N/A')
+            cpi_chg = infl_data.get('core_cpi_change_mom', 0)
+            st.metric("Core CPI YoY%", f"{format_value(cpi_yoy, 2)}%", f"{format_value(cpi_chg, 2)} MoM")
+            st.caption(f"As of: {infl_data.get('latest_date', 'N/A')}")
+            if 'historical_core_cpi' in infl_data:
+                _render_history_expander(infl_data, 'Core CPI YoY (%)', '#e65100',
+                                         hist_key='historical_core_cpi', value_suffix='%')
+
+    # Core PCE YoY%
+    with col4:
+        if 'error' not in infl_data:
+            pce_yoy = infl_data.get('core_pce_yoy', 'N/A')
+            pce_chg = infl_data.get('core_pce_change_mom', 0)
+            st.metric("Core PCE YoY%", f"{format_value(pce_yoy, 2)}%", f"{format_value(pce_chg, 2)} MoM")
+            st.caption("Fed's preferred inflation measure")
+            if 'interpretation' in infl_data:
+                st.caption(f"ℹ️ {infl_data['interpretation']}")
+            if 'historical_core_pce' in infl_data:
+                _render_history_expander(infl_data, 'Core PCE YoY (%)', '#bf360c',
+                                         hist_key='historical_core_pce', value_suffix='%')
+
+    # Extra row: Continuing Claims, Headline CPI, PPI
+    col1, col2, col3 = st.columns(3)
+
+    # Continuing Claims
+    with col1:
+        cc_data = aggregator.get_indicator('49_continuing_claims')
+        if 'error' in cc_data:
+            st.error(f"⚠️ {cc_data['error']}")
+        else:
+            cc_val = cc_data.get('continuing_claims_k', 'N/A')
+            cc_chg = cc_data.get('change_wow_pct', 0)
+            st.metric("Continuing Claims (K)", format_value(cc_val, 1), f"{format_value(cc_chg, 1)}% WoW")
+            st.caption(f"As of: {cc_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in cc_data:
+                st.caption(f"ℹ️ {cc_data['interpretation']}")
+            _render_history_expander(cc_data, 'Continuing Claims (K)', '#455a64')
+
+    # Headline CPI YoY%
+    with col2:
+        hcpi_data = aggregator.get_indicator('53_headline_cpi')
+        if 'error' in hcpi_data:
+            st.error(f"⚠️ {hcpi_data['error']}")
+        else:
+            hcpi_val = hcpi_data.get('headline_cpi_yoy', 'N/A')
+            hcpi_chg = hcpi_data.get('change_mom', 0)
+            st.metric("Headline CPI YoY%", f"{format_value(hcpi_val, 2)}%", f"{format_value(hcpi_chg, 2)} MoM")
+            st.caption(f"As of: {hcpi_data.get('latest_date', 'N/A')}")
+            _render_history_expander(hcpi_data, 'Headline CPI YoY (%)', '#ff6f00', value_suffix='%')
+
+    # PPI YoY%
+    with col3:
+        ppi_data = aggregator.get_indicator('52_ppi')
+        if 'error' in ppi_data:
+            st.error(f"⚠️ {ppi_data['error']}")
+        else:
+            ppi_val = ppi_data.get('ppi_yoy', 'N/A')
+            ppi_chg = ppi_data.get('change_mom', 0)
+            st.metric("PPI YoY%", f"{format_value(ppi_val, 2)}%", f"{format_value(ppi_chg, 2)} MoM")
+            st.caption(f"As of: {ppi_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in ppi_data:
+                st.caption(f"ℹ️ {ppi_data['interpretation']}")
+            _render_history_expander(ppi_data, 'PPI YoY (%)', '#ad1457', value_suffix='%')
+
+
+# ── Tab 8: Economic Activity ─────────────────────────────────────────────
+with tab8:
+    import plotly.graph_objects as go
+
+    st.header("Economic Activity")
+
+    # ── Section 1: Employment & Recession Risk ────────────────────────
+    st.subheader("Employment & Recession Risk")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    # Nonfarm Payrolls
+    with col1:
+        nfp_data = aggregator.get_indicator('42_nfp')
+        if 'error' in nfp_data:
+            st.error(f"⚠️ {nfp_data['error']}")
+        else:
+            nfp_k = nfp_data.get('nfp_thousands', 'N/A')
+            nfp_chg = nfp_data.get('nfp_change_mom', 0)
+            st.metric("Nonfarm Payrolls (K)", f"{format_value(nfp_k, 0)}", f"{format_value(nfp_chg, 0)}K MoM")
+            st.caption(f"As of: {nfp_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in nfp_data:
+                st.caption(f"ℹ️ {nfp_data['interpretation']}")
+            _render_history_expander(nfp_data, 'Nonfarm Payrolls (K)', '#1565c0')
+
+    # JOLTS Job Openings
+    with col2:
+        jolts_data = aggregator.get_indicator('48_jolts')
+        if 'error' in jolts_data:
+            st.error(f"⚠️ {jolts_data['error']}")
+        else:
+            jolts_m = jolts_data.get('jolts_openings_m', 'N/A')
+            jolts_chg = jolts_data.get('change_mom_pct', 0)
+            st.metric("JOLTS Openings (M)", format_value(jolts_m, 2), f"{format_value(jolts_chg, 1)}% MoM")
+            st.caption(f"As of: {jolts_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in jolts_data:
+                st.caption(f"ℹ️ {jolts_data['interpretation']}")
+            _render_history_expander(jolts_data, 'JOLTS Openings (M)', '#0d47a1')
+
+    # Quits Rate
+    with col3:
+        quits_data = aggregator.get_indicator('60_quits_rate')
+        if 'error' in quits_data:
+            st.error(f"⚠️ {quits_data['error']}")
+        else:
+            quits_val = quits_data.get('quits_rate', 'N/A')
+            quits_chg = quits_data.get('change_mom', 0)
+            st.metric("Quits Rate (%)", f"{format_value(quits_val, 1)}%", f"{format_value(quits_chg, 1)} MoM")
+            st.caption(f"As of: {quits_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in quits_data:
+                st.caption(f"ℹ️ {quits_data['interpretation']}")
+            _render_history_expander(quits_data, 'Quits Rate (%)', '#1a237e', value_suffix='%')
+
+    # Sahm Rule Recession Indicator
+    with col4:
+        sahm_data = aggregator.get_indicator('46_sahm_rule')
+        if 'error' in sahm_data:
+            st.error(f"⚠️ {sahm_data['error']}")
+        else:
+            sahm_val = sahm_data.get('sahm_value', 'N/A')
+            sahm_chg = sahm_data.get('change_mom', 0)
+            triggered = sahm_data.get('triggered', False)
+            st.metric("Sahm Rule", format_value(sahm_val, 2), f"{format_value(sahm_chg, 2)} MoM")
+            if triggered:
+                st.markdown("🔴 **RECESSION SIGNAL TRIGGERED** (≥ 0.50)")
+            else:
+                st.markdown(f"🟢 Below threshold (< 0.50)")
+            st.caption(f"As of: {sahm_data.get('latest_date', 'N/A')}")
+
+            # Sahm Rule chart with 0.50 threshold line
+            sahm_hist = sahm_data.get('historical')
+            if sahm_hist is not None and len(sahm_hist) > 0:
+                with st.expander("📈 Sahm Rule History"):
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatter(
+                        x=sahm_hist.index, y=sahm_hist.values,
+                        name='Sahm Rule', line=dict(color='#c62828', width=1.5),
+                        fill='tozeroy', fillcolor='rgba(198,40,40,0.08)',
+                    ))
+                    fig.add_hline(y=0.50, line_dash="dash", line_color="red", opacity=0.7,
+                                  annotation_text="Recession threshold (0.50)")
+                    fig.update_layout(
+                        yaxis_title="Sahm Rule (pp)",
+                        hovermode='x unified', height=320,
+                        margin=dict(l=50, r=20, t=10, b=10),
+                        showlegend=False,
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── Section 2: Consumer ───────────────────────────────────────────
+    st.subheader("Consumer")
+
+    col1, col2 = st.columns(2)
+
+    # Consumer Sentiment (UMich)
+    with col1:
+        cs_data = aggregator.get_indicator('44_consumer_sentiment')
+        if 'error' in cs_data:
+            st.error(f"⚠️ {cs_data['error']}")
+        else:
+            cs_val = cs_data.get('consumer_sentiment', 'N/A')
+            cs_chg = cs_data.get('change_mom', 0)
+            st.metric("UMich Consumer Sentiment", format_value(cs_val, 1), f"{format_value(cs_chg, 1)} MoM")
+            st.caption(f"As of: {cs_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in cs_data:
+                st.caption(f"ℹ️ {cs_data['interpretation']}")
+            _render_history_expander(cs_data, 'Consumer Sentiment', '#00695c')
+
+    # Retail Sales
+    with col2:
+        rs_data = aggregator.get_indicator('50_retail_sales')
+        if 'error' in rs_data:
+            st.error(f"⚠️ {rs_data['error']}")
+        else:
+            rs_b = rs_data.get('retail_sales_b', 'N/A')
+            rs_mom = rs_data.get('retail_sales_mom_pct', 0)
+            st.metric("Retail Sales ($B)", format_value(rs_b, 1), f"{format_value(rs_mom, 2)}% MoM")
+            st.caption(f"As of: {rs_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in rs_data:
+                st.caption(f"ℹ️ {rs_data['interpretation']}")
+            _render_history_expander(rs_data, 'Retail Sales MoM%', '#2e7d32', value_suffix='%')
+
+    st.markdown("---")
+
+    # ── Section 3: Production & Housing ───────────────────────────────
+    st.subheader("Production & Housing")
+
+    col1, col2, col3 = st.columns(3)
+
+    # ISM Services PMI
+    with col1:
+        ism_svc_data = aggregator.get_indicator('43_ism_services')
+        if 'error' in ism_svc_data:
+            st.error(f"⚠️ {ism_svc_data['error']}")
+        else:
+            ism_svc_val = ism_svc_data.get('ism_services_pmi', 'N/A')
+            ism_svc_chg = ism_svc_data.get('change_1d', 0)
+            st.metric("ISM Services PMI", format_value(ism_svc_val, 1), f"{format_value(ism_svc_chg, 1)}")
+            st.caption(f"As of: {ism_svc_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in ism_svc_data:
+                st.caption(f"ℹ️ {ism_svc_data['interpretation']}")
+            st.caption("Services = ~77% of US GDP. > 50 = expansion.")
+
+    # Industrial Production
+    with col2:
+        ip_data = aggregator.get_indicator('59_industrial_production')
+        if 'error' in ip_data:
+            st.error(f"⚠️ {ip_data['error']}")
+        else:
+            ip_idx = ip_data.get('indpro_index', 'N/A')
+            ip_yoy = ip_data.get('indpro_yoy_pct', 0)
+            st.metric("Industrial Production", format_value(ip_idx, 1), f"{format_value(ip_yoy, 1)}% YoY")
+            st.caption(f"As of: {ip_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in ip_data:
+                st.caption(f"ℹ️ {ip_data['interpretation']}")
+            _render_history_expander(ip_data, 'Industrial Production (Index)', '#4a148c')
+
+    # Housing Starts
+    with col3:
+        hs_data = aggregator.get_indicator('51_housing_starts')
+        if 'error' in hs_data:
+            st.error(f"⚠️ {hs_data['error']}")
+        else:
+            hs_k = hs_data.get('housing_starts_k', 'N/A')
+            hs_chg = hs_data.get('change_mom_pct', 0)
+            st.metric("Housing Starts (K, ann.)", format_value(hs_k, 0), f"{format_value(hs_chg, 1)}% MoM")
+            st.caption(f"As of: {hs_data.get('latest_date', 'N/A')}")
+            if 'interpretation' in hs_data:
+                st.caption(f"ℹ️ {hs_data['interpretation']}")
+            _render_history_expander(hs_data, 'Housing Starts (K)', '#bf360c')
+
+
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>
-    <p>📊 Macroeconomic Indicators Dashboard | Data sources: FRED, Yahoo Finance, OpenBB, CBOE, Robert Shiller</p>
+    <p>📊 Macroeconomic Indicators Dashboard | Data sources: FRED, Yahoo Finance, OpenBB, CBOE, Robert Shiller, Trading Economics, SEC EDGAR</p>
     <p>⚠️ For informational purposes only. Not financial advice.</p>
 </div>
 """, unsafe_allow_html=True)

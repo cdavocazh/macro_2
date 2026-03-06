@@ -100,7 +100,7 @@ def get_company_financials_yahoo(ticker_symbol):
     Fetch comprehensive financial data for a single company via Yahoo Finance.
 
     Returns a JSON-serializable dict with:
-    - income_statement (quarterly, up to 5 quarters)
+    - income_statement (quarterly, up to 9 quarters)
     - balance_sheet (quarterly)
     - cash_flow (quarterly)
     - valuation (current)
@@ -118,7 +118,7 @@ def get_company_financials_yahoo(ticker_symbol):
         # Determine quarter labels (most recent first)
         quarters = []
         if q_income is not None and not q_income.empty:
-            quarters = [_format_quarter_label(c) for c in q_income.columns[:5]]
+            quarters = [_format_quarter_label(c) for c in q_income.columns[:9]]
 
         result = {
             'ticker': ticker_symbol,
@@ -134,7 +134,7 @@ def get_company_financials_yahoo(ticker_symbol):
 
         # ── Income Statement ────────────────────────────────
         if q_income is not None and not q_income.empty:
-            cols = list(q_income.columns[:5])
+            cols = list(q_income.columns[:9])
             result['income_statement'] = {
                 'total_revenue': [_safe_get_row(q_income, ['Total Revenue', 'Operating Revenue'], c) for c in cols],
                 'cost_of_revenue': [_safe_get_row(q_income, ['Cost Of Revenue', 'Reconciled Cost Of Revenue'], c) for c in cols],
@@ -158,7 +158,7 @@ def get_company_financials_yahoo(ticker_symbol):
 
         # ── Balance Sheet ───────────────────────────────────
         if q_balance is not None and not q_balance.empty:
-            cols = list(q_balance.columns[:5])
+            cols = list(q_balance.columns[:9])
 
             # Assets
             total_assets_list = [_safe_get_row(q_balance, ['Total Assets'], c) for c in cols]
@@ -239,7 +239,7 @@ def get_company_financials_yahoo(ticker_symbol):
 
         # ── Cash Flow ───────────────────────────────────────
         if q_cashflow is not None and not q_cashflow.empty:
-            cols = list(q_cashflow.columns[:5])
+            cols = list(q_cashflow.columns[:9])
             operating_cf = [_safe_get_row(q_cashflow, [
                 'Operating Cash Flow',
                 'Cash Flow From Continuing Operating Activities',

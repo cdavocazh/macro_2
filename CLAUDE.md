@@ -2,7 +2,7 @@
 
 ## What is this project?
 
-Macroeconomic indicators dashboard with large-cap equity financials. Fetches 28+ indicators from financial APIs (yfinance, FRED, SEC EDGAR, web scrapers, MOF Japan), displays them in a Streamlit dashboard with 6 tabs, caches locally for fast startup, and exports to CSV.
+Macroeconomic indicators dashboard with large-cap equity financials. Fetches 62+ indicators from financial APIs (yfinance, FRED, SEC EDGAR, Trading Economics, web scrapers, MOF Japan), displays them in a Streamlit dashboard with 8 tabs, caches locally for fast startup, and exports to CSV.
 
 **Repo:** https://github.com/cdavocazh/macro_2
 **Branch:** main
@@ -20,6 +20,23 @@ python scheduled_extract.py --force    # ignore freshness guard
 # Extract all historical data to CSV (dual-source equity financials)
 python extract_historical_data.py
 
+# Batch extract S&P 500 financials (~30-40 min for full run)
+python extract_sp500_financials.py                              # full S&P 500, Yahoo
+python extract_sp500_financials.py --source both                # Yahoo + SEC
+python extract_sp500_financials.py --resume --exclude-top20     # skip existing + Top 20
+python extract_sp500_financials.py --tickers CRM,AMD,NFLX      # specific tickers
+
+# Monitor earnings dates and flag stale data
+python monitor_earnings.py                          # scan all companies in database
+python monitor_earnings.py --auto-update            # scan + re-extract stale tickers
+python monitor_earnings.py --tickers AAPL,MSFT      # check specific tickers only
+
+# Weekly data freshness review (compares local data vs SEC EDGAR)
+python review_data_freshness.py                     # full S&P 500 review
+python review_data_freshness.py --auto-update       # review + re-extract stale
+python review_data_freshness.py --top20-only        # only Top 20
+python review_data_freshness.py --report            # save CSV to data_export/
+
 # Install macOS launchd auto-scheduler
 bash setup_launchd.sh
 bash setup_launchd.sh --status
@@ -33,23 +50,29 @@ python -m agent.langchain_agents.agent "Compare Yahoo vs SEC for AAPL"
 ## Architecture
 
 ```
-app.py                        Streamlit dashboard (6 tabs, read-only UI)
-data_aggregator.py            Orchestrator — fetches all 28+ indicators, saves/loads cache
+app.py                        Streamlit dashboard (8 tabs, read-only UI)
+data_aggregator.py            Orchestrator — fetches all 62+ indicators, saves/loads cache
   ├── data_extractors/
-  │   ├── yfinance_extractors.py       11 indicators (VIX, DXY, Russell, ES/RTY futures, JPY)
-  │   ├── fred_extractors.py            8 indicators (GDP, 10Y yield, ISM PMI, TGA, liquidity, SOFR, 2Y yield)
+  │   ├── yfinance_extractors.py       14 indicators (VIX, DXY, Russell, ES/RTY futures, JPY, EUR/USD, GBP/USD, EUR/JPY, SPY/RSP)
+  │   ├── fred_extractors.py           32 indicators (GDP, yields, ISM PMI, TGA, liquidity, SOFR, spreads, inflation, labor, M2, JOLTS, Sahm, SLOOS, etc.)
   │   ├── web_scrapers.py               4 indicators (Forward P/E, Put/Call, SKEW, breadth)
   │   ├── shiller_extractor.py          1 indicator  (CAPE ratio from Yale Excel)
   │   ├── openbb_extractors.py          1 indicator  (S&P fundamentals, optional dep)
-  │   ├── commodities_extractors.py     4 indicators (gold, silver, oil, copper)
+  │   ├── commodities_extractors.py     7 indicators (gold, silver, oil, copper, natural gas, Cu/Au ratio)
   │   ├── cot_extractor.py              1 indicator  (CFTC COT positioning, gold & silver)
   │   ├── japan_yield_extractor.py      2 indicators (Japan 2Y yield, US-JP spread)
+  │   ├── global_yields_extractor.py    4 indicators (Germany/UK/China 10Y yields, ISM Services PMI)
+  │   ├── yield_curve_extractor.py      1 indicator  (2s10s spread + regime classification)
   │   ├── equity_financials_extractor.py  Top 20 company financials (Yahoo Finance)
-  │   └── sec_extractor.py              Top 20 company financials (SEC EDGAR XBRL)
+  │   ├── sec_extractor.py              Top 20 company financials (SEC EDGAR XBRL)
+  │   └── sp500_tickers.py             S&P 500 constituent list (Wikipedia + cache)
   └── utils/helpers.py               Cache serialization, CSV export, formatting
 
 scheduled_extract.py          Standalone catch-up script (does NOT touch app.py)
 extract_historical_data.py    Append-only historical CSV builder (dual-source equity)
+extract_sp500_financials.py   Batch extraction of S&P 500 financials (~30-40 min)
+monitor_earnings.py           Earnings date monitoring — flags stale companies (~45s)
+review_data_freshness.py      Weekly SEC filing date comparison — flags stale data (~2 min)
 config.py                     API keys, cache settings
 
 agent/                        Financial data discrepancy review agent
@@ -63,11 +86,13 @@ agent/                        Financial data discrepancy review agent
 | Tab | Name | Indicators |
 |-----|------|------------|
 | 1 | Valuation Metrics | Forward P/E, Trailing P/E & P/B, Shiller CAPE, Market Cap/GDP |
-| 2 | Market Indices | ES/RTY futures, breadth, Russell 2000 V/G, S&P 500/200MA |
+| 2 | Market Indices | ES/RTY futures, breadth, Russell 2000 V/G, S&P 500/200MA, SPY/RSP concentration |
 | 3 | Volatility & Risk | VIX, MOVE, VIX/MOVE ratio, Put/Call, CBOE SKEW |
-| 4 | Macro & Currency | DXY, USD/JPY, TGA, net liquidity, SOFR, US 2Y, Japan 2Y, spread, 10Y yield, ISM PMI |
-| 5 | Commodities | Gold, Silver, Crude Oil, Copper, CFTC COT positioning |
-| 6 | Large-cap Financials | Top 20 companies, dual-source (Yahoo + SEC EDGAR), quarterly statements |
+| 4 | Macro & Currency | DXY, USD/JPY, EUR/USD, GBP/USD, EUR/JPY, TGA, net liquidity, M2, SOFR, US 2Y, Japan 2Y, yield spread, 10Y yield, ISM PMI |
+| 5 | Commodities | Gold, Silver, Crude Oil, Copper, Natural Gas, Cu/Au ratio, CFTC COT positioning |
+| 6 | Large-cap Financials | Top 20 dropdown + any-ticker text input, dual-source (Yahoo + SEC EDGAR), quarterly statements |
+| 7 | Rates & Credit | Yield curve regime, 2s10s spread, global yields (US 5Y/10Y, DE/UK/CN 10Y), real yield, breakevens, HY/IG OAS, NFCI, Fed Funds, bank reserves, SLOOS, unemployment, claims (initial+continuing), headline/core CPI, PPI, core PCE |
+| 8 | Economic Activity | Nonfarm Payrolls, JOLTS, Quits Rate, Sahm Rule, Consumer Sentiment, Retail Sales, ISM Services PMI, Industrial Production, Housing Starts |
 
 ## Dashboard features
 
@@ -75,6 +100,7 @@ agent/                        Financial data discrepancy review agent
 - **QoQ/YoY indicators**: Quarterly financial tables show colored percentage changes (green positive, red negative)
 - **Numerator/denominator display**: Financial analysis and valuation metrics show formula components in small gray text
 - **Multi-source switching**: Tab 6 supports Yahoo Finance and SEC EDGAR with radio button toggle
+- **Custom ticker input**: Tab 6 has a text input alongside the Top 20 dropdown — type any ticker for on-demand fetching
 - **Revenue segments**: SEC EDGAR source shows business segment breakdown from 10-K filings
 
 ## Data flow
@@ -107,12 +133,12 @@ historical_data/equity_financials/
   ├── yahoo_finance/
   │   ├── AAPL_quarterly.csv
   │   ├── MSFT_quarterly.csv
-  │   ├── ... (20 tickers)
+  │   ├── ... (up to ~500 tickers via extract_sp500_financials.py)
   │   └── _valuation_snapshot.csv
   └── sec_edgar/
       ├── AAPL_quarterly.csv
       ├── MSFT_quarterly.csv
-      ├── ... (19 tickers, TSM excluded — IFRS)
+      ├── ... (up to ~500 tickers, TSM excluded — IFRS)
       └── _valuation_snapshot.csv
 ```
 
@@ -136,11 +162,15 @@ TOP_20_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM
 - **Dual-source equity storage:** Historical data saves per-company quarterly CSVs into `yahoo_finance/` and `sec_edgar/` subdirectories for cross-validation.
 - **Singleton aggregator:** `get_aggregator()` returns a single global instance to prevent duplicate fetches within a Streamlit session.
 - **Network connectivity check:** `scheduled_extract.py` probes Yahoo/FRED/SEC hosts before starting extraction. Retries up to 6 times (10s apart, 60s max) to ride out VPN reconnections. Aborts cleanly if no network.
+- **S&P 500 ticker list:** `sp500_tickers.py` scrapes Wikipedia and caches to `data_cache/sp500_tickers.json` (7-day TTL). Falls back to hardcoded list if Wikipedia is unreachable.
+- **On-demand custom tickers:** Tab 6 text input fetches any ticker on-demand via `get_company_financials_yahoo()` and auto-saves to `historical_data/` via `save_single_company()`.
+- **Earnings monitoring:** `monitor_earnings.py` uses lightweight `yfinance ticker.info` calls (~45s for 500 companies) to compare `mostRecentQuarter` against local CSVs. No full financial fetching.
+- **SEC freshness review:** `review_data_freshness.py` uses the SEC submissions endpoint (~100KB per call, <200ms) via `get_latest_filing_dates()` to compare filing dates without downloading full companyfacts data.
 
 ## SEC EDGAR XBRL specifics
 
 - **API:** `https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json` (free, 10 req/sec, User-Agent required)
-- **CIK mapping:** Hardcoded in `sec_extractor.py` for all 20 tickers
+- **CIK mapping:** Dynamic download from SEC `company_tickers.json`, cached to disk (7-day TTL). Supports any US ticker.
 - **Valid forms:** 10-K, 10-Q, 20-F, 6-K
 - **Duration detection:** Quarterly = 80-100 days, Annual = 340-380 days
 - **TSM exception:** Files under `ifrs-full` namespace, not `us-gaap`. Returns error (known limitation).
@@ -202,6 +232,20 @@ Equity financials return a nested dict per company with `income_statement`, `bal
 ```bash
 python -c "from data_extractors.yfinance_extractors import get_vix; print(get_vix())"
 python -c "from data_extractors.sec_extractor import get_company_financials_sec; print(get_company_financials_sec('AAPL'))"
+```
+
+**Batch extract S&P 500 financials:**
+```bash
+python extract_sp500_financials.py --source both --resume   # incremental update
+python extract_sp500_financials.py --tickers CRM,AMD        # specific tickers
+```
+
+**Monitor earnings and update stale data:**
+```bash
+python monitor_earnings.py                    # scan all companies
+python monitor_earnings.py --auto-update      # scan + auto re-extract stale
+python review_data_freshness.py --report      # weekly freshness report
+python review_data_freshness.py --auto-update # review + auto re-extract
 ```
 
 **Change extraction schedule:**
