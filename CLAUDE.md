@@ -37,6 +37,12 @@ python review_data_freshness.py --auto-update       # review + re-extract stale
 python review_data_freshness.py --top20-only        # only Top 20
 python review_data_freshness.py --report            # save CSV to data_export/
 
+# Extract 13F institutional fund holdings (SEC EDGAR)
+python extract_13f_holdings.py                              # all 5 funds, last 8 quarters
+python extract_13f_holdings.py --funds berkshire_hathaway,citadel
+python extract_13f_holdings.py --max-filings 4              # only last 4 quarters
+python extract_13f_holdings.py --list-funds                 # show available funds
+
 # Install macOS launchd auto-scheduler
 bash setup_launchd.sh
 bash setup_launchd.sh --status
@@ -65,12 +71,14 @@ data_aggregator.py            Orchestrator — fetches all 62+ indicators, saves
   │   ├── yield_curve_extractor.py      1 indicator  (2s10s spread + regime classification)
   │   ├── equity_financials_extractor.py  Top 20 company financials (Yahoo Finance)
   │   ├── sec_extractor.py              Top 20 company financials (SEC EDGAR XBRL)
+  │   ├── thirteenf_extractor.py       13F-HR institutional holdings (5 funds, QoQ changes)
   │   └── sp500_tickers.py             S&P 500 constituent list (Wikipedia + cache)
   └── utils/helpers.py               Cache serialization, CSV export, formatting
 
 scheduled_extract.py          Standalone catch-up script (does NOT touch app.py)
 extract_historical_data.py    Append-only historical CSV builder (dual-source equity)
 extract_sp500_financials.py   Batch extraction of S&P 500 financials (~30-40 min)
+extract_13f_holdings.py       13F institutional fund holdings extraction (~25s)
 monitor_earnings.py           Earnings date monitoring — flags stale companies (~45s)
 review_data_freshness.py      Weekly SEC filing date comparison — flags stale data (~2 min)
 config.py                     API keys, cache settings
@@ -142,6 +150,20 @@ historical_data/equity_financials/
       └── _valuation_snapshot.csv
 ```
 
+### 13F institutional holdings storage
+
+```
+historical_data/13F/
+  ├── situational_awareness/     Situational Awareness LP (CIK 0002045724)
+  ├── berkshire_hathaway/        Berkshire Hathaway Inc (CIK 0001067983)
+  ├── bridgewater/               Bridgewater Associates LP (CIK 0001350694)
+  ├── citadel/                   Citadel Advisors LLC (CIK 0001423053)
+  └── renaissance_technologies/  Renaissance Technologies LLC (CIK 0001037389)
+      ├── holdings_2025Q4.csv    Per-quarter holdings snapshot
+      ├── holdings_2025Q3.csv
+      └── changes.csv            QoQ position changes (NEW/INCREASED/DECREASED/EXITED)
+```
+
 ## Top 20 tickers
 
 ```python
@@ -166,6 +188,7 @@ TOP_20_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM
 - **On-demand custom tickers:** Tab 6 text input fetches any ticker on-demand via `get_company_financials_yahoo()` and auto-saves to `historical_data/` via `save_single_company()`.
 - **Earnings monitoring:** `monitor_earnings.py` uses lightweight `yfinance ticker.info` calls (~45s for 500 companies) to compare `mostRecentQuarter` against local CSVs. No full financial fetching.
 - **SEC freshness review:** `review_data_freshness.py` uses the SEC submissions endpoint (~100KB per call, <200ms) via `get_latest_filing_dates()` to compare filing dates without downloading full companyfacts data.
+- **13F holdings extraction:** `thirteenf_extractor.py` parses SEC 13F-HR XML infotables for 5 tracked institutional funds. Reuses `_rate_limit()` and `SEC_HEADERS` from `sec_extractor.py`. Handles 13F-HR/A amendments (prefers latest per quarter). Computes QoQ changes keyed by `(cusip, put_call)`. XML `<value>` field is in dollars (not thousands despite SEC form instructions).
 
 ## SEC EDGAR XBRL specifics
 
@@ -247,6 +270,18 @@ python monitor_earnings.py --auto-update      # scan + auto re-extract stale
 python review_data_freshness.py --report      # weekly freshness report
 python review_data_freshness.py --auto-update # review + auto re-extract
 ```
+
+**Extract 13F institutional holdings:**
+```bash
+python extract_13f_holdings.py                          # all 5 funds
+python extract_13f_holdings.py --funds situational_awareness,berkshire_hathaway
+python extract_13f_holdings.py --max-filings 4          # last 4 quarters only
+```
+
+**Add a new fund to 13F tracking:**
+1. Find the fund's CIK on SEC EDGAR
+2. Add entry to `FUND_REGISTRY` in `data_extractors/thirteenf_extractor.py`
+3. Run `python extract_13f_holdings.py --funds new_fund_key`
 
 **Change extraction schedule:**
 1. Edit times in `com.macro2.scheduled-extract.plist`
