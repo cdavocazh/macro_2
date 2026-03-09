@@ -1525,6 +1525,39 @@ def extract_gold_reserves_share():
         return None
 
 
+def extract_credit_etf_proxies():
+    """Extract HYG, LQD, JNK intraday credit spread proxies to CSVs."""
+    print("\n📊 Extracting Credit ETF Proxies (HYG, LQD, JNK)...")
+    results = []
+    try:
+        data = fidenza_extractors.get_credit_etf_proxies()
+        mapping = {
+            'HYG': ('hyg_price', 'hyg_credit_proxy.csv'),
+            'LQD': ('lqd_price', 'lqd_credit_proxy.csv'),
+            'JNK': ('jnk_price', 'jnk_credit_proxy.csv'),
+        }
+        for ticker, (key, csv_name) in mapping.items():
+            etf_data = data.get(ticker, {})
+            if isinstance(etf_data, dict) and 'error' in etf_data:
+                print(f"  ❌ {ticker}: {etf_data['error']}")
+                continue
+            hist = etf_data.get('historical')
+            if hist is not None and not hist.empty:
+                df = pd.DataFrame({
+                    'timestamp': hist.index,
+                    'date': hist.index.date,
+                    f'{ticker.lower()}_price': hist.values,
+                })
+                append_to_csv(csv_name, df)
+                print(f"  ✅ {ticker} → {csv_name} | Last: {df['date'].max()} | Rows: {len(df)}")
+                results.append({'indicator': ticker, 'last_date': str(df['date'].max()), 'rows': len(df)})
+            else:
+                print(f"  ⚠️ {ticker}: No historical data")
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+    return results if results else None
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Financial Agent v1.5-v1.9 — 27 FRED Series Batch Extraction
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1720,6 +1753,9 @@ def extract_all_historical_data():
     # Lower priority (may fail gracefully — no EIA key / WGC 404)
     _run(extract_opec_production, 'opec_production')
     _run(extract_gold_reserves_share, 'gold_reserves_share')
+
+    # Intraday credit spread proxies
+    _run(extract_credit_etf_proxies, 'credit_etf_proxies')
 
     # ── Financial Agent v1.5-v1.9 — 27 FRED Series ────────────
     _run(extract_financial_agent_historical, 'financial_agent')

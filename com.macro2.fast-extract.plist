@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.macro2.fast-extract</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/kriszhang/mambaforge/bin/python3</string>
+        <string>/Users/kriszhang/Github/macro_2/fast_extract.py</string>
+        <string>--cron</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/kriszhang/Github/macro_2</string>
+
+    <!--
+        Runs every 300 seconds (5 minutes).
+        Only extracts real-time yfinance data (no FRED, no web scrapers).
+        Freshness guard inside fast_extract.py prevents overlap (3-min TTL).
+    -->
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/kriszhang/Github/macro_2/logs/fast_extract_stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/kriszhang/Github/macro_2/logs/fast_extract_stderr.log</string>
+
+    <!-- Kill if it runs longer than 4 minutes (240s) to prevent overlap -->
+    <key>TimeOut</key>
+    <integer>240</integer>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/kriszhang/mambaforge/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

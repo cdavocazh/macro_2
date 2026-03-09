@@ -558,3 +558,23 @@ def get_gold_reserves_share():
         return {'error': 'Could not parse gold reserves share from WGC'}
     except Exception as e:
         return {'error': f'Error fetching gold reserves share: {str(e)}'}
+
+
+# ── Intraday Credit Spread Proxies ───────────────────────────────────────────
+
+def get_credit_etf_proxies():
+    """
+    Fetch HYG, LQD, JNK bond ETF prices as intraday credit spread proxies.
+    These update in real-time via yfinance (unlike FRED OAS which lags 1-2 days).
+    Price drops = spreads widening (inverse relationship).
+    """
+    etfs = {
+        'HYG': ('hyg_price', 'iShares iBoxx High Yield Corp Bond ETF'),
+        'LQD': ('lqd_price', 'iShares iBoxx Investment Grade Corp Bond ETF'),
+        'JNK': ('jnk_price', 'SPDR Bloomberg High Yield Bond ETF'),
+    }
+    results = {}
+    for ticker, (key, name) in etfs.items():
+        data = _yf_price(ticker, name, key=key)
+        results[ticker] = data
+    return results
