@@ -33,6 +33,7 @@ from data_extractors.financial_agent_extractors import (
     get_all_financial_agent_series,
     get_gold_price_yfinance,
 )
+from data_extractors import fidenza_extractors
 
 
 # Configuration
@@ -1216,6 +1217,315 @@ def extract_bbb_oas():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Fidenza Macro Gap-Fill — 15 New Indicators
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── yfinance-based (simple series) ────────────────────────────────────────────
+
+def extract_brent_crude():
+    """Extract Brent Crude Oil futures (BZ=F) historical data."""
+    return _extract_simple_series(
+        'Brent Crude', fidenza_extractors.get_brent_crude,
+        'brent_crude.csv', 'brent_crude_price',
+    )
+
+
+def extract_nikkei_225():
+    """Extract Nikkei 225 index (^N225) historical data."""
+    return _extract_simple_series(
+        'Nikkei 225', fidenza_extractors.get_nikkei_225,
+        'nikkei_225.csv', 'nikkei_225',
+    )
+
+
+def extract_fed_funds_futures():
+    """Extract Fed Funds Futures (ZQ=F) with price + implied rate."""
+    print("\n📊 Extracting Fed Funds Futures...")
+    try:
+        data = fidenza_extractors.get_fed_funds_futures()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+        hist = data.get('historical')
+        if hist is None or (hasattr(hist, 'empty') and hist.empty):
+            print("  ⚠️  No historical data for Fed Funds Futures")
+            return None
+        df = pd.DataFrame({
+            'timestamp': hist.index,
+            'date': [d.date() if hasattr(d, 'date') else d for d in hist.index],
+            'ff_futures_price': hist.values,
+            'ff_implied_rate': 100 - hist.values,
+        })
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        append_to_csv('fed_funds_futures.csv', df)
+        return {'indicator': 'Fed Funds Futures', 'last_date': df['date'].max(), 'rows': len(df)}
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+# ── EM indices (batch extraction) ─────────────────────────────────────────────
+
+def extract_em_indices():
+    """Extract KOSPI, Bovespa, and MSCI EM proxy (EEM) historical data."""
+    print("\n📊 Extracting EM indices (KOSPI, Bovespa, EEM)...")
+    try:
+        data = fidenza_extractors.get_em_indices()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+
+        results = []
+        for key, csv_name, col_name in [
+            ('kospi', 'kospi_index.csv', 'kospi'),
+            ('bovespa', 'bovespa_index.csv', 'bovespa'),
+            ('msci_em', 'msci_em.csv', 'msci_em'),
+        ]:
+            hist = data.get(f'historical_{key}')
+            if hist is not None and isinstance(hist, pd.Series) and not hist.empty:
+                df = pd.DataFrame({
+                    'timestamp': hist.index,
+                    'date': [d.date() if hasattr(d, 'date') else d for d in hist.index],
+                    col_name: hist.values,
+                })
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                append_to_csv(csv_name, df)
+                results.append({
+                    'indicator': f'EM {key.upper()}',
+                    'last_date': df['date'].max(),
+                    'rows': len(df),
+                })
+            else:
+                print(f"  ⚠️  No data for {key}")
+        return results if results else None
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+# ── SOFR Futures Term Structure (multi-row CSV) ──────────────────────────────
+
+def extract_sofr_futures():
+    """Extract SOFR futures term structure to CSV.
+    Multi-row format: one row per contract per date.
+    Deduplication by (timestamp, contract).
+    """
+    print("\n📊 Extracting SOFR Futures Term Structure...")
+    try:
+        data = fidenza_extractors.get_sofr_futures_term_structure()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+
+        contracts = data.get('contracts', [])
+        if not contracts:
+            print("  ⚠️  No SOFR futures contracts available")
+            return None
+
+        all_rows = []
+        for c in contracts:
+            hist = c.get('historical')
+            if hist is not None and isinstance(hist, pd.Series) and not hist.empty:
+                for ts, price in hist.items():
+                    all_rows.append({
+                        'timestamp': ts,
+                        'date': ts.date() if hasattr(ts, 'date') else ts,
+                        'contract': c['contract'],
+                        'price': float(price),
+                        'implied_rate': round(100 - float(price), 4),
+                    })
+
+        if not all_rows:
+            print("  ⚠️  No SOFR futures historical data")
+            return None
+
+        df = pd.DataFrame(all_rows)
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+        # Custom dedup: by (timestamp, contract) instead of timestamp alone
+        filepath = os.path.join(OUTPUT_DIR, 'sofr_futures_term_structure.csv')
+        if os.path.exists(filepath):
+            existing = pd.read_csv(filepath)
+            existing['timestamp'] = pd.to_datetime(existing['timestamp'], errors='coerce')
+            combined = pd.concat([existing, df], ignore_index=True)
+            combined = combined.drop_duplicates(subset=['timestamp', 'contract'], keep='last')
+            combined = combined.sort_values(['timestamp', 'contract'])
+        else:
+            combined = df.sort_values(['timestamp', 'contract'])
+        combined.to_csv(filepath, index=False)
+        print(f"  💾 Saved to: sofr_futures_term_structure.csv ({len(combined)} total rows)")
+
+        return {
+            'indicator': 'SOFR Futures Term Structure',
+            'last_date': df['date'].max(),
+            'rows': len(combined),
+        }
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+# ── Computed indicators ──────────────────────────────────────────────────────
+
+def extract_xau_jpy():
+    """Extract XAU/JPY (Gold in Yen) historical data."""
+    return _extract_simple_series(
+        'XAU/JPY', fidenza_extractors.get_xau_jpy,
+        'xau_jpy.csv', 'xau_jpy',
+    )
+
+
+def extract_gold_silver_ratio():
+    """Extract Gold/Silver ratio historical data."""
+    return _extract_simple_series(
+        'Gold/Silver Ratio', fidenza_extractors.get_gold_silver_ratio,
+        'gold_silver_ratio.csv', 'gold_silver_ratio',
+    )
+
+
+# ── FRED-based (new series in fred_extractors) ──────────────────────────────
+
+def extract_adp_employment():
+    """Extract ADP Employment (ADPWNUSNERSA) to CSV."""
+    return _extract_simple_series(
+        'ADP Employment', fred_extractors.get_adp_employment,
+        'adp_employment.csv', 'adp_employment',
+    )
+
+
+def extract_fed_balance_sheet():
+    """Extract Fed Balance Sheet / Total Assets (WALCL) to CSV."""
+    return _extract_simple_series(
+        'Fed Balance Sheet', fred_extractors.get_fed_balance_sheet,
+        'fed_balance_sheet.csv', 'fed_balance_sheet',
+    )
+
+
+def extract_treasury_term_premia():
+    """Extract Treasury Term Premia (10Y, 5Y) to CSV."""
+    print("\n📊 Extracting Treasury Term Premia...")
+    try:
+        data = fred_extractors.get_treasury_term_premia()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+
+        hist_10y = data.get('historical')
+        hist_5y = data.get('historical_5y')
+
+        if hist_10y is None or (hasattr(hist_10y, 'empty') and hist_10y.empty):
+            print("  ⚠️  No 10Y term premia data")
+            return None
+
+        df = pd.DataFrame({
+            'timestamp': hist_10y.index,
+            'date': [d.date() if hasattr(d, 'date') else d for d in hist_10y.index],
+            'term_premium_10y': hist_10y.values,
+        })
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+        # Merge 5Y if available
+        if hist_5y is not None and not hist_5y.empty:
+            df_5y = pd.DataFrame({
+                'timestamp': hist_5y.index,
+                'term_premium_5y': hist_5y.values,
+            })
+            df_5y['timestamp'] = pd.to_datetime(df_5y['timestamp'])
+            df = pd.merge(df, df_5y, on='timestamp', how='left')
+
+        append_to_csv('treasury_term_premia.csv', df)
+        return {'indicator': 'Treasury Term Premia', 'last_date': df['date'].max(), 'rows': len(df)}
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+# ── Web scrape & lower-priority indicators ───────────────────────────────────
+
+def extract_aaii_sentiment():
+    """Extract AAII Bull/Bear Sentiment Survey to CSV (snapshot per extraction)."""
+    print("\n📊 Extracting AAII Sentiment Survey...")
+    try:
+        data = fidenza_extractors.get_aaii_sentiment()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+
+        # Handle inf bull_bear_ratio for CSV serialization
+        bbr = data.get('bull_bear_ratio')
+        if bbr is not None and not isinstance(bbr, (int, float)):
+            bbr = None
+        if isinstance(bbr, float) and (bbr == float('inf') or bbr != bbr):
+            bbr = None
+
+        df = pd.DataFrame([{
+            'timestamp': datetime.now(),
+            'date': datetime.now().date(),
+            'bullish': data.get('bullish'),
+            'neutral': data.get('neutral'),
+            'bearish': data.get('bearish'),
+            'bull_bear_ratio': bbr,
+        }])
+        append_to_csv('aaii_sentiment.csv', df)
+        return {'indicator': 'AAII Sentiment', 'last_date': df['date'].max(), 'rows': 1}
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+def extract_opec_production():
+    """Extract OPEC production data to CSV."""
+    print("\n📊 Extracting OPEC Production...")
+    try:
+        data = fidenza_extractors.get_opec_production()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+        hist = data.get('historical')
+        if hist is not None and isinstance(hist, pd.Series) and not hist.empty:
+            df = pd.DataFrame({
+                'timestamp': hist.index,
+                'date': [d.date() if hasattr(d, 'date') else d for d in hist.index],
+                'opec_production_mbpd': hist.values,
+            })
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            append_to_csv('opec_production.csv', df)
+            return {'indicator': 'OPEC Production', 'last_date': df['date'].max(), 'rows': len(df)}
+        else:
+            # Snapshot only (scrape fallback)
+            df = pd.DataFrame([{
+                'timestamp': datetime.now(),
+                'date': datetime.now().date(),
+                'opec_production_mbpd': data.get('opec_production'),
+            }])
+            append_to_csv('opec_production.csv', df)
+            return {'indicator': 'OPEC Production', 'last_date': df['date'].max(), 'rows': 1}
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+def extract_gold_reserves_share():
+    """Extract Gold share of global reserves to CSV (snapshot)."""
+    print("\n📊 Extracting Gold Reserves Share...")
+    try:
+        data = fidenza_extractors.get_gold_reserves_share()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+        df = pd.DataFrame([{
+            'timestamp': datetime.now(),
+            'date': datetime.now().date(),
+            'gold_reserves_share_pct': data.get('gold_reserves_share_pct'),
+        }])
+        append_to_csv('gold_reserves_share.csv', df)
+        return {'indicator': 'Gold Reserves Share', 'last_date': df['date'].max(), 'rows': 1}
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Financial Agent v1.5-v1.9 — 27 FRED Series Batch Extraction
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -1390,6 +1700,26 @@ def extract_all_historical_data():
     _run(extract_hy_oas, 'hy_oas')
     _run(extract_ig_oas, 'ig_oas')
     _run(extract_bbb_oas, 'bbb_oas')
+
+    # ── Fidenza Macro Gap-Fill Indicators ──────────────────────
+    # High priority
+    _run(extract_sofr_futures, 'sofr_futures')
+    _run(extract_brent_crude, 'brent_crude')
+    _run(extract_nikkei_225, 'nikkei_225')
+    _run(extract_aaii_sentiment, 'aaii_sentiment')
+    _run(extract_em_indices, 'em_indices')
+
+    # Medium priority
+    _run(extract_fed_funds_futures, 'fed_funds_futures')
+    _run(extract_xau_jpy, 'xau_jpy')
+    _run(extract_gold_silver_ratio, 'gold_silver_ratio')
+    _run(extract_adp_employment, 'adp_employment')
+    _run(extract_fed_balance_sheet, 'fed_balance_sheet')
+    _run(extract_treasury_term_premia, 'treasury_term_premia')
+
+    # Lower priority (may fail gracefully — no EIA key / WGC 404)
+    _run(extract_opec_production, 'opec_production')
+    _run(extract_gold_reserves_share, 'gold_reserves_share')
 
     # ── Financial Agent v1.5-v1.9 — 27 FRED Series ────────────
     _run(extract_financial_agent_historical, 'financial_agent')

@@ -2,7 +2,7 @@
 
 ## What is this project?
 
-Macroeconomic indicators dashboard with large-cap equity financials. Fetches 62+ indicators from financial APIs (yfinance, FRED, SEC EDGAR, Trading Economics, web scrapers, MOF Japan), displays them in a Streamlit dashboard with 8 tabs, caches locally for fast startup, and exports to CSV.
+Macroeconomic indicators dashboard with large-cap equity financials. Fetches 75+ indicators from financial APIs (yfinance, FRED, SEC EDGAR, Trading Economics, web scrapers, MOF Japan, AAII), displays them in a Streamlit dashboard with 8 tabs, caches locally for fast startup, and exports to CSV.
 
 **Repo:** https://github.com/cdavocazh/macro_2
 **Branch:** main
@@ -43,6 +43,12 @@ python extract_13f_holdings.py --funds berkshire_hathaway,citadel
 python extract_13f_holdings.py --max-filings 4              # only last 4 quarters
 python extract_13f_holdings.py --list-funds                 # show available funds
 
+# Test individual Fidenza Macro gap-fill extractors
+python -c "from data_extractors.fidenza_extractors import get_brent_crude; print(get_brent_crude())"
+python -c "from data_extractors.fidenza_extractors import get_sofr_futures_term_structure; print(get_sofr_futures_term_structure())"
+python -c "from data_extractors.fidenza_extractors import get_aaii_sentiment; print(get_aaii_sentiment())"
+python -c "from data_extractors.fred_extractors import get_adp_employment; print(get_adp_employment())"
+
 # Install macOS launchd auto-scheduler
 bash setup_launchd.sh
 bash setup_launchd.sh --status
@@ -57,10 +63,10 @@ python -m agent.langchain_agents.agent "Compare Yahoo vs SEC for AAPL"
 
 ```
 app.py                        Streamlit dashboard (8 tabs, read-only UI)
-data_aggregator.py            Orchestrator — fetches all 62+ indicators, saves/loads cache
+data_aggregator.py            Orchestrator — fetches all 75+ indicators, saves/loads cache
   ├── data_extractors/
   │   ├── yfinance_extractors.py       14 indicators (VIX, DXY, Russell, ES/RTY futures, JPY, EUR/USD, GBP/USD, EUR/JPY, SPY/RSP)
-  │   ├── fred_extractors.py           32 indicators (GDP, yields, ISM PMI, TGA, liquidity, SOFR, spreads, inflation, labor, M2, JOLTS, Sahm, SLOOS, etc.)
+  │   ├── fred_extractors.py           35 indicators (GDP, yields, ISM PMI, TGA, liquidity, SOFR, spreads, inflation, labor, M2, JOLTS, Sahm, SLOOS, ADP, WALCL, term premia, etc.)
   │   ├── web_scrapers.py               4 indicators (Forward P/E, Put/Call, SKEW, breadth)
   │   ├── shiller_extractor.py          1 indicator  (CAPE ratio from Yale Excel)
   │   ├── openbb_extractors.py          1 indicator  (S&P fundamentals, optional dep)
@@ -72,6 +78,7 @@ data_aggregator.py            Orchestrator — fetches all 62+ indicators, saves
   │   ├── equity_financials_extractor.py  Top 20 company financials (Yahoo Finance)
   │   ├── sec_extractor.py              Top 20 company financials (SEC EDGAR XBRL)
   │   ├── thirteenf_extractor.py       13F-HR institutional holdings (5 funds, QoQ changes)
+  │   ├── fidenza_extractors.py       13 indicators (Brent, Nikkei, EM indices, SOFR/FF futures, XAU/JPY, Au/Ag ratio, AAII, OPEC, gold reserves)
   │   └── sp500_tickers.py             S&P 500 constituent list (Wikipedia + cache)
   └── utils/helpers.py               Cache serialization, CSV export, formatting
 
@@ -189,6 +196,7 @@ TOP_20_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM
 - **Earnings monitoring:** `monitor_earnings.py` uses lightweight `yfinance ticker.info` calls (~45s for 500 companies) to compare `mostRecentQuarter` against local CSVs. No full financial fetching.
 - **SEC freshness review:** `review_data_freshness.py` uses the SEC submissions endpoint (~100KB per call, <200ms) via `get_latest_filing_dates()` to compare filing dates without downloading full companyfacts data.
 - **13F holdings extraction:** `thirteenf_extractor.py` parses SEC 13F-HR XML infotables for 5 tracked institutional funds. Reuses `_rate_limit()` and `SEC_HEADERS` from `sec_extractor.py`. Handles 13F-HR/A amendments (prefers latest per quarter). Computes QoQ changes keyed by `(cusip, put_call)`. XML `<value>` field is in dollars (not thousands despite SEC form instructions).
+- **Fidenza Macro gap-fill extractors:** `fidenza_extractors.py` adds 10 functions for instruments/indicators from the Fidenza Macro trading newsletter. Includes yfinance price series (Brent, Nikkei, EM indices, SOFR/Fed Funds futures), computed ratios (XAU/JPY, Gold/Silver), and web scrapes (AAII sentiment, OPEC production, gold reserves share). FRED additions (ADP, WALCL, term premia) live in `fred_extractors.py`. All 13 extraction wrappers are registered in `extract_historical_data.py`. SOFR futures use dynamic quarterly contract ticker generation (SR3{H/M/U/Z}{YY}.CME format). XAU/JPY and Gold/Silver ratio use `.tz_localize(None).normalize()` to handle cross-timezone yfinance index joins.
 
 ## SEC EDGAR XBRL specifics
 
@@ -236,6 +244,8 @@ Equity financials return a nested dict per company with `income_statement`, `bal
 | S&P 500 Forward P/E | MacroMicro web scrape | 403 Forbidden (bot detection) | Uses SPY trailing P/E via `get_sp500_forward_pe_fallback()` |
 | S&P 500 Put/Call Ratio | CBOE / ycharts scrape | Unreliable, often blocked | Falls back to FRED `PCERTOT` series or SPY options calc |
 | TSM (SEC EDGAR) | SEC EDGAR XBRL | IFRS namespace, not us-gaap | Yahoo Finance only |
+| OPEC Production | EIA API + Trading Economics | No EIA_API_KEY; TE page structure changed | Returns error dict gracefully |
+| Gold Reserves Share | World Gold Council scrape | WGC URL returns 404 | Returns error dict gracefully |
 
 ## Common tasks
 
