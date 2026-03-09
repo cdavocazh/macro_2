@@ -1588,3 +1588,128 @@ def get_bbb_credit_spread():
         }
     except Exception as e:
         return {'error': f"Error fetching BBB OAS: {str(e)}"}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Fidenza Macro Gap-Fill — Additional FRED Series
+# ──────────────────────────────────────────────────────────────────────────────
+
+def get_adp_employment():
+    """
+    Get ADP National Employment Report from FRED.
+    Series: ADPWNUSNERSA (ADP Nonfarm Private Payroll Employment, SA)
+    Frequency: Monthly.  Complements BLS Nonfarm Payrolls.
+    """
+    try:
+        fred = get_fred_client()
+        data = fred.get_series('ADPWNUSNERSA')
+
+        if data is None or data.empty:
+            return {'error': 'No ADP employment data available'}
+
+        data = data.dropna()
+        latest = float(data.iloc[-1])
+        latest_date = data.index[-1]
+
+        prev = float(data.iloc[-2]) if len(data) >= 2 else latest
+        change = round(latest - prev, 1)
+
+        return {
+            'adp_employment': latest,
+            'change_mom': change,
+            'latest_date': latest_date.strftime('%Y-%m-%d'),
+            'units': 'Thousands of Persons',
+            'source': 'FRED (ADPWNUSNERSA)',
+            'historical': data,
+        }
+    except Exception as e:
+        return {'error': f"Error fetching ADP employment: {str(e)}"}
+
+
+def get_fed_balance_sheet():
+    """
+    Get Federal Reserve Total Assets (WALCL) from FRED.
+    Series: WALCL (All Federal Reserve Banks: Total Assets)
+    Frequency: Weekly, millions of USD.
+    Distinct from net liquidity — this is the raw balance sheet size.
+    """
+    try:
+        fred = get_fred_client()
+        data = fred.get_series('WALCL')
+
+        if data is None or data.empty:
+            return {'error': 'No Fed balance sheet data available'}
+
+        data = data.dropna()
+        latest = float(data.iloc[-1])
+        latest_date = data.index[-1]
+
+        prev = float(data.iloc[-2]) if len(data) >= 2 else latest
+        change = round(latest - prev, 0)
+        change_pct = round((change / abs(prev)) * 100, 2) if prev != 0 else 0
+
+        return {
+            'fed_balance_sheet': latest,
+            'fed_balance_sheet_trillions': round(latest / 1_000_000, 3),
+            'change_wow': change,
+            'change_wow_pct': change_pct,
+            'latest_date': latest_date.strftime('%Y-%m-%d'),
+            'units': 'Millions USD',
+            'source': 'FRED (WALCL)',
+            'historical': data,
+        }
+    except Exception as e:
+        return {'error': f"Error fetching Fed balance sheet: {str(e)}"}
+
+
+def get_treasury_term_premia():
+    """
+    Get Treasury Term Premia from FRED (NY Fed ACM model).
+    Primary: THREEFYTP10 (10-Year Treasury Term Premium)
+    Fallback: ACMTP10
+    Also: ACMTP05 (5-Year) if available
+    Frequency: Daily
+    """
+    try:
+        fred = get_fred_client()
+        result = {'source': 'FRED (NY Fed ACM)', 'units': 'Percent'}
+
+        # 10Y term premium (try multiple series IDs)
+        for series_id in ['THREEFYTP10', 'ACMTP10']:
+            try:
+                data = fred.get_series(series_id)
+                if data is not None and not data.empty:
+                    data = data.dropna()
+                    if data.empty:
+                        continue
+                    latest = float(data.iloc[-1])
+                    latest_date = data.index[-1]
+                    prev = float(data.iloc[-2]) if len(data) >= 2 else latest
+                    result['term_premium_10y'] = latest
+                    result['change_1d'] = round(latest - prev, 4)
+                    result['latest_date'] = latest_date.strftime('%Y-%m-%d')
+                    result['historical'] = data
+                    result['series_id'] = series_id
+                    break
+            except Exception:
+                continue
+
+        # 5Y term premium (secondary, optional)
+        for series_id_5y in ['ACMTP05', 'THREEFYTP05']:
+            try:
+                data_5y = fred.get_series(series_id_5y)
+                if data_5y is not None and not data_5y.empty:
+                    data_5y = data_5y.dropna()
+                    if not data_5y.empty:
+                        result['term_premium_5y'] = float(data_5y.iloc[-1])
+                        result['historical_5y'] = data_5y
+                        break
+            except Exception:
+                continue
+
+        if 'term_premium_10y' not in result:
+            return {'error': 'No term premia data available from FRED'}
+
+        return result
+    except Exception as e:
+        return {'error': f"Error fetching treasury term premia: {str(e)}"}
