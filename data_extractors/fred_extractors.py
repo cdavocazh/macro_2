@@ -44,30 +44,44 @@ def get_us_gdp():
 
 def get_sp500_market_cap():
     """
-    Get S&P 500 Market Cap from FRED.
-    Series: DDDM01USA156NWDB (Market Capitalization of Listed Domestic Companies)
+    Get US total equity market capitalization from FRED.
+    Primary: BOGZ1FL893064105Q (Corporate Equities; Asset, Market Value Levels)
+      - Quarterly, in millions of dollars, from Federal Reserve Z.1 Financial Accounts
+      - Covers all domestic corporate equities (broader than S&P 500)
+    Fallback: DDDM01USA156NWDB (discontinued 2020, World Bank annual)
     """
     try:
         fred = get_fred_client()
 
-        # Try multiple series for S&P 500 market cap
-        series_ids = [
-            'DDDM01USA156NWDB',  # Market Cap of Listed Companies
-            'WILL5000INDFC',      # Wilshire 5000 Total Market Full Cap Index (as proxy)
+        # Try series in order of preference
+        series_configs = [
+            # Primary: Fed Z.1 corporate equities market value (quarterly, millions)
+            ('BOGZ1FL893064105Q', 'millions'),
+            # Fallback: World Bank market cap % of GDP (discontinued 2020, annual, % of GDP)
+            ('DDDM01USA156NWDB', 'pct_gdp'),
         ]
 
-        for series_id in series_ids:
+        for series_id, units in series_configs:
             try:
                 market_cap_data = fred.get_series(series_id)
-                if not market_cap_data.empty:
+                if market_cap_data is not None and not market_cap_data.empty:
                     latest_market_cap = market_cap_data.iloc[-1]
                     latest_date = market_cap_data.index[-1]
 
+                    # Convert millions to billions for BOGZ series
+                    if units == 'millions':
+                        historical_billions = market_cap_data / 1000.0
+                        latest_billions = latest_market_cap / 1000.0
+                    else:
+                        historical_billions = market_cap_data
+                        latest_billions = latest_market_cap
+
                     return {
-                        'sp500_market_cap': latest_market_cap,
+                        'sp500_market_cap': latest_billions,
                         'latest_date': latest_date.strftime('%Y-%m-%d'),
                         'series_id': series_id,
-                        'historical': market_cap_data
+                        'units': units,
+                        'historical': historical_billions
                     }
             except:
                 continue
@@ -82,28 +96,35 @@ def get_sp500_market_cap():
 
 def calculate_sp500_marketcap_to_gdp():
     """
-    Calculate S&P 500 Market Cap to US GDP ratio (Buffett Indicator).
-    Returns: dict with ratio
+    Calculate Market Cap to US GDP ratio (Buffett Indicator).
+    Uses BOGZ1FL893064105Q (corporate equities in billions) / GDP (billions) * 100.
+    Returns: dict with ratio as percentage.
     """
     try:
         gdp_data = get_us_gdp()
         market_cap_data = get_sp500_market_cap()
 
         if 'error' in gdp_data or 'error' in market_cap_data:
-            return {'error': 'Cannot calculate Market Cap/GDP ratio due to data unavailability'}
+            errors = []
+            if 'error' in gdp_data:
+                errors.append(f"GDP: {gdp_data['error']}")
+            if 'error' in market_cap_data:
+                errors.append(f"Market Cap: {market_cap_data['error']}")
+            return {'error': f"Cannot calculate Market Cap/GDP ratio: {'; '.join(errors)}"}
 
-        # Both should be in billions
+        # If the series is pct_gdp (old World Bank series), it's already a ratio
+        if market_cap_data.get('units') == 'pct_gdp':
+            ratio = market_cap_data['sp500_market_cap']
+            return {
+                'marketcap_to_gdp_ratio': ratio,
+                'market_cap': ratio,
+                'gdp': gdp_data['us_gdp'],
+                'interpretation': 'Above 100% suggests overvaluation (Buffett Indicator)'
+            }
+
+        # Both are in billions (BOGZ converted in get_sp500_market_cap)
         market_cap = market_cap_data['sp500_market_cap']
         gdp = gdp_data['us_gdp']
-
-        # If market cap is in different units, adjust
-        # WILL5000INDFC is an index, so we'll need to handle that differently
-        if market_cap_data.get('series_id') == 'WILL5000INDFC':
-            # This is an index, not actual market cap
-            return {
-                'error': 'Market cap data is index-based, cannot calculate exact ratio',
-                'note': 'Using Wilshire 5000 as proxy'
-            }
 
         ratio = (market_cap / gdp) * 100  # Express as percentage
 
@@ -1597,12 +1618,13 @@ def get_bbb_credit_spread():
 def get_adp_employment():
     """
     Get ADP National Employment Report from FRED.
-    Series: ADPWNUSNERSA (ADP Nonfarm Private Payroll Employment, SA)
-    Frequency: Monthly.  Complements BLS Nonfarm Payrolls.
+    Series: ADPMNUSNERSA (ADP Nonfarm Private Payroll Employment, Monthly, SA)
+    Note: Previously used ADPWNUSNERSA (weekly), switched to monthly for consistency
+    with the standard ADP monthly report and more timely publication.
     """
     try:
         fred = get_fred_client()
-        data = fred.get_series('ADPWNUSNERSA')
+        data = fred.get_series('ADPMNUSNERSA')
 
         if data is None or data.empty:
             return {'error': 'No ADP employment data available'}
@@ -1618,8 +1640,8 @@ def get_adp_employment():
             'adp_employment': latest,
             'change_mom': change,
             'latest_date': latest_date.strftime('%Y-%m-%d'),
-            'units': 'Thousands of Persons',
-            'source': 'FRED (ADPWNUSNERSA)',
+            'units': 'Persons',
+            'source': 'FRED (ADPMNUSNERSA)',
             'historical': data,
         }
     except Exception as e:

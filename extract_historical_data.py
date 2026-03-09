@@ -88,8 +88,12 @@ def append_to_csv(filename, new_data, timestamp_col='timestamp'):
         # Combine and remove duplicates based on timestamp
         if timestamp_col in new_data.columns and timestamp_col in existing_data.columns:
             # Normalize timestamp types to avoid comparison errors
-            existing_data[timestamp_col] = pd.to_datetime(existing_data[timestamp_col], errors='coerce')
-            new_data[timestamp_col] = pd.to_datetime(new_data[timestamp_col], errors='coerce')
+            existing_data[timestamp_col] = pd.to_datetime(existing_data[timestamp_col], errors='coerce', utc=True)
+            new_data = new_data.copy()
+            new_data[timestamp_col] = pd.to_datetime(new_data[timestamp_col], errors='coerce', utc=True)
+            # Strip timezone info after normalizing to UTC for clean comparison
+            existing_data[timestamp_col] = existing_data[timestamp_col].dt.tz_localize(None)
+            new_data[timestamp_col] = new_data[timestamp_col].dt.tz_localize(None)
             combined = pd.concat([existing_data, new_data], ignore_index=True)
             combined = combined.drop_duplicates(subset=[timestamp_col], keep='last')
             combined = combined.sort_values(timestamp_col)
@@ -193,6 +197,18 @@ def extract_vix_move():
 
         vix_hist = vix_data['historical']
         move_hist = move_data['historical']
+
+        # Strip timezone to prevent duplicate rows from tz-aware indices
+        # yfinance returns America/New_York tz-aware timestamps which cause
+        # duplicate entries when DST offset changes (-05:00 vs -04:00)
+        if hasattr(vix_hist.index, 'tz') and vix_hist.index.tz is not None:
+            vix_hist = vix_hist.tz_localize(None)
+        if hasattr(move_hist.index, 'tz') and move_hist.index.tz is not None:
+            move_hist = move_hist.tz_localize(None)
+
+        # Normalize to midnight to ensure clean date-based merging
+        vix_hist.index = vix_hist.index.normalize()
+        move_hist.index = move_hist.index.normalize()
 
         # Align timestamps
         df_vix = pd.DataFrame({
