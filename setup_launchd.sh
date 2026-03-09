@@ -1,101 +1,121 @@
 #!/bin/bash
 # ==============================================================================
-# setup_launchd.sh — Install or uninstall the macOS launchd scheduler
+# setup_launchd.sh — Install or uninstall macOS launchd schedulers
 #
-# This schedules scheduled_extract.py to run automatically at:
-#   9:30 AM, 1:00 PM, 4:30 PM on weekdays (Mon-Fri)
+# Two jobs:
+#   1. scheduled-extract: Full extraction 5x/day Mon-Sat (FRED, SEC, web scrapers)
+#   2. fast-extract:      Real-time yfinance data every 5 minutes (market hours)
 #
 # launchd catches up missed runs after sleep/restart, unlike cron.
 #
 # Usage:
-#   bash setup_launchd.sh              # Install and activate
-#   bash setup_launchd.sh --uninstall  # Deactivate and remove
-#   bash setup_launchd.sh --status     # Check if job is loaded
+#   bash setup_launchd.sh              # Install both jobs
+#   bash setup_launchd.sh --uninstall  # Deactivate and remove both
+#   bash setup_launchd.sh --status     # Check if jobs are loaded
 # ==============================================================================
 
 set -e
 
-PLIST_NAME="com.macro2.scheduled-extract"
-PLIST_SRC="$(cd "$(dirname "$0")" && pwd)/${PLIST_NAME}.plist"
-PLIST_DST="$HOME/Library/LaunchAgents/${PLIST_NAME}.plist"
-LOGS_DIR="$(cd "$(dirname "$0")" && pwd)/logs"
+REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+LOGS_DIR="${REPO_DIR}/logs"
+
+SCHEDULED_NAME="com.macro2.scheduled-extract"
+FAST_NAME="com.macro2.fast-extract"
+
+SCHEDULED_SRC="${REPO_DIR}/${SCHEDULED_NAME}.plist"
+FAST_SRC="${REPO_DIR}/${FAST_NAME}.plist"
+
+SCHEDULED_DST="$HOME/Library/LaunchAgents/${SCHEDULED_NAME}.plist"
+FAST_DST="$HOME/Library/LaunchAgents/${FAST_NAME}.plist"
 
 # ---------- Uninstall ----------
 if [[ "$1" == "--uninstall" ]]; then
-    echo "Uninstalling ${PLIST_NAME}..."
-    if launchctl list | grep -q "$PLIST_NAME"; then
-        launchctl unload "$PLIST_DST" 2>/dev/null || true
-        echo "  Job unloaded."
-    fi
-    if [[ -f "$PLIST_DST" ]]; then
-        rm "$PLIST_DST"
-        echo "  Plist removed from ~/Library/LaunchAgents/"
-    fi
-    echo "Done. The scheduled job has been removed."
+    echo "Uninstalling macro_2 launchd jobs..."
+    for NAME in "$SCHEDULED_NAME" "$FAST_NAME"; do
+        DST="$HOME/Library/LaunchAgents/${NAME}.plist"
+        if launchctl list | grep -q "$NAME"; then
+            launchctl unload "$DST" 2>/dev/null || true
+            echo "  Unloaded $NAME"
+        fi
+        if [[ -f "$DST" ]]; then
+            rm "$DST"
+            echo "  Removed $DST"
+        fi
+    done
+    echo "Done. All scheduled jobs removed."
     exit 0
 fi
 
 # ---------- Status ----------
 if [[ "$1" == "--status" ]]; then
-    if launchctl list | grep -q "$PLIST_NAME"; then
-        echo "Job is LOADED and active."
-        launchctl list | grep "$PLIST_NAME"
-    else
-        echo "Job is NOT loaded."
-    fi
+    echo "=== macro_2 launchd status ==="
+    echo ""
+    for NAME in "$SCHEDULED_NAME" "$FAST_NAME"; do
+        if launchctl list | grep -q "$NAME"; then
+            echo "$NAME: LOADED"
+            launchctl list | grep "$NAME"
+        else
+            echo "$NAME: NOT loaded"
+        fi
+    done
     echo ""
     echo "Log files:"
-    [[ -f "$LOGS_DIR/launchd_stdout.log" ]] && echo "  stdout: $(wc -l < "$LOGS_DIR/launchd_stdout.log") lines" || echo "  stdout: (no log yet)"
-    [[ -f "$LOGS_DIR/launchd_stderr.log" ]] && echo "  stderr: $(wc -l < "$LOGS_DIR/launchd_stderr.log") lines" || echo "  stderr: (no log yet)"
+    for LOG in launchd_stdout.log launchd_stderr.log fast_extract_stdout.log fast_extract_stderr.log; do
+        if [[ -f "$LOGS_DIR/$LOG" ]]; then
+            echo "  $LOG: $(wc -l < "$LOGS_DIR/$LOG") lines"
+        else
+            echo "  $LOG: (no log yet)"
+        fi
+    done
     exit 0
 fi
 
 # ---------- Install ----------
-echo "Installing macOS launchd scheduler for macro_2..."
+echo "Installing macOS launchd schedulers for macro_2..."
 echo ""
 
-# 1. Check plist source exists
-if [[ ! -f "$PLIST_SRC" ]]; then
-    echo "Error: ${PLIST_SRC} not found."
-    echo "Make sure you run this from the macro_2 repo directory."
-    exit 1
-fi
-
-# 2. Create logs directory
+# Create logs directory
 mkdir -p "$LOGS_DIR"
-echo "  Created logs directory: $LOGS_DIR"
-
-# 3. Unload existing job if present
-if launchctl list | grep -q "$PLIST_NAME"; then
-    launchctl unload "$PLIST_DST" 2>/dev/null || true
-    echo "  Unloaded existing job."
-fi
-
-# 4. Copy plist to LaunchAgents
 mkdir -p "$HOME/Library/LaunchAgents"
-cp "$PLIST_SRC" "$PLIST_DST"
-echo "  Copied plist to: $PLIST_DST"
 
-# 5. Load the job
-launchctl load "$PLIST_DST"
-echo "  Job loaded and active."
+# Install each job
+for NAME in "$SCHEDULED_NAME" "$FAST_NAME"; do
+    SRC="${REPO_DIR}/${NAME}.plist"
+    DST="$HOME/Library/LaunchAgents/${NAME}.plist"
 
-# 6. Verify
+    if [[ ! -f "$SRC" ]]; then
+        echo "  WARNING: ${SRC} not found, skipping."
+        continue
+    fi
+
+    # Unload existing
+    if launchctl list | grep -q "$NAME"; then
+        launchctl unload "$DST" 2>/dev/null || true
+    fi
+
+    # Copy and load
+    cp "$SRC" "$DST"
+    launchctl load "$DST"
+
+    if launchctl list | grep -q "$NAME"; then
+        echo "  ✅ $NAME — loaded"
+    else
+        echo "  ❌ $NAME — failed to load"
+    fi
+done
+
 echo ""
-if launchctl list | grep -q "$PLIST_NAME"; then
-    echo "SUCCESS — Scheduler is now active."
-else
-    echo "WARNING — Job may not have loaded correctly. Check:"
-    echo "  launchctl list | grep macro2"
-    exit 1
-fi
-
+echo "=== Schedule ==="
+echo "  scheduled-extract: 1:00 AM, 8:30 AM, 1:00 PM, 5:00 PM, 10:00 PM GMT+8 (Mon-Sat)"
+echo "                     Full extraction: FRED, SEC, web scrapers, yfinance, all CSVs"
 echo ""
-echo "Schedule: 1:00 AM, 8:30 AM, 1:00 PM, 5:00 PM, 10:00 PM GMT+8 (Mon-Sat)"
-echo "Logs:     $LOGS_DIR/launchd_stdout.log"
-echo "          $LOGS_DIR/launchd_stderr.log"
+echo "  fast-extract:      Every 5 minutes (24/7)"
+echo "                     Real-time only: yfinance futures, FX, commodities, indices"
+echo ""
+echo "Logs: $LOGS_DIR/"
 echo ""
 echo "Commands:"
 echo "  bash setup_launchd.sh --status      # Check status"
-echo "  bash setup_launchd.sh --uninstall   # Remove scheduler"
-echo "  launchctl start $PLIST_NAME         # Run now (for testing)"
+echo "  bash setup_launchd.sh --uninstall   # Remove all jobs"
+echo "  launchctl start $SCHEDULED_NAME     # Run full extraction now"
+echo "  launchctl start $FAST_NAME          # Run fast extraction now"

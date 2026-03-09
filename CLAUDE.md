@@ -49,10 +49,15 @@ python -c "from data_extractors.fidenza_extractors import get_sofr_futures_term_
 python -c "from data_extractors.fidenza_extractors import get_aaii_sentiment; print(get_aaii_sentiment())"
 python -c "from data_extractors.fred_extractors import get_adp_employment; print(get_adp_employment())"
 
-# Install macOS launchd auto-scheduler
-bash setup_launchd.sh
-bash setup_launchd.sh --status
-bash setup_launchd.sh --uninstall
+# Fast extraction — real-time yfinance only (~5s, safe for 5-min polling)
+python fast_extract.py                # run once
+python fast_extract.py --dry-run      # list what would be extracted
+python fast_extract.py --force        # ignore freshness guard
+
+# Install macOS launchd auto-scheduler (both jobs)
+bash setup_launchd.sh                 # install scheduled-extract + fast-extract
+bash setup_launchd.sh --status        # check both jobs
+bash setup_launchd.sh --uninstall     # remove both jobs
 
 # Run data review agent (requires MINIMAX_API_KEY)
 python -m agent.openai_agents.agent "Scan all companies for missing data"
@@ -82,7 +87,8 @@ data_aggregator.py            Orchestrator — fetches all 75+ indicators, saves
   │   └── sp500_tickers.py             S&P 500 constituent list (Wikipedia + cache)
   └── utils/helpers.py               Cache serialization, CSV export, formatting
 
-scheduled_extract.py          Standalone catch-up script (does NOT touch app.py)
+fast_extract.py               5-minute real-time yfinance extraction (20 extractors, ~5s)
+scheduled_extract.py          Full catch-up script — FRED, SEC, web scrapers (does NOT touch app.py)
 extract_historical_data.py    Append-only historical CSV builder (dual-source equity)
 extract_sp500_financials.py   Batch extraction of S&P 500 financials (~30-40 min)
 extract_13f_holdings.py       13F institutional fund holdings extraction (~25s)
@@ -209,12 +215,17 @@ TOP_20_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM
 
 ## Scheduling (launchd)
 
-**Plist:** `com.macro2.scheduled-extract.plist`
-**Schedule:** 1:00 AM, 8:30 AM, 1:00 PM, 5:00 PM, 10:00 PM GMT+8, Mon-Sat
-**Python path:** `/Users/kriszhang/mambaforge/bin/python3`
-**Logs:** `logs/launchd_stdout.log`, `logs/launchd_stderr.log`
+Two launchd jobs run at different frequencies:
 
-launchd catches up missed runs after sleep (unlike cron). The freshness guard in `scheduled_extract.py` prevents redundant fetches. A 10-minute `TimeOut` in the plist auto-kills hung processes (e.g., stalled HTTP connections) to prevent blocking subsequent scheduled runs.
+| Job | Plist | Schedule | What it extracts | Timeout |
+|-----|-------|----------|-----------------|---------|
+| **fast-extract** | `com.macro2.fast-extract.plist` | Every 5 minutes (24/7) | Real-time yfinance only: futures, FX, commodities, indices, credit ETFs (20 extractors) | 4 min |
+| **scheduled-extract** | `com.macro2.scheduled-extract.plist` | 5x/day Mon-Sat (1am, 8:30am, 1pm, 5pm, 10pm GMT+8) | Full extraction: FRED, SEC, web scrapers, yfinance, all CSVs | 10 min |
+
+**Python path:** `/Users/kriszhang/mambaforge/bin/python3`
+**Logs:** `logs/launchd_stdout.log`, `logs/fast_extract_stdout.log`
+
+launchd catches up missed runs after sleep (unlike cron). `fast_extract.py` has a 3-minute freshness guard to prevent overlap. `scheduled_extract.py` has a 15-minute freshness guard. The `TimeOut` in each plist auto-kills hung processes.
 
 ## API keys
 
