@@ -11,7 +11,7 @@ def get_shiller_cape():
     """
     Get Shiller CAPE Ratio from Robert Shiller's website.
     Downloads the Excel file and extracts the CAPE ratio.
-    Returns: dict with latest CAPE value
+    Returns: dict with latest CAPE value and date-indexed historical Series.
     """
     try:
         # Download the Excel file
@@ -46,22 +46,49 @@ def get_shiller_cape():
             else:
                 return {'error': 'CAPE column not found in data'}
 
-        # Get the latest non-null CAPE value
-        cape_series = excel_data[cape_column].dropna()
+        # Build date index from the first column (fractional year format: YYYY.MM)
+        # e.g., 1881.01 = January 1881, 2026.01 = January 2026
+        date_column = excel_data.columns[0]
+        raw_dates = excel_data[date_column]
 
-        if cape_series.empty:
+        # Convert fractional year (e.g. 2026.03) to proper datetime
+        dates = []
+        for val in raw_dates:
+            try:
+                val_f = float(val)
+                year = int(val_f)
+                month = round((val_f - year) * 100)
+                if month < 1:
+                    month = 1
+                if month > 12:
+                    month = 12
+                dates.append(pd.Timestamp(year=year, month=month, day=1))
+            except (ValueError, TypeError):
+                dates.append(pd.NaT)
+
+        excel_data['_parsed_date'] = dates
+
+        # Filter rows that have both valid date and CAPE value
+        mask = excel_data['_parsed_date'].notna() & excel_data[cape_column].notna()
+        valid_data = excel_data.loc[mask]
+
+        if valid_data.empty:
             return {'error': 'No CAPE data available'}
 
-        latest_cape = cape_series.iloc[-1]
+        # Build a properly date-indexed Series
+        cape_series = pd.Series(
+            valid_data[cape_column].values.astype(float),
+            index=valid_data['_parsed_date'].values,
+            name='cape_ratio'
+        )
+        cape_series.index.name = 'date'
 
-        # Try to get the date
-        date_column = excel_data.columns[0]
-        date_series = excel_data[date_column].dropna()
-        latest_date = date_series.iloc[-1] if not date_series.empty else 'Unknown'
+        latest_cape = float(cape_series.iloc[-1])
+        latest_date = cape_series.index[-1]
 
         return {
-            'shiller_cape': float(latest_cape),
-            'latest_date': str(latest_date),
+            'shiller_cape': latest_cape,
+            'latest_date': pd.Timestamp(latest_date).strftime('%Y-%m-%d'),
             'source': 'Robert Shiller (Yale)',
             'historical': cape_series,
             'interpretation': {
