@@ -1,0 +1,49 @@
+version: "3.8"
+
+services:
+  # ─── API Bridge ──────────────────────────────────────────────────────────
+  # FastAPI server that translates data_aggregator → JSON API for Grafana
+  api-bridge:
+    build:
+      context: ..
+      dockerfile: grafana_dashboard/Dockerfile.api
+    container_name: macro-api-bridge
+    ports:
+      - "8001:8001"
+    volumes:
+      # Mount project root for data_aggregator, data_extractors, utils, data_cache
+      - ..:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ─── Grafana ──────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: macro-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=macro2024
+      - GF_INSTALL_PLUGINS=yesoreyeram-infinity-datasource,grafana-simple-json-datasource
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/macro_dashboard.json
+      - GF_USERS_DEFAULT_THEME=light
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - ./provisioning:/etc/grafana/provisioning
+      - ./dashboards:/var/lib/grafana/dashboards
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      api-bridge:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  grafana-data:

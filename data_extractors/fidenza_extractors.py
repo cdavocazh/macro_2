@@ -25,13 +25,15 @@ from bs4 import BeautifulSoup
 #         pattern without importing to keep this module self-contained)
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _yf_price(symbol, name, key=None):
-    """Fetch latest price + 1-year history for a yfinance ticker.
+def _yf_price(symbol, name, key=None, period_days=365, include_ohlcv=False):
+    """Fetch latest price + history for a yfinance ticker.
 
     Args:
         symbol: yfinance ticker (e.g., 'BZ=F', '^N225')
         name: human-readable label
         key: dict key for the latest value (defaults to snake_case of name)
+        period_days: primary history window in days (default 365)
+        include_ohlcv: if True, also return 'historical_ohlcv' DataFrame
 
     Returns:
         dict with {key, latest_date, change_1d, historical, source}
@@ -42,12 +44,18 @@ def _yf_price(symbol, name, key=None):
 
     try:
         ticker = yf.Ticker(symbol)
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=365)
-        hist = ticker.history(start=start_date, end=end_date)
+
+        # Use period='2y' for 730+ day requests, else explicit date range
+        if period_days >= 730:
+            hist = ticker.history(period='2y')
+        else:
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=period_days)
+            hist = ticker.history(start=start_date, end=end_date)
 
         if hist.empty:
             # Retry with longer window
+            end_date = datetime.now()
             start_date = end_date - timedelta(days=730)
             hist = ticker.history(start=start_date, end=end_date)
 
@@ -64,13 +72,22 @@ def _yf_price(symbol, name, key=None):
             if prev != 0:
                 change_1d = round(((latest / prev) - 1) * 100, 2)
 
-        return {
+        result = {
             key: round(latest, 2),
             'latest_date': latest_date.strftime('%Y-%m-%d'),
             'change_1d': change_1d,
             'historical': close,
             'source': f'yfinance ({symbol})',
         }
+
+        if include_ohlcv:
+            ohlcv = hist[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+            if hasattr(ohlcv.index, 'tz') and ohlcv.index.tz is not None:
+                ohlcv.index = ohlcv.index.tz_localize(None)
+            ohlcv.index = ohlcv.index.normalize()
+            result['historical_ohlcv'] = ohlcv
+
+        return result
     except Exception as e:
         return {'error': f'Error fetching {name}: {str(e)}'}
 
@@ -80,8 +97,8 @@ def _yf_price(symbol, name, key=None):
 # ──────────────────────────────────────────────────────────────────────────────
 
 def get_brent_crude():
-    """Get Brent Crude Oil (BZ=F) futures continuous contract data."""
-    return _yf_price('BZ=F', 'Brent Crude', key='price')
+    """Get Brent Crude Oil (BZ=F) futures continuous contract data with 2-year OHLCV."""
+    return _yf_price('BZ=F', 'Brent Crude', key='price', period_days=730, include_ohlcv=True)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -182,7 +199,7 @@ def get_sofr_futures_term_structure():
         candidates = ['SR3=F'] + _generate_sofr_contract_tickers()
 
         end_date = datetime.now()
-        start_date = end_date - timedelta(days=90)
+        start_date = end_date - timedelta(days=730)
 
         contracts = []
         for symbol in candidates:

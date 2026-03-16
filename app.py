@@ -72,6 +72,64 @@ st.markdown("""
         color: white;
         font-weight: bold;
     }
+
+    /* ── Compact Layout ── */
+    [data-testid="stMetric"] {
+        padding: 0.2rem 0.5rem !important;
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 0.72rem !important;
+        min-height: unset !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 1.3rem !important;
+        line-height: 1.3 !important;
+    }
+    [data-testid="stMetricDelta"] {
+        font-size: 0.7rem !important;
+    }
+    [data-testid="stHeading"] h2 {
+        font-size: 1.0rem !important;
+        margin: 0.3rem 0 0.1rem 0 !important;
+        padding: 0 !important;
+    }
+    [data-testid="stHeading"] h3 {
+        font-size: 0.88rem !important;
+        margin: 0.2rem 0 0.1rem 0 !important;
+        padding: 0 !important;
+    }
+    [data-testid="stCaptionContainer"] {
+        margin-top: -0.3rem !important;
+        margin-bottom: 0 !important;
+    }
+    [data-testid="stCaptionContainer"] p {
+        font-size: 0.68rem !important;
+        line-height: 1.2 !important;
+    }
+    [data-testid="stExpander"] {
+        margin: 0.1rem 0 !important;
+    }
+    [data-testid="stExpander"] summary {
+        font-size: 0.75rem !important;
+        padding: 0.2rem 0.5rem !important;
+    }
+    [data-testid="column"] {
+        padding: 0 0.3rem !important;
+    }
+    [data-testid="stVerticalBlock"] > div {
+        gap: 0.3rem !important;
+    }
+    [data-testid="stAlert"] {
+        padding: 0.3rem 0.6rem !important;
+        font-size: 0.75rem !important;
+        margin: 0.1rem 0 !important;
+    }
+    .stTabs [data-baseweb="tab-panel"] {
+        padding-top: 0.3rem !important;
+    }
+    hr {
+        margin: 0.3rem 0 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -107,49 +165,17 @@ with st.sidebar:
 
     st.markdown("---")
 
-    st.header("ℹ️ About")
-    st.markdown("""
-    This dashboard tracks 59+ macroeconomic indicators across 8 tabs:
+    with st.expander("ℹ️ About & Data Sources"):
+        st.markdown("**75+ indicators** across 8 tabs: Valuation, Indices, Volatility, Macro/FX, Commodities, Financials, Rates/Credit, Economic Activity")
+        st.caption("Sources: FRED, Yahoo Finance, SEC EDGAR, OpenBB, Shiller, CBOE, CFTC, MOF Japan, AAII")
 
-    **Valuation Metrics:** Forward P/E, Trailing P/E & P/B, Shiller CAPE, Market Cap/GDP
-
-    **Market Indices:** ES/RTY Futures, Breadth, Russell V/G, S&P 500/200MA, SPY/RSP Concentration
-
-    **Volatility & Risk:** VIX, MOVE, VIX/MOVE, Put/Call, SKEW
-
-    **Macro & Currency:** DXY, USD/JPY, EUR/USD, GBP/USD, EUR/JPY, TGA, Net Liquidity, M2, SOFR, 2Y/10Y Yields
-
-    **Commodities:** Gold, Silver, Oil, Copper, Natural Gas, Cu/Au Ratio, COT
-
-    **Large-cap Financials:** Top 20 + custom tickers (Yahoo + SEC)
-
-    **Rates & Credit:** Yield Curve, Global Yields (5Y/10Y), Real Yield, Breakevens, HY/IG OAS, NFCI, Fed Funds, Bank Reserves, SLOOS, Labor & Inflation
-
-    **Economic Activity:** NFP, JOLTS, Quits Rate, Sahm Rule, Consumer Sentiment, Retail Sales, ISM Services, Industrial Production, Housing Starts
-    """)
-
-    st.markdown("---")
-
-    # Data sources
-    st.subheader("📚 Data Sources")
-    st.markdown("""
-    - **FRED**: Federal Reserve Economic Data
-    - **Yahoo Finance**: Market indices
-    - **OpenBB**: Financial data platform
-    - **Robert Shiller**: CAPE ratio
-    - **CBOE**: Volatility indices
-    """)
-
-# Initialize aggregator
+# Initialize aggregator — auto-reload when cache file is newer than in-memory
 aggregator = get_aggregator()
+aggregator.reload_if_stale()
 
-# Check if data needs to be fetched - try local cache first for fast startup
 if not aggregator.indicators:
-    if aggregator.load_from_local_cache():
-        pass  # loaded from cache
-    else:
-        with st.spinner("No cached data found. Fetching live data..."):
-            aggregator.fetch_all_indicators()
+    with st.spinner("No cached data found. Fetching live data..."):
+        aggregator.fetch_all_indicators()
 
 # Display last update time and data source
 if aggregator.last_update:
@@ -264,7 +290,6 @@ with tab1:
         else:
             value = data.get('sp500_forward_pe', 'N/A')
             st.metric("Forward P/E Ratio", format_value(value))
-            st.caption(f"Source: {data.get('source', 'N/A')}")
 
     # 3. S&P 500 Trailing P/E & P/B
     with col2:
@@ -280,7 +305,6 @@ with tab1:
                 st.metric("Trailing P/E", format_value(pe_value))
             with col_b:
                 st.metric("P/B Ratio", format_value(pb_value))
-            st.caption(f"Source: {data.get('source', 'N/A')}")
 
     # 7. Shiller CAPE Ratio
     st.subheader(f"7. [Shiller CAPE Ratio]({SOURCE_URLS['shiller_cape']})")
@@ -311,69 +335,50 @@ with tab1:
         if 'interpretation' in data:
             st.info(data['interpretation'])
 
-    st.markdown("---")
+    # ── OpenBB Valuation Metrics ────────────────────────────────────────
+    st.subheader("65. S&P 500 Valuation Multiples")
+    mult_data = aggregator.get_indicator('65_sp500_multiples')
+    if 'error' in mult_data:
+        st.error(f"⚠️ {mult_data['error']}")
+    else:
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.metric("Forward P/E", format_value(mult_data.get('forward_pe')))
+        with c2:
+            st.metric("PEG Ratio", format_value(mult_data.get('peg_ratio')))
+        with c3:
+            st.metric("Price/Sales", format_value(mult_data.get('price_to_sales')))
+        with c4:
+            st.metric("Price/Cash", format_value(mult_data.get('price_to_cash')))
+        st.caption(f"Source: {mult_data.get('source', 'N/A')}")
 
-    # Historical Charts
-    st.header("Historical Valuation Metrics")
-
-    # Interval selector
-    interval = st.radio("Select Interval", ["Weekly", "Monthly"], horizontal=True, key="interval_selector")
-    interval_param = "1wk" if interval == "Weekly" else "1mo"
-
-    # Get 10 years of historical data
-    import yfinance as yf
-    from datetime import timedelta
-    import plotly.graph_objects as go
-
-    end_date = pd.Timestamp.now()
-    start_date = end_date - timedelta(days=3650)  # 10 years
-
-    try:
-        # Get SPY data for P/B ratio
-        spy = yf.Ticker("SPY")
-        spy_hist = spy.history(start=start_date, end=end_date, interval=interval_param)
-
-        if not spy_hist.empty:
-            # Get P/E and P/B data
-            # Note: yfinance doesn't provide historical P/E and P/B in history()
-            # We'll need to calculate or use another approach
-            # For now, we'll show price history and note that full historical P/E and P/B require additional data sources
-
-            st.subheader("S&P 500 (SPY) Price History")
-            st.info("Note: Historical Forward P/E and P/B ratios require specialized data sources. Showing SPY price as reference. For complete historical valuation metrics, consider integrating with MacroMicro API or similar services.")
-
-            # Create price chart
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=spy_hist.index,
-                y=spy_hist['Close'],
-                name='SPY Price',
-                line=dict(color='blue')
-            ))
-
-            fig.update_layout(
-                title=f"S&P 500 (SPY) Price - Last 10 Years ({interval})",
-                xaxis_title="Date",
-                yaxis_title="Price (USD)",
-                hovermode='x unified',
-                height=500
-            )
-
-            st.plotly_chart(fig, use_container_width=True)
-
-            # Note about data limitations
-            st.caption("""
-            **Data Note**: Historical Forward P/E and P/B ratios are not available through free APIs.
-            To display complete historical valuation metrics, you would need to:
-            1. Subscribe to premium data services (Bloomberg, FactSet, MacroMicro API)
-            2. Scrape and store historical data over time
-            3. Use specialized financial data providers
-            """)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("74. Sector P/E Ratios")
+        spe_data = aggregator.get_indicator('74_sector_pe')
+        if 'error' in spe_data:
+            st.error(f"⚠️ {spe_data['error']}")
         else:
-            st.warning("Unable to fetch historical SPY data")
+            sectors = spe_data.get('sectors', {})
+            if sectors:
+                import pandas as pd
+                sdf = pd.DataFrame(list(sectors.items()), columns=['Sector', 'P/E'])
+                sdf = sdf.sort_values('P/E', ascending=False)
+                st.dataframe(sdf.set_index('Sector'), use_container_width=True)
 
-    except Exception as e:
-        st.error(f"Error loading historical data: {str(e)}")
+    with col2:
+        st.subheader("82. Equity Risk Premium")
+        erp_data = aggregator.get_indicator('82_erp')
+        if 'error' in erp_data:
+            st.error(f"⚠️ {erp_data['error']}")
+        else:
+            e1, e2 = st.columns(2)
+            with e1:
+                st.metric("ERP (Trailing)", f"{format_value(erp_data.get('equity_risk_premium'))}%")
+                st.caption(f"Earnings Yield: {format_value(erp_data.get('earnings_yield'))}%")
+            with e2:
+                st.metric("ERP (Forward)", f"{format_value(erp_data.get('forward_erp'))}%")
+                st.caption(f"10Y Real Yield: {format_value(erp_data.get('real_yield_10y'))}%")
 
 # Tab 2: Market Indices
 with tab2:
@@ -394,8 +399,6 @@ with tab2:
             change = data.get('change_1d', 0)
             st.metric("ES Futures Price", format_value(price, 2), f"{format_value(change, 2)}%")
             st.caption(f"As of: {data.get('latest_date', 'N/A')}")
-            if 'expiry_date' in data:
-                st.caption(f"📅 Contract Expiry: {data['expiry_date']}")
 
     # RTY Futures (Russell 2000 E-mini)
     with col2:
@@ -408,10 +411,6 @@ with tab2:
             change = data.get('change_1d', 0)
             st.metric("RTY Futures Price", format_value(price, 2), f"{format_value(change, 2)}%")
             st.caption(f"As of: {data.get('latest_date', 'N/A')}")
-            if 'expiry_date' in data:
-                st.caption(f"📅 Contract Expiry: {data['expiry_date']}")
-
-    st.divider()
 
     # S&P 500 Market Breadth (Advance/Decline)
     st.subheader("S&P 500 Market Breadth Indicator")
@@ -456,9 +455,7 @@ with tab2:
                 st.caption(f"A/D Ratio: {format_value(ad_ratio, 2)}")
         with col2:
             st.caption(f"Sample: {data.get('total_stocks', 'N/A')} stocks")
-            st.caption(f"Source: {data.get('source', 'N/A')}")
 
-    st.divider()
 
     # 2. Russell 2000 Indices
     st.subheader(f"2. [Russell 2000 Value vs Growth]({SOURCE_URLS['russell_2000']})")
@@ -508,7 +505,6 @@ with tab2:
                 else:
                     st.caption("🟡 Normal range")
 
-    st.divider()
 
     # SPY/RSP Market Concentration Ratio
     st.subheader("Market Concentration (SPY/RSP Ratio)")
@@ -529,18 +525,50 @@ with tab2:
             if interp:
                 st.caption(f"ℹ️ {interp}")
         st.caption(f"As of: {conc_data.get('latest_date', 'N/A')} | SPY (cap-weighted) vs RSP (equal-weight)")
-        st.caption("Rising = mega-cap concentration (Mag 7 dominance). Falling = market broadening.")
         _render_history_expander(conc_data, 'SPY/RSP Ratio', '#7b1fa2')
+
+    # ── OpenBB Market Indicators ────────────────────────────────────────
+    st.subheader("69. Fama-French 5-Factor Returns")
+    ff_data = aggregator.get_indicator('69_fama_french')
+    if 'error' in ff_data:
+        st.error(f"⚠️ {ff_data['error']}")
+    else:
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1:
+            st.metric("Mkt-RF", f"{format_value(ff_data.get('mkt_rf'))}%")
+        with c2:
+            st.metric("SMB", f"{format_value(ff_data.get('smb'))}%")
+        with c3:
+            st.metric("HML", f"{format_value(ff_data.get('hml'))}%")
+        with c4:
+            st.metric("RMW", f"{format_value(ff_data.get('rmw'))}%")
+        with c5:
+            st.metric("CMA", f"{format_value(ff_data.get('cma'))}%")
+        st.caption(f"Monthly factor returns | RF: {format_value(ff_data.get('rf'))}% | Source: {ff_data.get('source', 'N/A')}")
+
+    st.subheader("73. Upcoming Earnings Calendar")
+    earn_data = aggregator.get_indicator('73_earnings_calendar')
+    if 'error' in earn_data:
+        st.error(f"⚠️ {earn_data['error']}")
+    else:
+        earnings = earn_data.get('earnings', [])
+        if earnings:
+            import pandas as pd
+            edf = pd.DataFrame(earnings)
+            st.dataframe(edf, use_container_width=True, hide_index=True)
+        else:
+            st.info("No upcoming earnings in the next 7 days.")
+        st.caption(f"Period: {earn_data.get('period', 'N/A')} | Source: {earn_data.get('source', 'N/A')}")
 
 # Tab 3: Volatility & Risk
 with tab3:
     st.header("Volatility & Risk Indicators")
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
 
     # 8. VIX
     with col1:
-        st.subheader(f"8. [VIX (Volatility Index)]({SOURCE_URLS['vix']})")
+        st.subheader(f"8. [VIX]({SOURCE_URLS['vix']})")
         data = aggregator.get_indicator('8_vix')
         if 'error' in data:
             st.error(f"⚠️ {data['error']}")
@@ -553,7 +581,7 @@ with tab3:
 
     # 9. MOVE Index
     with col2:
-        st.subheader(f"9. [MOVE Index (Bond Volatility)]({SOURCE_URLS['move']})")
+        st.subheader(f"9. [MOVE]({SOURCE_URLS['move']})")
         data = aggregator.get_indicator('9_move_index')
         if 'error' in data:
             st.error(f"⚠️ {data['error']}")
@@ -565,14 +593,14 @@ with tab3:
             _render_history_expander(data, 'MOVE Index', '#ff9800')
 
     # 8b. VIX/MOVE Ratio
-    st.subheader("8b. VIX/MOVE Ratio")
-    data = aggregator.get_indicator('8b_vix_move_ratio')
-    if 'error' in data:
-        st.error(f"⚠️ {data['error']}")
-    else:
-        ratio = data.get('vix_move_ratio', 'N/A')
-        st.metric("VIX/MOVE Ratio", format_value(ratio, 3))
-        st.info("Higher ratio suggests equity volatility is elevated relative to bond volatility")
+    with col3:
+        st.subheader("8b. VIX/MOVE Ratio")
+        data = aggregator.get_indicator('8b_vix_move_ratio')
+        if 'error' in data:
+            st.error(f"⚠️ {data['error']}")
+        else:
+            ratio = data.get('vix_move_ratio', 'N/A')
+            st.metric("VIX/MOVE Ratio", format_value(ratio, 3))
 
     col1, col2 = st.columns(2)
 
@@ -604,70 +632,105 @@ with tab3:
                     st.caption(f"- {k}: {v}")
             _render_history_expander(data, 'CBOE SKEW', '#1565c0')
 
+    # ── OpenBB Volatility Indicators ────────────────────────────────────
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.subheader("63. VIX Futures Curve")
+        vfc_data = aggregator.get_indicator('63_vix_futures_curve')
+        if 'error' in vfc_data:
+            st.error(f"⚠️ {vfc_data['error']}")
+        else:
+            st.metric("VIX Spot", format_value(vfc_data.get('vix_spot')))
+            contango = vfc_data.get('contango_pct')
+            if contango is not None:
+                st.metric("Contango", f"{format_value(contango)}%")
+            n_exp = vfc_data.get('n_expirations', 0)
+            st.caption(f"Expirations: {n_exp} | Source: {vfc_data.get('source', 'N/A')}")
+            _render_history_expander(vfc_data, 'VIX Spot', '#d32f2f')
+
+    with col2:
+        st.subheader("64. SPY Put/Call (OI)")
+        pcoi_data = aggregator.get_indicator('64_spy_put_call_oi')
+        if 'error' in pcoi_data:
+            st.error(f"⚠️ {pcoi_data['error']}")
+        else:
+            vol_ratio = pcoi_data.get('put_call_volume_ratio')
+            oi_ratio = pcoi_data.get('put_call_oi_ratio')
+            st.metric("P/C Volume Ratio", format_value(vol_ratio, 3))
+            if oi_ratio is not None:
+                st.metric("P/C OI Ratio", format_value(oi_ratio, 3))
+            st.caption(f"Source: {pcoi_data.get('source', 'N/A')}")
+            _render_history_expander(pcoi_data, 'Put/Call Ratio', '#7b1fa2')
+
+    with col3:
+        st.subheader("70. SPX IV Skew")
+        ivs_data = aggregator.get_indicator('70_iv_skew')
+        if 'error' in ivs_data:
+            st.error(f"⚠️ {ivs_data['error']}")
+        else:
+            skew_25d = ivs_data.get('iv_skew_25d')
+            skew_idx = ivs_data.get('skew_index')
+            if skew_25d is not None:
+                st.metric("25Δ Skew", f"{format_value(skew_25d)}%")
+                put_iv = ivs_data.get('otm_put_iv')
+                call_iv = ivs_data.get('otm_call_iv')
+                if put_iv and call_iv:
+                    st.caption(f"OTM Put IV: {put_iv}% | OTM Call IV: {call_iv}%")
+            elif skew_idx is not None:
+                st.metric("SKEW Index", format_value(skew_idx))
+            st.caption(f"Source: {ivs_data.get('source', 'N/A')}")
+            _render_history_expander(ivs_data, 'IV Skew', '#1565c0')
+
 # Tab 4: Macro & Currency
 with tab4:
     st.header("Macro & Currency")
 
     # Currency Indices
     st.subheader("Currency Indices")
-    col1, col2 = st.columns(2)
+    fx_data = aggregator.get_indicator('54_fx_pairs')
+    col1, col2, col3, col4, col5 = st.columns(5)
 
-    # 10. DXY
+    # DXY
     with col1:
-        st.subheader(f"[U.S. Dollar Index (DXY)]({SOURCE_URLS['dxy']})")
         data = aggregator.get_indicator('10_dxy')
         if 'error' in data:
             st.error(f"⚠️ {data['error']}")
         else:
-            dxy_value = data.get('dxy', 'N/A')
-            change = data.get('change_1d', 0)
-            st.metric("DXY", format_value(dxy_value, 2), f"{format_value(change, 2)}%")
+            st.metric("DXY", format_value(data.get('dxy', 'N/A'), 2), f"{format_value(data.get('change_1d', 0), 2)}%")
             st.caption(f"As of: {data.get('latest_date', 'N/A')}")
             _render_history_expander(data, 'DXY', '#2e7d32')
 
-    # JPY Exchange Rate
+    # USD/JPY
     with col2:
-        st.subheader(f"[USD/JPY Exchange Rate]({SOURCE_URLS['jpy']})")
         data = aggregator.get_indicator('20_jpy')
         if 'error' in data:
             st.error(f"⚠️ {data['error']}")
         else:
-            jpy_rate = data.get('jpy_rate', 'N/A')
-            change = data.get('change_1d', 0)
-            st.metric("USD/JPY", format_value(jpy_rate, 2), f"{format_value(change, 2)}%")
+            st.metric("USD/JPY", format_value(data.get('jpy_rate', 'N/A'), 2), f"{format_value(data.get('change_1d', 0), 2)}%")
             st.caption(f"As of: {data.get('latest_date', 'N/A')}")
-            st.caption(f"Units: {data.get('units', 'JPY per USD')}")
             _render_history_expander(data, 'USD/JPY', '#d84315')
 
-    # Major FX Pairs
-    fx_data = aggregator.get_indicator('54_fx_pairs')
-    if 'error' not in fx_data:
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            eur_usd = fx_data.get('eur_usd', 'N/A')
-            eur_usd_chg = fx_data.get('eur_usd_change_1d', 0)
-            st.metric("EUR/USD", format_value(eur_usd, 4), f"{format_value(eur_usd_chg, 2)}%")
+    # EUR/USD
+    with col3:
+        if 'error' not in fx_data:
+            st.metric("EUR/USD", format_value(fx_data.get('eur_usd', 'N/A'), 4), f"{format_value(fx_data.get('eur_usd_change_1d', 0), 2)}%")
             if 'historical_eur_usd' in fx_data:
                 _render_history_expander(fx_data, 'EUR/USD', '#1565c0', hist_key='historical_eur_usd')
 
-        with col2:
-            gbp_usd = fx_data.get('gbp_usd', 'N/A')
-            gbp_usd_chg = fx_data.get('gbp_usd_change_1d', 0)
-            st.metric("GBP/USD", format_value(gbp_usd, 4), f"{format_value(gbp_usd_chg, 2)}%")
+    # GBP/USD
+    with col4:
+        if 'error' not in fx_data:
+            st.metric("GBP/USD", format_value(fx_data.get('gbp_usd', 'N/A'), 4), f"{format_value(fx_data.get('gbp_usd_change_1d', 0), 2)}%")
             if 'historical_gbp_usd' in fx_data:
                 _render_history_expander(fx_data, 'GBP/USD', '#1b5e20', hist_key='historical_gbp_usd')
 
-        with col3:
-            eur_jpy = fx_data.get('eur_jpy', 'N/A')
-            eur_jpy_chg = fx_data.get('eur_jpy_change_1d', 0)
-            st.metric("EUR/JPY", format_value(eur_jpy, 4), f"{format_value(eur_jpy_chg, 2)}%")
+    # EUR/JPY
+    with col5:
+        if 'error' not in fx_data:
+            st.metric("EUR/JPY", format_value(fx_data.get('eur_jpy', 'N/A'), 4), f"{format_value(fx_data.get('eur_jpy_change_1d', 0), 2)}%")
             if 'historical_eur_jpy' in fx_data:
                 _render_history_expander(fx_data, 'EUR/JPY', '#e65100', hist_key='historical_eur_jpy')
 
-        st.caption(f"As of: {fx_data.get('latest_date', 'N/A')} | Source: {fx_data.get('source', 'N/A')}")
-
-    st.markdown("---")
 
     # Liquidity & Rates
     st.subheader("Liquidity & Short-Term Rates")
@@ -684,7 +747,7 @@ with tab4:
             tga_b = data.get('tga_balance_billions', 'N/A')
             change_pct = data.get('change_wow_pct', 0)
             st.metric("TGA Balance ($B)", format_value(tga_b, 1), f"{format_value(change_pct, 1)}% WoW")
-            st.caption(f"As of: {data.get('latest_date', 'N/A')} | Source: {data.get('source', 'N/A')}")
+            st.caption(f"As of: {data.get('latest_date', 'N/A')}")
             st.caption("High TGA = Treasury draining liquidity")
             _render_history_expander(data, 'TGA Balance ($M)', '#6a1b9a')
 
@@ -699,7 +762,6 @@ with tab4:
             change_pct = data.get('change_pct', 0)
             st.metric("Net Liquidity ($T)", format_value(net_liq_t, 3), f"{format_value(change_pct, 2)}%")
             st.caption(f"As of: {data.get('latest_date', 'N/A')}")
-            st.caption("= Fed Assets - TGA - ON RRP")
             if 'interpretation' in data:
                 st.caption(f"ℹ️ {data['interpretation']}")
             _render_history_expander(data, 'Net Liquidity ($M)', '#1565c0')
@@ -732,7 +794,7 @@ with tab4:
             sofr_val = data.get('sofr', 'N/A')
             change = data.get('change_1d', 0)
             st.metric("SOFR Rate (%)", format_value(sofr_val, 4), f"{format_value(change, 4)} bps")
-            st.caption(f"As of: {data.get('latest_date', 'N/A')} | Source: {data.get('source', 'N/A')}")
+            st.caption(f"As of: {data.get('latest_date', 'N/A')}")
             _render_history_expander(data, 'SOFR (%)', '#00838f', value_suffix='%')
 
     # US 2Y Yield
@@ -745,7 +807,7 @@ with tab4:
             yield_2y = data.get('us_2y_yield', 'N/A')
             change = data.get('change_1d', 0)
             st.metric("2Y Yield (%)", format_value(yield_2y, 3), f"{format_value(change, 4)}")
-            st.caption(f"As of: {data.get('latest_date', 'N/A')} | Source: {data.get('source', 'N/A')}")
+            st.caption(f"As of: {data.get('latest_date', 'N/A')}")
             if 'spread_2s10s' in data:
                 spread = data['spread_2s10s']
                 clr = "🔴" if spread < 0 else "🟢"
@@ -764,7 +826,7 @@ with tab4:
             jp_2y = data.get('japan_2y_yield', 'N/A')
             change = data.get('change_1d', 0)
             st.metric("JGB 2Y Yield (%)", format_value(jp_2y, 3), f"{format_value(change, 4)}")
-            st.caption(f"As of: {data.get('latest_date', 'N/A')} | Source: {data.get('source', 'N/A')}")
+            st.caption(f"As of: {data.get('latest_date', 'N/A')}")
             if 'japan_10y_yield' in data:
                 st.caption(f"JGB 10Y: {data['japan_10y_yield']}%")
             _render_history_expander(data, 'JGB 2Y Yield (%)', '#e65100', value_suffix='%')
@@ -780,7 +842,6 @@ with tab4:
             jp_2y = data.get('japan_2y_yield', 'N/A')
             st.metric("Yield Spread (%)", format_value(spread, 3))
             st.caption(f"US 2Y: {us_2y}% | JP 2Y: {jp_2y}%")
-            st.caption(f"Source: {data.get('source', 'N/A')}")
             if 'interpretation' in data:
                 st.caption(f"ℹ️ {data['interpretation']}")
             _render_history_expander(data, 'US-JP 2Y Spread (%)', '#ff7f0e', value_suffix='%')
@@ -788,6 +849,7 @@ with tab4:
     # US-JP 2Y Spread historical chart
     spread_data = aggregator.get_indicator('28_us2y_jp2y_spread')
     if 'error' not in spread_data and 'historical' in spread_data:
+      with st.expander("📈 US-JP 2Y Yield Spread Chart"):
         import plotly.graph_objects as go
         hist_spread = spread_data['historical']
 
@@ -810,6 +872,7 @@ with tab4:
     # Net Liquidity historical chart
     net_liq_data = aggregator.get_indicator('24_net_liquidity')
     if 'error' not in net_liq_data and 'historical' in net_liq_data:
+      with st.expander("📈 Net Liquidity Chart"):
         import plotly.graph_objects as go
         hist = net_liq_data['historical']
         # Convert to trillions for readability
@@ -830,7 +893,6 @@ with tab4:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("---")
 
     # 10Y Yield vs ISM PMI Chart
     st.subheader(f"[10-Year Treasury Yield]({SOURCE_URLS['10y_yield']}) vs [ISM Manufacturing PMI]({SOURCE_URLS['ism_pmi']})")
@@ -870,42 +932,49 @@ with tab4:
 
         # Historical chart
         if 'historical' in yield_data and 'historical' in ism_data:
+          with st.expander("📈 10Y Yield vs ISM PMI Chart"):
             import plotly.graph_objects as go
             from plotly.subplots import make_subplots
 
-            # Align data by date
             yield_hist = yield_data['historical']
             ism_hist = ism_data['historical']
 
-            # Create figure with secondary y-axis
             fig = make_subplots(specs=[[{"secondary_y": True}]])
-
-            # Add 10Y Yield trace
             fig.add_trace(
                 go.Scatter(x=yield_hist.index, y=yield_hist.values, name="10Y Treasury Yield", line=dict(color='blue')),
                 secondary_y=False,
             )
-
-            # Add ISM PMI trace
             fig.add_trace(
                 go.Scatter(x=ism_hist.index, y=ism_hist.values, name="ISM Manufacturing PMI", line=dict(color='orange')),
                 secondary_y=True,
             )
-
-            # Update layout
             fig.update_layout(
                 title_text="10-Year Treasury Yield vs ISM Manufacturing PMI",
                 hovermode='x unified',
                 height=500
             )
-
-            # Set y-axes titles
             fig.update_yaxes(title_text="10Y Yield (%)", secondary_y=False)
             fig.update_yaxes(title_text="ISM PMI", secondary_y=True)
 
             st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Historical data not available for charting")
+
+    # ── OpenBB Money Supply ─────────────────────────────────────────────
+    st.subheader("80. Money Supply (M1/M2)")
+    mm_data = aggregator.get_indicator('80_money_measures')
+    if 'error' in mm_data:
+        st.error(f"⚠️ {mm_data['error']}")
+    else:
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.metric("M1 Level (B)", format_value(mm_data.get('m1_level'), 0))
+        with c2:
+            st.metric("M1 YoY%", f"{format_value(mm_data.get('m1_yoy'))}%")
+        with c3:
+            st.metric("M2 Level (B)", format_value(mm_data.get('m2_level'), 0))
+        with c4:
+            st.metric("M2 YoY%", f"{format_value(mm_data.get('m2_yoy'))}%")
+        st.caption(f"As of: {mm_data.get('latest_date', 'N/A')} | Source: {mm_data.get('source', 'N/A')}")
+        _render_history_expander(mm_data, 'M2 Money Supply', '#1565c0')
 
 # Tab 5: Commodities
 with tab5:
@@ -924,8 +993,6 @@ with tab5:
             change = data.get('change_1d', 0)
             st.metric("Gold Price (USD/oz)", format_value(price, 2), f"{format_value(change, 2)}%")
             st.caption(f"As of: {data.get('latest_date', 'N/A')}")
-            if 'expiry_date' in data:
-                st.caption(f"📅 Contract Expiry: {data['expiry_date']}")
             if 'note' in data:
                 st.caption(f"ℹ️ {data['note']}")
             _render_history_expander(data, 'Gold (USD/oz)', '#FFD700')
@@ -941,8 +1008,6 @@ with tab5:
             change = data.get('change_1d', 0)
             st.metric("Silver Price (USD/oz)", format_value(price, 2), f"{format_value(change, 2)}%")
             st.caption(f"As of: {data.get('latest_date', 'N/A')}")
-            if 'expiry_date' in data:
-                st.caption(f"📅 Contract Expiry: {data['expiry_date']}")
             if 'note' in data:
                 st.caption(f"ℹ️ {data['note']}")
             _render_history_expander(data, 'Silver (USD/oz)', '#C0C0C0')
@@ -960,8 +1025,6 @@ with tab5:
             change = data.get('change_1d', 0)
             st.metric("Crude Oil Price (USD/barrel)", format_value(price, 2), f"{format_value(change, 2)}%")
             st.caption(f"As of: {data.get('latest_date', 'N/A')}")
-            if 'expiry_date' in data:
-                st.caption(f"📅 Contract Expiry: {data['expiry_date']}")
             if 'note' in data:
                 st.caption(f"ℹ️ {data['note']}")
             _render_history_expander(data, 'Crude Oil (USD/bbl)', '#2c2c2c')
@@ -977,8 +1040,6 @@ with tab5:
             change = data.get('change_1d', 0)
             st.metric("Copper Price (USD/lb)", format_value(price, 2), f"{format_value(change, 2)}%")
             st.caption(f"As of: {data.get('latest_date', 'N/A')}")
-            if 'expiry_date' in data:
-                st.caption(f"📅 Contract Expiry: {data['expiry_date']}")
             if 'note' in data:
                 st.caption(f"ℹ️ {data['note']}")
             _render_history_expander(data, 'Copper (USD/lb)', '#B87333')
@@ -996,8 +1057,6 @@ with tab5:
             change = data.get('change_1d', 0)
             st.metric("Natural Gas Price (USD/MMBtu)", format_value(price, 3), f"{format_value(change, 2)}%")
             st.caption(f"As of: {data.get('latest_date', 'N/A')}")
-            if 'expiry_date' in data:
-                st.caption(f"📅 Contract Expiry: {data['expiry_date']}")
             if 'note' in data:
                 st.caption(f"ℹ️ {data['note']}")
             _render_history_expander(data, 'Natural Gas (USD/MMBtu)', '#4a148c')
@@ -1013,13 +1072,11 @@ with tab5:
             ratio_chg = cu_au_data.get('change_1d', 0)
             st.metric("Cu/Au Ratio (×1000)", format_value(ratio_val, 4), f"{format_value(ratio_chg, 2)}%")
             st.caption(f"As of: {cu_au_data.get('latest_date', 'N/A')}")
-            st.caption(f"Units: {cu_au_data.get('units', 'Ratio × 1000')}")
             if 'interpretation' in cu_au_data:
                 st.caption(f"ℹ️ {cu_au_data['interpretation']}")
             _render_history_expander(cu_au_data, 'Cu/Au Ratio ×1000', '#ef6c00')
 
     # CFTC COT Positioning
-    st.divider()
     st.header("CFTC Commitment of Traders — Gold & Silver")
     st.caption("Weekly positioning data from CFTC. Managed money = hedge funds. Commercial = producers/hedgers.")
 
@@ -1029,7 +1086,7 @@ with tab5:
         if 'suggestion' in cot_data:
             st.info(cot_data['suggestion'])
     else:
-        st.caption(f"As of: {cot_data.get('latest_date', 'N/A')} | Source: {cot_data.get('source', 'N/A')}")
+        st.caption(f"As of: {cot_data.get('latest_date', 'N/A')}")
 
         col1, col2 = st.columns(2)
 
@@ -1104,6 +1161,7 @@ with tab5:
         silver_hist = silver_cot.get('historical') if isinstance(silver_cot, dict) else None
 
         if gold_hist is not None or silver_hist is not None:
+          with st.expander("📈 COT Positioning Chart"):
             hist_label = gold_cot.get('historical_label', 'Net Positioning') if isinstance(gold_cot, dict) else 'Net Positioning'
             fig = make_subplots(rows=1, cols=1)
 
@@ -1486,7 +1544,6 @@ with tab6:
                         if inc_html:
                             st.markdown(inc_html, unsafe_allow_html=True)
 
-                    st.divider()
 
                     # ── 2. Balance Sheet ──────────────────────────
                     bs = co.get('balance_sheet')
@@ -1537,7 +1594,6 @@ with tab6:
                         if eq_html:
                             st.markdown(eq_html, unsafe_allow_html=True)
 
-                    st.divider()
 
                     # ── 3. Cash Flow ──────────────────────────────
                     cf = co.get('cash_flow')
@@ -1558,7 +1614,6 @@ with tab6:
                         if cf_html:
                             st.markdown(cf_html, unsafe_allow_html=True)
 
-                    st.divider()
 
                     # ── 4. Financial Analysis ─────────────────────
                     fa = co.get('financial_analysis', {})
@@ -1649,7 +1704,6 @@ with tab6:
                             _nopat = _oi0 * (1 - _tr)
                         st.markdown(_metric_components("NOPAT", _nopat, "Invested Cap.", _q0(_bs, 'invested_capital'), annualized=True), unsafe_allow_html=True)
 
-                    st.divider()
 
                     # ── 5. Valuation ──────────────────────────────
                     val = co.get('valuation', {})
@@ -1712,7 +1766,6 @@ with tab6:
                     with ve4:
                         st.metric("Book Value/Share", f"${val['book_value_per_share']:.2f}" if val.get('book_value_per_share') else "N/A")
 
-                    st.divider()
 
                     # ── 6. Revenue Segments ───────────────────────
                     st.subheader("6. Revenue Segment Breakdown")
@@ -1793,7 +1846,7 @@ with tab7:
             )
             if inverted:
                 st.markdown("🔴 **Yield curve is INVERTED** (recession signal)")
-            st.caption(f"As of: {yc_data.get('latest_date', 'N/A')} | Source: {yc_data.get('source', 'N/A')}")
+            st.caption(f"As of: {yc_data.get('latest_date', 'N/A')}")
             _render_history_expander(yc_data, '2s10s Spread (%)', '#ff7f0e', value_suffix='%')
 
         with col2:
@@ -1828,6 +1881,7 @@ with tab7:
         # 2s10s Spread historical chart with inverted shading
         hist_spread = yc_data.get('historical')
         if hist_spread is not None and len(hist_spread) > 0:
+          with st.expander("📈 2s10s Spread History"):
             fig = go.Figure()
             fig.add_trace(go.Scatter(
                 x=hist_spread.index, y=hist_spread.values,
@@ -1843,7 +1897,6 @@ with tab7:
             )
             st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("---")
 
     # ── Section 2: Global 10Y Sovereign Yields ──────────────────────────
     st.subheader("Global 10-Year Sovereign Yields")
@@ -1882,7 +1935,6 @@ with tab7:
             de_val = de_data.get('germany_10y_yield', 'N/A')
             de_chg = de_data.get('change_1d', 0)
             st.metric("🇩🇪 Germany 10Y", f"{format_value(de_val, 2)}%", f"{format_value(de_chg, 3)}")
-            st.caption(f"Source: {de_data.get('source', 'N/A')}")
             _render_history_expander(de_data, 'Germany 10Y (%)', '#d32f2f', value_suffix='%')
 
     # UK 10Y
@@ -1894,7 +1946,6 @@ with tab7:
             uk_val = uk_data.get('uk_10y_yield', 'N/A')
             uk_chg = uk_data.get('change_1d', 0)
             st.metric("🇬🇧 UK 10Y", f"{format_value(uk_val, 2)}%", f"{format_value(uk_chg, 3)}")
-            st.caption(f"Source: {uk_data.get('source', 'N/A')}")
             _render_history_expander(uk_data, 'UK 10Y (%)', '#1b5e20', value_suffix='%')
 
     # China 10Y
@@ -1906,34 +1957,30 @@ with tab7:
             cn_val = cn_data.get('china_10y_yield', 'N/A')
             cn_chg = cn_data.get('change_1d', 0)
             st.metric("🇨🇳 China 10Y", f"{format_value(cn_val, 2)}%", f"{format_value(cn_chg, 3)}")
-            st.caption(f"Source: {cn_data.get('source', 'N/A')}")
             if 'note' in cn_data:
                 st.caption(f"ℹ️ {cn_data['note']}")
 
-    # Overlaid global 10Y yields chart (from yield curve historical data + FRED historical for DE/UK)
+    # Overlaid global 10Y yields chart
     if 'error' not in yc_data and 'historical_10y' in yc_data:
+      with st.expander("📈 Global 10Y Yields Chart"):
         fig = go.Figure()
-        # US 10Y
         h10y = yc_data['historical_10y']
         fig.add_trace(go.Scatter(
             x=h10y.index, y=h10y.values,
             name='US 10Y', line=dict(color='#1565c0', width=2),
         ))
-        # Germany
         if 'error' not in de_data and 'historical' in de_data:
             de_h = de_data['historical']
             fig.add_trace(go.Scatter(
                 x=de_h.index, y=de_h.values,
                 name='Germany 10Y', line=dict(color='#d32f2f', width=1.5, dash='dash'),
             ))
-        # UK
         if 'error' not in uk_data and 'historical' in uk_data:
             uk_h = uk_data['historical']
             fig.add_trace(go.Scatter(
                 x=uk_h.index, y=uk_h.values,
                 name='UK 10Y', line=dict(color='#1b5e20', width=1.5, dash='dot'),
             ))
-
         fig.update_layout(
             title="Global 10-Year Sovereign Yields",
             xaxis_title="Date", yaxis_title="Yield (%)",
@@ -1942,7 +1989,6 @@ with tab7:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("---")
 
     # ── Section 3: Real Yields & Inflation Expectations ─────────────────
     st.subheader("Real Yields & Inflation Expectations")
@@ -1993,37 +2039,37 @@ with tab7:
     # Nominal vs Real vs Breakeven chart
     if ('error' not in yc_data and 'historical_10y' in yc_data
             and 'error' not in ry_data and 'historical' in ry_data):
-        fig = go.Figure()
-        # Nominal 10Y
-        h10 = yc_data['historical_10y']
-        fig.add_trace(go.Scatter(
-            x=h10.index, y=h10.values,
-            name='Nominal 10Y', line=dict(color='#1565c0', width=2),
-        ))
-        # Real 10Y
-        hr = ry_data['historical']
-        fig.add_trace(go.Scatter(
-            x=hr.index, y=hr.values,
-            name='Real 10Y (TIPS)', line=dict(color='#6a1b9a', width=2),
-        ))
-        # 10Y Breakeven
-        if 'error' not in be_data and 'historical_10y' in be_data:
-            hbe = be_data['historical_10y']
+        with st.expander("📈 Nominal vs Real vs Breakeven Chart"):
+            fig = go.Figure()
+            # Nominal 10Y
+            h10 = yc_data['historical_10y']
             fig.add_trace(go.Scatter(
-                x=hbe.index, y=hbe.values,
-                name='10Y Breakeven', line=dict(color='#e65100', width=1.5, dash='dash'),
+                x=h10.index, y=h10.values,
+                name='Nominal 10Y', line=dict(color='#1565c0', width=2),
             ))
-        fig.add_hline(y=2.0, line_dash="dot", line_color="gray", opacity=0.4,
-                      annotation_text="Fed 2% target")
-        fig.update_layout(
-            title="Nominal 10Y vs Real 10Y vs 10Y Breakeven Inflation",
-            xaxis_title="Date", yaxis_title="Yield / Rate (%)",
-            hovermode='x unified', height=420,
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        )
-        st.plotly_chart(fig, use_container_width=True)
+            # Real 10Y
+            hr = ry_data['historical']
+            fig.add_trace(go.Scatter(
+                x=hr.index, y=hr.values,
+                name='Real 10Y (TIPS)', line=dict(color='#6a1b9a', width=2),
+            ))
+            # 10Y Breakeven
+            if 'error' not in be_data and 'historical_10y' in be_data:
+                hbe = be_data['historical_10y']
+                fig.add_trace(go.Scatter(
+                    x=hbe.index, y=hbe.values,
+                    name='10Y Breakeven', line=dict(color='#e65100', width=1.5, dash='dash'),
+                ))
+            fig.add_hline(y=2.0, line_dash="dot", line_color="gray", opacity=0.4,
+                          annotation_text="Fed 2% target")
+            fig.update_layout(
+                title="Nominal 10Y vs Real 10Y vs 10Y Breakeven Inflation",
+                xaxis_title="Date", yaxis_title="Yield / Rate (%)",
+                hovermode='x unified', height=420,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("---")
 
     # ── Section 4: Credit & Financial Conditions ────────────────────────
     st.subheader("Credit & Financial Conditions")
@@ -2113,7 +2159,6 @@ with tab7:
                 st.caption(f"ℹ️ {sloos_data['interpretation']}")
             _render_history_expander(sloos_data, 'SLOOS Net Tightening (%)', '#3e2723', value_suffix='%')
 
-    st.markdown("---")
 
     # ── Section 5: Labor Market & Inflation ─────────────────────────────
     st.subheader("Labor Market & Inflation")
@@ -2166,7 +2211,6 @@ with tab7:
             pce_yoy = infl_data.get('core_pce_yoy', 'N/A')
             pce_chg = infl_data.get('core_pce_change_mom', 0)
             st.metric("Core PCE YoY%", f"{format_value(pce_yoy, 2)}%", f"{format_value(pce_chg, 2)} MoM")
-            st.caption("Fed's preferred inflation measure")
             if 'interpretation' in infl_data:
                 st.caption(f"ℹ️ {infl_data['interpretation']}")
             if 'historical_core_pce' in infl_data:
@@ -2215,6 +2259,106 @@ with tab7:
             if 'interpretation' in ppi_data:
                 st.caption(f"ℹ️ {ppi_data['interpretation']}")
             _render_history_expander(ppi_data, 'PPI YoY (%)', '#ad1457', value_suffix='%')
+
+    # ── OpenBB Rates & Credit Indicators ────────────────────────────────
+    st.subheader("66. ECB Policy Rates")
+    ecb_data = aggregator.get_indicator('66_ecb_rates')
+    if 'error' in ecb_data:
+        st.error(f"⚠️ {ecb_data['error']}")
+    else:
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.metric("Deposit Rate", f"{format_value(ecb_data.get('deposit_rate'))}%")
+        with c2:
+            st.metric("Refi Rate", f"{format_value(ecb_data.get('refi_rate'))}%")
+        with c3:
+            st.metric("Marginal Rate", f"{format_value(ecb_data.get('marginal_rate'))}%")
+        st.caption(f"As of: {ecb_data.get('latest_date', 'N/A')} | Source: {ecb_data.get('source', 'N/A')}")
+        _render_history_expander(ecb_data, 'ECB Deposit Rate', '#1565c0')
+
+    st.subheader("68. CPI Components Breakdown")
+    cpic_data = aggregator.get_indicator('68_cpi_components')
+    if 'error' in cpic_data:
+        st.error(f"⚠️ {cpic_data['error']}")
+    else:
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1:
+            st.metric("Headline CPI YoY%", f"{format_value(cpic_data.get('headline_cpi_yoy'))}%")
+        with c2:
+            st.metric("Core CPI YoY%", f"{format_value(cpic_data.get('core_cpi_yoy'))}%")
+        with c3:
+            st.metric("Food CPI YoY%", f"{format_value(cpic_data.get('food_cpi_yoy'))}%")
+        with c4:
+            st.metric("Energy CPI YoY%", f"{format_value(cpic_data.get('energy_cpi_yoy'))}%")
+        with c5:
+            st.metric("Shelter CPI YoY%", f"{format_value(cpic_data.get('shelter_cpi_yoy'))}%")
+        st.caption(f"As of: {cpic_data.get('latest_date', 'N/A')} | Source: {cpic_data.get('source', 'N/A')}")
+        _render_history_expander(cpic_data, 'Headline CPI YoY (%)', '#e65100', value_suffix='%')
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("71. European Government Yields")
+        euy_data = aggregator.get_indicator('71_eu_yields')
+        if 'error' in euy_data:
+            st.error(f"⚠️ {euy_data['error']}")
+        else:
+            e1, e2, e3 = st.columns(3)
+            with e1:
+                st.metric("Germany 10Y", f"{format_value(euy_data.get('de_10y'))}%")
+            with e2:
+                st.metric("France 10Y", f"{format_value(euy_data.get('fr_10y'))}%")
+            with e3:
+                st.metric("Italy 10Y", f"{format_value(euy_data.get('it_10y'))}%")
+            spread = euy_data.get('it_de_spread')
+            if spread is not None:
+                st.caption(f"IT-DE Spread: {format_value(spread)}% | Source: {euy_data.get('source', 'N/A')}")
+
+    with col2:
+        st.subheader("72. Global CPI Comparison")
+        gcpi_data = aggregator.get_indicator('72_global_cpi')
+        if 'error' in gcpi_data:
+            st.error(f"⚠️ {gcpi_data['error']}")
+        else:
+            g1, g2, g3, g4 = st.columns(4)
+            with g1:
+                st.metric("US CPI", f"{format_value(gcpi_data.get('us_cpi_yoy'))}%")
+            with g2:
+                st.metric("EU CPI", f"{format_value(gcpi_data.get('eu_cpi_yoy'))}%")
+            with g3:
+                st.metric("Japan CPI", f"{format_value(gcpi_data.get('jp_cpi_yoy'))}%")
+            with g4:
+                st.metric("UK CPI", f"{format_value(gcpi_data.get('uk_cpi_yoy'))}%")
+            st.caption(f"Source: {gcpi_data.get('source', 'N/A')}")
+            _render_history_expander(gcpi_data, 'US CPI YoY (%)', '#e65100', value_suffix='%')
+
+    st.subheader("75. Full Treasury Yield Curve")
+    tyc_data = aggregator.get_indicator('75_treasury_curve')
+    if 'error' in tyc_data:
+        st.error(f"⚠️ {tyc_data['error']}")
+    else:
+        curve = tyc_data.get('curve', {})
+        if curve:
+            import plotly.graph_objects as go_tyc
+            mats = list(curve.keys())
+            yields_v = [curve[m] for m in mats]
+            fig_tyc = go_tyc.Figure(data=go_tyc.Scatter(x=mats, y=yields_v, mode='lines+markers', line=dict(color='#1565c0')))
+            fig_tyc.update_layout(title="US Treasury Yield Curve", xaxis_title="Maturity", yaxis_title="Yield (%)", height=300)
+            st.plotly_chart(fig_tyc, use_container_width=True)
+            st.caption(f"As of: {tyc_data.get('latest_date', 'N/A')} | Source: {tyc_data.get('source', 'N/A')}")
+
+    st.subheader("76. Corporate Bond Spreads (AAA/BBB)")
+    cs_data = aggregator.get_indicator('76_corporate_spreads')
+    if 'error' in cs_data:
+        st.error(f"⚠️ {cs_data['error']}")
+    else:
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.metric("AAA OAS", f"{format_value(cs_data.get('aaa_oas'))}%")
+        with c2:
+            st.metric("BBB OAS", f"{format_value(cs_data.get('bbb_oas'))}%")
+        with c3:
+            st.metric("Credit Spread (BBB-AAA)", f"{format_value(cs_data.get('credit_spread'))}%")
+        st.caption(f"As of: {cs_data.get('latest_date', 'N/A')} | Source: {cs_data.get('source', 'N/A')}")
 
 
 # ── Tab 8: Economic Activity ─────────────────────────────────────────────
@@ -2306,7 +2450,6 @@ with tab8:
                     )
                     st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("---")
 
     # ── Section 2: Consumer ───────────────────────────────────────────
     st.subheader("Consumer")
@@ -2341,7 +2484,6 @@ with tab8:
                 st.caption(f"ℹ️ {rs_data['interpretation']}")
             _render_history_expander(rs_data, 'Retail Sales MoM%', '#2e7d32', value_suffix='%')
 
-    st.markdown("---")
 
     # ── Section 3: Production & Housing ───────────────────────────────
     st.subheader("Production & Housing")
@@ -2360,7 +2502,6 @@ with tab8:
             st.caption(f"As of: {ism_svc_data.get('latest_date', 'N/A')}")
             if 'interpretation' in ism_svc_data:
                 st.caption(f"ℹ️ {ism_svc_data['interpretation']}")
-            st.caption("Services = ~77% of US GDP. > 50 = expansion.")
 
     # Industrial Production
     with col2:
@@ -2389,6 +2530,76 @@ with tab8:
             if 'interpretation' in hs_data:
                 st.caption(f"ℹ️ {hs_data['interpretation']}")
             _render_history_expander(hs_data, 'Housing Starts (K)', '#bf360c')
+
+    # ── OpenBB Economic Activity Indicators ─────────────────────────────
+    st.subheader("67. OECD Composite Leading Indicator")
+    cli_data = aggregator.get_indicator('67_oecd_cli')
+    if 'error' in cli_data:
+        st.error(f"⚠️ {cli_data['error']}")
+    else:
+        c1, c2 = st.columns(2)
+        with c1:
+            cli_val = cli_data.get('cli_value')
+            st.metric("US CLI", format_value(cli_val), "Above 100 = expansion" if cli_data.get('above_100') else "Below 100 = contraction")
+        with c2:
+            st.caption(f"As of: {cli_data.get('latest_date', 'N/A')}")
+            st.caption("OECD CLI leads GDP by 6-9 months. Above 100 = expansion phase.")
+        _render_history_expander(cli_data, 'OECD CLI', '#2e7d32')
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("77. International Unemployment")
+        iu_data = aggregator.get_indicator('77_intl_unemployment')
+        if 'error' in iu_data:
+            st.error(f"⚠️ {iu_data['error']}")
+        else:
+            u1, u2, u3, u4 = st.columns(4)
+            with u1:
+                st.metric("US", f"{format_value(iu_data.get('us_unemployment'))}%")
+            with u2:
+                st.metric("Eurozone", f"{format_value(iu_data.get('eu_unemployment'))}%")
+            with u3:
+                st.metric("Japan", f"{format_value(iu_data.get('jp_unemployment'))}%")
+            with u4:
+                st.metric("UK", f"{format_value(iu_data.get('uk_unemployment'))}%")
+            st.caption(f"Source: {iu_data.get('source', 'N/A')}")
+
+    with col2:
+        st.subheader("78. International GDP Growth")
+        ig_data = aggregator.get_indicator('78_intl_gdp')
+        if 'error' in ig_data:
+            st.error(f"⚠️ {ig_data['error']}")
+        else:
+            g1, g2, g3, g4 = st.columns(4)
+            with g1:
+                st.metric("US", f"{format_value(ig_data.get('us_gdp_growth'))}%")
+            with g2:
+                st.metric("EU", f"{format_value(ig_data.get('eu_gdp_growth'))}%")
+            with g3:
+                st.metric("Japan", f"{format_value(ig_data.get('jp_gdp_growth'))}%")
+            with g4:
+                st.metric("China", f"{format_value(ig_data.get('cn_gdp_growth'))}%")
+            st.caption(f"Source: {ig_data.get('source', 'N/A')}")
+            _render_history_expander(ig_data, 'US Real GDP Growth', '#1565c0', value_suffix='%')
+
+    st.subheader("81. Global Manufacturing PMI")
+    pmi_data = aggregator.get_indicator('81_global_pmi')
+    if 'error' in pmi_data:
+        st.error(f"⚠️ {pmi_data['error']}")
+    else:
+        p1, p2, p3, p4, p5 = st.columns(5)
+        with p1:
+            st.metric("US", format_value(pmi_data.get('us_mfg_pmi'), 1))
+        with p2:
+            st.metric("EU", format_value(pmi_data.get('eu_mfg_pmi'), 1))
+        with p3:
+            st.metric("Japan", format_value(pmi_data.get('jp_mfg_pmi'), 1))
+        with p4:
+            st.metric("China", format_value(pmi_data.get('cn_mfg_pmi'), 1))
+        with p5:
+            st.metric("UK", format_value(pmi_data.get('uk_mfg_pmi'), 1))
+        st.caption(f"50 = expansion/contraction threshold | Source: {pmi_data.get('source', 'N/A')}")
+        _render_history_expander(pmi_data, 'US Manufacturing PMI', '#e65100')
 
 
 # Footer

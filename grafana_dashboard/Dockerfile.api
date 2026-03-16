@@ -1,0 +1,21 @@
+# API Bridge Dockerfile — builds from project root context
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl gcc && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Python deps
+COPY requirements.txt /tmp/requirements.txt
+COPY grafana_dashboard/api_bridge/requirements.txt /tmp/api_requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt -r /tmp/api_requirements.txt
+
+# Copy project
+COPY . /app
+
+EXPOSE 8001
+
+CMD ["uvicorn", "grafana_dashboard.api_bridge.main:app", "--host", "0.0.0.0", "--port", "8001"]

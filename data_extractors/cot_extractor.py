@@ -231,7 +231,7 @@ def _safe_float(val):
         return None
 
 
-def get_cot_gold_silver(years=2):
+def get_cot_gold_silver(years=4):
     """
     Fetch CFTC COT positioning data for Gold and Silver (COMEX).
 

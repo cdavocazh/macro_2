@@ -1,0 +1,24 @@
+# /etc/systemd/system/macro-fast-extract.service
+# Oneshot service for fast real-time yfinance extraction.
+# Triggered by macro-fast-extract.timer — not started directly.
+#
+# Install:  sudo cp deploy/macro-fast-extract.service /etc/systemd/system/
+#           sudo cp deploy/macro-fast-extract.timer   /etc/systemd/system/
+#           sudo systemctl daemon-reload
+#           sudo systemctl enable --now macro-fast-extract.timer
+
+[Unit]
+Description=Macro Dashboard — Fast yfinance Extraction (fast_extract.py)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/macro_2
+EnvironmentFile=/opt/macro_2/.env
+ExecStart=/opt/macro_2/venv/bin/python fast_extract.py --cron
+TimeoutStartSec=240
+StandardOutput=journal
+StandardError=journal

@@ -14,19 +14,17 @@ def get_commodity_data(symbol, name):
         symbol: Commodity futures ticker (e.g., 'GC=F' for Gold)
         name: Display name for the commodity
 
-    Returns: dict with latest price and historical data
+    Returns: dict with latest price, historical Close series, and historical_ohlcv DataFrame
     """
     try:
         ticker = yf.Ticker(symbol)
 
-        # Get recent historical data (last 60 days to ensure we have data)
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=60)
-
-        hist_data = ticker.history(start=start_date, end=end_date)
+        # Get 2 years of historical data for full OHLCV
+        hist_data = ticker.history(period='2y')
 
         if hist_data.empty:
-            # Try with longer period if no data
+            # Fallback: try with explicit date range
+            end_date = datetime.now()
             start_date = end_date - timedelta(days=730)
             hist_data = ticker.history(start=start_date, end=end_date)
 
@@ -65,11 +63,18 @@ def get_commodity_data(symbol, name):
         except:
             pass
 
+        # Build OHLCV DataFrame (tz-stripped, normalized to midnight)
+        ohlcv = hist_data[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+        if hasattr(ohlcv.index, 'tz') and ohlcv.index.tz is not None:
+            ohlcv.index = ohlcv.index.tz_localize(None)
+        ohlcv.index = ohlcv.index.normalize()
+
         result = {
             'price': float(latest_price),
             'latest_date': latest_date.strftime('%Y-%m-%d %H:%M'),
             'change_1d': float(change_1d) if change_1d is not None else 0.0,
             'historical': hist_data['Close'],
+            'historical_ohlcv': ohlcv,
             'source': 'yfinance',
             'note': note
         }

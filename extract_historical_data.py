@@ -475,6 +475,46 @@ def _extract_simple_series(name, fetch_fn, csv_filename, value_col):
         return None
 
 
+def _extract_ohlcv_series(name, fetch_fn, csv_filename, prefix):
+    """Generic extraction for indicators returning 'historical_ohlcv' DataFrame.
+
+    Writes OHLCV CSV with columns:
+        timestamp, date, {prefix}_open, {prefix}_high, {prefix}_low, {prefix}_close, {prefix}_volume
+    """
+    print(f"\n📊 Extracting {name} OHLCV...")
+    try:
+        data = fetch_fn()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+
+        ohlcv = data.get('historical_ohlcv')
+        if ohlcv is None or (hasattr(ohlcv, 'empty') and ohlcv.empty):
+            print(f"  ⚠️  No OHLCV data for {name}")
+            return None
+
+        df = pd.DataFrame({
+            'timestamp': ohlcv.index,
+            'date': [d.date() if hasattr(d, 'date') else d for d in ohlcv.index],
+            f'{prefix}_open': ohlcv['Open'].values,
+            f'{prefix}_high': ohlcv['High'].values,
+            f'{prefix}_low': ohlcv['Low'].values,
+            f'{prefix}_close': ohlcv['Close'].values,
+            f'{prefix}_volume': ohlcv['Volume'].values,
+        })
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+        append_to_csv(csv_filename, df)
+        return {
+            'indicator': f'{name} OHLCV',
+            'last_date': df['date'].max(),
+            'rows': len(df)
+        }
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
 def extract_10y_yield():
     """Extract 10-Year Treasury Yield historical data."""
     return _extract_simple_series(
@@ -1575,6 +1615,228 @@ def extract_credit_etf_proxies():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Data Extraction Requirements — OHLCV + New Indicators
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── Commodity OHLCV (P0-1) ──────────────────────────────────────────────────
+
+def extract_gold_ohlcv():
+    """Extract Gold futures OHLCV (2-year history)."""
+    return _extract_ohlcv_series('Gold Futures', commodities_extractors.get_gold,
+                                 'gold_ohlcv.csv', 'gold')
+
+
+def extract_silver_ohlcv():
+    """Extract Silver futures OHLCV (2-year history)."""
+    return _extract_ohlcv_series('Silver Futures', commodities_extractors.get_silver,
+                                 'silver_ohlcv.csv', 'silver')
+
+
+def extract_crude_oil_ohlcv():
+    """Extract Crude Oil futures OHLCV (2-year history)."""
+    return _extract_ohlcv_series('Crude Oil Futures', commodities_extractors.get_crude_oil,
+                                 'crude_oil_ohlcv.csv', 'crude_oil')
+
+
+def extract_copper_ohlcv():
+    """Extract Copper futures OHLCV (2-year history)."""
+    return _extract_ohlcv_series('Copper Futures', commodities_extractors.get_copper,
+                                 'copper_ohlcv.csv', 'copper')
+
+
+# ── ES/RTY Futures OHLCV (P0-3) ────────────────────────────────────────────
+
+def extract_es_futures_ohlcv():
+    """Extract ES Futures OHLCV (2-year history)."""
+    return _extract_ohlcv_series('ES Futures', yfinance_extractors.get_es_futures,
+                                 'es_futures_ohlcv.csv', 'es')
+
+
+def extract_rty_futures_ohlcv():
+    """Extract RTY Futures OHLCV (2-year history)."""
+    return _extract_ohlcv_series('RTY Futures', yfinance_extractors.get_rty_futures,
+                                 'rty_futures_ohlcv.csv', 'rty')
+
+
+# ── Brent Crude OHLCV (P1-4) ───────────────────────────────────────────────
+
+def extract_brent_crude_ohlcv():
+    """Extract Brent Crude futures OHLCV (2-year history)."""
+    return _extract_ohlcv_series('Brent Crude', fidenza_extractors.get_brent_crude,
+                                 'brent_crude_ohlcv.csv', 'brent')
+
+
+# ── S&P 500 Expanded Fundamentals (P0-2) ────────────────────────────────────
+
+def extract_sp500_fundamentals_expanded():
+    """Extract expanded S&P 500 fundamentals (forward P/E, earnings yield, etc.)."""
+    print("\n📊 Extracting S&P 500 Expanded Fundamentals...")
+    try:
+        data = openbb_extractors.get_sp500_fundamentals_historical()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+
+        df = pd.DataFrame([{
+            'timestamp': datetime.now(),
+            'date': datetime.now().date(),
+            'pe_ratio_trailing': data.get('sp500_pe_trailing'),
+            'pe_ratio_forward': data.get('sp500_pe_forward'),
+            'pb_ratio': data.get('sp500_pb'),
+            'earnings_yield': data.get('earnings_yield'),
+            'forward_earnings_yield': data.get('forward_earnings_yield'),
+            'dividend_yield_pct': data.get('dividend_yield_pct'),
+            'trailing_eps': data.get('trailing_eps'),
+            'forward_eps': data.get('forward_eps'),
+            'spy_price': data.get('spy_price'),
+        }])
+        append_to_csv('sp500_fundamentals.csv', df)
+        return {'indicator': 'S&P 500 Expanded Fundamentals', 'last_date': df['date'].max(), 'rows': 1}
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+# ── Existing Home Sales (P1-5) ──────────────────────────────────────────────
+
+def extract_existing_home_sales():
+    """Extract Existing Home Sales (FRED EXHOSLUSM495S) to CSV."""
+    return _extract_simple_series(
+        'Existing Home Sales', fred_extractors.get_existing_home_sales,
+        'existing_home_sales.csv', 'existing_home_sales',
+    )
+
+
+# ── Sector ETFs (P2-12) ────────────────────────────────────────────────────
+
+def extract_sector_etfs():
+    """Extract 11 SPDR sector ETF prices to a single wide-format CSV."""
+    print("\n📊 Extracting Sector ETFs...")
+    try:
+        data = yfinance_extractors.get_sector_etfs()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+
+        # Build wide DataFrame from all sector historical series
+        sector_tickers = list(yfinance_extractors.SECTOR_ETFS.keys())
+        frames = {}
+        for ticker in sector_tickers:
+            hist = data.get(f'historical_{ticker.lower()}')
+            if hist is not None and isinstance(hist, pd.Series) and not hist.empty:
+                frames[f'{ticker.lower()}_close'] = hist
+
+        if not frames:
+            print("  ⚠️  No sector ETF data")
+            return None
+
+        # Merge all series on date
+        combined = pd.DataFrame(frames)
+        combined.index.name = 'timestamp'
+        df = combined.reset_index()
+        df['date'] = [d.date() if hasattr(d, 'date') else d for d in df['timestamp']]
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+        append_to_csv('sector_etfs.csv', df)
+        return {'indicator': 'Sector ETFs', 'last_date': df['date'].max(), 'rows': len(df)}
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+# ── VIX Term Structure (P2-11) ──────────────────────────────────────────────
+
+def extract_vix_term_structure():
+    """Extract VIX term structure (spot, front-month, contango ratio) to CSV."""
+    print("\n📊 Extracting VIX Term Structure...")
+    try:
+        data = yfinance_extractors.get_vix_term_structure()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+
+        hist_spot = data.get('historical_vix_spot')
+        hist_front = data.get('historical_vix_front')
+        hist_contango = data.get('historical_contango')
+
+        if hist_spot is None or hist_spot.empty:
+            print("  ⚠️  No VIX spot data")
+            return None
+
+        # Strip tz and normalize
+        for s in [hist_spot, hist_front, hist_contango]:
+            if s is not None and hasattr(s.index, 'tz') and s.index.tz is not None:
+                s.index = s.index.tz_localize(None)
+            if s is not None:
+                s.index = s.index.normalize()
+
+        df = pd.DataFrame({
+            'timestamp': hist_spot.index,
+            'date': [d.date() if hasattr(d, 'date') else d for d in hist_spot.index],
+            'vix_spot': hist_spot.values,
+        })
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+        if hist_front is not None and not hist_front.empty:
+            df_front = pd.DataFrame({
+                'timestamp': hist_front.index,
+                'vix_front_month': hist_front.values,
+            })
+            df_front['timestamp'] = pd.to_datetime(df_front['timestamp'])
+            df = pd.merge(df, df_front, on='timestamp', how='left')
+
+        if hist_contango is not None and not hist_contango.empty:
+            df_contango = pd.DataFrame({
+                'timestamp': hist_contango.index,
+                'contango_ratio': hist_contango.values,
+            })
+            df_contango['timestamp'] = pd.to_datetime(df_contango['timestamp'])
+            df = pd.merge(df, df_contango, on='timestamp', how='left')
+
+        append_to_csv('vix_term_structure.csv', df)
+        return {'indicator': 'VIX Term Structure', 'last_date': df['date'].max(), 'rows': len(df)}
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+# ── Put/Call Ratio (P2-10) ──────────────────────────────────────────────────
+
+def extract_put_call_ratio():
+    """Extract Put/Call ratio to CSV."""
+    return _extract_simple_series(
+        'Put/Call Ratio', yfinance_extractors.get_put_call_ratio,
+        'put_call_ratio.csv', 'put_call_ratio',
+    )
+
+
+# ── High-Frequency Macro Proxies (P2-13) ────────────────────────────────────
+
+def extract_gdpnow():
+    """Extract Atlanta Fed GDPNow (FRED GDPNOW) to CSV."""
+    return _extract_simple_series(
+        'GDPNow', fred_extractors.get_gdpnow,
+        'gdpnow.csv', 'gdpnow',
+    )
+
+
+def extract_wei():
+    """Extract NY Fed Weekly Economic Index (FRED WEI) to CSV."""
+    return _extract_simple_series(
+        'Weekly Economic Index', fred_extractors.get_weekly_economic_index,
+        'wei.csv', 'wei',
+    )
+
+
+def extract_baltic_dry_index():
+    """Extract Baltic Dry Index (^BDI) to CSV."""
+    return _extract_simple_series(
+        'Baltic Dry Index', yfinance_extractors.get_baltic_dry_index,
+        'baltic_dry_index.csv', 'bdi',
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Financial Agent v1.5-v1.9 — 27 FRED Series Batch Extraction
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -1641,6 +1903,311 @@ def extract_financial_agent_historical():
 
     print(f"  ✅ Financial Agent: {len(results)}/27 series extracted")
     return results
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OpenBB-Based Indicators (v2.5.0) — 20 CSV Export Wrappers
+# ──────────────────────────────────────────────────────────────────────────────
+
+def extract_vix_futures_curve():
+    """Extract VIX Futures Curve to CSV."""
+    return _extract_simple_series(
+        'VIX Futures Curve', openbb_extractors.get_vix_futures_curve,
+        'vix_futures_curve.csv', 'vix_spot',
+    )
+
+
+def extract_spy_put_call_oi():
+    """Extract SPY Put/Call OI to CSV."""
+    print("\n📊 Extracting SPY Put/Call OI...")
+    try:
+        data = openbb_extractors.get_spy_put_call_oi()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+        hist = data.get('historical')
+        if hist is not None and isinstance(hist, pd.Series) and not hist.empty:
+            df = pd.DataFrame({
+                'timestamp': hist.index,
+                'date': [d.date() if hasattr(d, 'date') else d for d in hist.index],
+                'put_call_ratio': hist.values
+            })
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            append_to_csv('spy_put_call_oi.csv', df)
+            return {'indicator': 'SPY Put/Call OI', 'last_date': df['date'].max(), 'rows': len(df)}
+        # No historical series — save snapshot
+        latest = data.get('put_call_volume_ratio')
+        if latest is not None:
+            df = pd.DataFrame([{
+                'timestamp': pd.Timestamp.now(),
+                'date': datetime.now().date(),
+                'put_call_volume_ratio': latest,
+                'put_call_oi_ratio': data.get('put_call_oi_ratio'),
+            }])
+            append_to_csv('spy_put_call_oi.csv', df)
+            return {'indicator': 'SPY Put/Call OI', 'last_date': str(datetime.now().date()), 'rows': 1}
+        return None
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+def extract_sp500_multiples():
+    """Extract S&P 500 Multiples (forward P/E, PEG) to CSV."""
+    print("\n📊 Extracting S&P 500 Multiples...")
+    try:
+        data = openbb_extractors.get_sp500_historical_multiples()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+        df = pd.DataFrame([{
+            'timestamp': pd.Timestamp.now(),
+            'date': datetime.now().date(),
+            'forward_pe': data.get('forward_pe'),
+            'peg_ratio': data.get('peg_ratio'),
+            'price_to_sales': data.get('price_to_sales'),
+        }])
+        append_to_csv('sp500_multiples.csv', df)
+        return {'indicator': 'S&P 500 Multiples', 'last_date': str(datetime.now().date()), 'rows': 1}
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+def extract_ecb_rates():
+    """Extract ECB Policy Rates to CSV."""
+    return _extract_simple_series(
+        'ECB Policy Rates', openbb_extractors.get_ecb_policy_rates,
+        'ecb_rates.csv', 'deposit_rate',
+    )
+
+
+def extract_oecd_cli():
+    """Extract OECD Composite Leading Indicator to CSV."""
+    return _extract_simple_series(
+        'OECD CLI', openbb_extractors.get_oecd_leading_indicator,
+        'oecd_cli.csv', 'cli_value',
+    )
+
+
+def extract_cpi_components():
+    """Extract CPI Components to CSV."""
+    return _extract_simple_series(
+        'CPI Components', openbb_extractors.get_cpi_components,
+        'cpi_components.csv', 'headline_cpi',
+    )
+
+
+def extract_fama_french():
+    """Extract Fama-French 5 Factors to CSV."""
+    print("\n📊 Extracting Fama-French 5 Factors...")
+    try:
+        data = openbb_extractors.get_fama_french_factors()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+        hist = data.get('historical')
+        if hist is not None and isinstance(hist, pd.DataFrame) and not hist.empty:
+            df = hist.copy()
+            if 'date' not in df.columns and df.index is not None:
+                df['date'] = df.index
+            df['timestamp'] = pd.to_datetime(df['date']) if 'date' in df.columns else pd.to_datetime(df.index)
+            append_to_csv('fama_french_5factors.csv', df)
+            return {'indicator': 'Fama-French 5 Factors', 'last_date': str(df.index[-1])[:10], 'rows': len(df)}
+        return None
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+def extract_iv_skew():
+    """Extract SPX IV Skew to CSV."""
+    return _extract_simple_series(
+        'SPX IV Skew', openbb_extractors.get_spx_iv_skew,
+        'spx_iv_skew.csv', 'skew_index',
+    )
+
+
+def extract_eu_yields():
+    """Extract European Government Yields to CSV."""
+    print("\n📊 Extracting European Yields...")
+    try:
+        data = openbb_extractors.get_european_yields()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+        df = pd.DataFrame([{
+            'timestamp': pd.Timestamp.now(),
+            'date': datetime.now().date(),
+            'de_10y': data.get('de_10y'),
+            'fr_10y': data.get('fr_10y'),
+            'it_10y': data.get('it_10y'),
+            'it_de_spread': data.get('it_de_spread'),
+        }])
+        append_to_csv('european_yields.csv', df)
+        return {'indicator': 'European Yields', 'last_date': str(datetime.now().date()), 'rows': 1}
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+def extract_global_cpi():
+    """Extract Global CPI Comparison to CSV."""
+    return _extract_simple_series(
+        'Global CPI', openbb_extractors.get_global_cpi_comparison,
+        'global_cpi.csv', 'us_cpi_yoy',
+    )
+
+
+def extract_earnings_calendar():
+    """Extract Upcoming Earnings Calendar to CSV."""
+    print("\n📊 Extracting Earnings Calendar...")
+    try:
+        data = openbb_extractors.get_upcoming_earnings()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+        earnings = data.get('earnings', [])
+        if earnings:
+            df = pd.DataFrame(earnings)
+            df['extraction_date'] = datetime.now().date()
+            append_to_csv('earnings_calendar.csv', df)
+            return {'indicator': 'Earnings Calendar', 'last_date': str(datetime.now().date()), 'rows': len(df)}
+        return None
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+def extract_sector_pe_ratios():
+    """Extract Sector P/E Ratios to CSV."""
+    print("\n📊 Extracting Sector P/E Ratios...")
+    try:
+        data = openbb_extractors.get_sector_pe_ratios()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+        sectors = data.get('sectors', {})
+        if sectors:
+            row = {'timestamp': pd.Timestamp.now(), 'date': datetime.now().date()}
+            row.update(sectors)
+            df = pd.DataFrame([row])
+            append_to_csv('sector_pe_ratios.csv', df)
+            return {'indicator': 'Sector P/E Ratios', 'last_date': str(datetime.now().date()), 'rows': 1}
+        return None
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+def extract_full_treasury_curve():
+    """Extract Full Treasury Yield Curve to CSV."""
+    print("\n📊 Extracting Treasury Curve...")
+    try:
+        data = openbb_extractors.get_full_treasury_curve()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+        curve = data.get('curve', {})
+        if curve:
+            row = {'timestamp': pd.Timestamp.now(), 'date': datetime.now().date()}
+            row.update(curve)
+            df = pd.DataFrame([row])
+            append_to_csv('full_treasury_curve.csv', df)
+            return {'indicator': 'Treasury Curve', 'last_date': str(datetime.now().date()), 'rows': 1}
+        return None
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+def extract_corporate_spreads():
+    """Extract Corporate Bond Spreads (AAA/BBB) to CSV."""
+    print("\n📊 Extracting Corporate Spreads...")
+    try:
+        data = openbb_extractors.get_corporate_bond_spreads()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+        # Use AAA historical series if available
+        hist = data.get('aaa_historical')
+        if hist is not None and isinstance(hist, pd.Series) and not hist.empty:
+            df = pd.DataFrame({
+                'timestamp': hist.index,
+                'date': [d.date() if hasattr(d, 'date') else d for d in hist.index],
+                'aaa_oas': hist.values,
+            })
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            append_to_csv('corporate_spreads_aaa.csv', df)
+        # Also save BBB
+        bbb_hist = data.get('bbb_historical')
+        if bbb_hist is not None and isinstance(bbb_hist, pd.Series) and not bbb_hist.empty:
+            df_bbb = pd.DataFrame({
+                'timestamp': bbb_hist.index,
+                'date': [d.date() if hasattr(d, 'date') else d for d in bbb_hist.index],
+                'bbb_oas': bbb_hist.values,
+            })
+            df_bbb['timestamp'] = pd.to_datetime(df_bbb['timestamp'])
+            append_to_csv('corporate_spreads_bbb.csv', df_bbb)
+        return {'indicator': 'Corporate Spreads', 'last_date': data.get('latest_date', ''), 'rows': len(hist) if hist is not None else 0}
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
+def extract_intl_unemployment():
+    """Extract International Unemployment Rates to CSV."""
+    return _extract_simple_series(
+        'International Unemployment', openbb_extractors.get_international_unemployment,
+        'intl_unemployment.csv', 'us_unemployment',
+    )
+
+
+def extract_intl_gdp():
+    """Extract International GDP Growth to CSV."""
+    return _extract_simple_series(
+        'International GDP', openbb_extractors.get_international_gdp,
+        'intl_gdp.csv', 'us_gdp_growth',
+    )
+
+
+def extract_money_measures():
+    """Extract Money Supply Measures (M1/M2) to CSV."""
+    return _extract_simple_series(
+        'Money Measures', openbb_extractors.get_money_measures,
+        'money_measures.csv', 'm2_level',
+    )
+
+
+def extract_global_pmi_openbb():
+    """Extract Global Manufacturing PMI to CSV."""
+    return _extract_simple_series(
+        'Global PMI', openbb_extractors.get_global_pmi,
+        'global_pmi.csv', 'us_mfg_pmi',
+    )
+
+
+def extract_equity_risk_premium():
+    """Extract Equity Risk Premium to CSV."""
+    print("\n📊 Extracting Equity Risk Premium...")
+    try:
+        data = openbb_extractors.get_equity_risk_premium()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+        df = pd.DataFrame([{
+            'timestamp': pd.Timestamp.now(),
+            'date': datetime.now().date(),
+            'erp': data.get('equity_risk_premium'),
+            'forward_erp': data.get('forward_erp'),
+            'earnings_yield': data.get('earnings_yield'),
+            'real_yield_10y': data.get('real_yield_10y'),
+        }])
+        append_to_csv('equity_risk_premium.csv', df)
+        return {'indicator': 'Equity Risk Premium', 'last_date': str(datetime.now().date()), 'rows': 1}
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
 
 
 def extract_all_historical_data():
@@ -1773,8 +2340,55 @@ def extract_all_historical_data():
     # Intraday credit spread proxies
     _run(extract_credit_etf_proxies, 'credit_etf_proxies')
 
+    # ── Data Extraction Requirements — OHLCV + New Indicators ──
+    # P0: Commodity + Futures OHLCV (2-year)
+    _run(extract_gold_ohlcv, 'gold_ohlcv')
+    _run(extract_silver_ohlcv, 'silver_ohlcv')
+    _run(extract_crude_oil_ohlcv, 'crude_oil_ohlcv')
+    _run(extract_copper_ohlcv, 'copper_ohlcv')
+    _run(extract_es_futures_ohlcv, 'es_futures_ohlcv')
+    _run(extract_rty_futures_ohlcv, 'rty_futures_ohlcv')
+    _run(extract_brent_crude_ohlcv, 'brent_crude_ohlcv')
+
+    # P0: S&P 500 expanded fundamentals
+    _run(extract_sp500_fundamentals_expanded, 'sp500_fundamentals_expanded')
+
+    # P1: New FRED series
+    _run(extract_existing_home_sales, 'existing_home_sales')
+
+    # P2: New yfinance datasets
+    _run(extract_sector_etfs, 'sector_etfs')
+    _run(extract_vix_term_structure, 'vix_term_structure')
+    _run(extract_put_call_ratio, 'put_call_ratio')
+    _run(extract_baltic_dry_index, 'baltic_dry_index')
+
+    # P2: High-frequency macro proxies (FRED)
+    _run(extract_gdpnow, 'gdpnow')
+    _run(extract_wei, 'wei')
+
     # ── Financial Agent v1.5-v1.9 — 27 FRED Series ────────────
     _run(extract_financial_agent_historical, 'financial_agent')
+
+    # ── OpenBB-Based Indicators (v2.5.0) ────────────────────────
+    _run(extract_vix_futures_curve, 'vix_futures_curve')
+    _run(extract_spy_put_call_oi, 'spy_put_call_oi')
+    _run(extract_sp500_multiples, 'sp500_multiples')
+    _run(extract_ecb_rates, 'ecb_rates')
+    _run(extract_oecd_cli, 'oecd_cli')
+    _run(extract_cpi_components, 'cpi_components')
+    _run(extract_fama_french, 'fama_french')
+    _run(extract_iv_skew, 'iv_skew')
+    _run(extract_eu_yields, 'eu_yields')
+    _run(extract_global_cpi, 'global_cpi')
+    _run(extract_earnings_calendar, 'earnings_calendar')
+    _run(extract_sector_pe_ratios, 'sector_pe_ratios')
+    _run(extract_full_treasury_curve, 'full_treasury_curve')
+    _run(extract_corporate_spreads, 'corporate_spreads')
+    _run(extract_intl_unemployment, 'intl_unemployment')
+    _run(extract_intl_gdp, 'intl_gdp')
+    _run(extract_money_measures, 'money_measures')
+    _run(extract_global_pmi_openbb, 'global_pmi')
+    _run(extract_equity_risk_premium, 'equity_risk_premium')
 
     # Create summary file
     create_summary_file(results)

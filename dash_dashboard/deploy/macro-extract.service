@@ -1,0 +1,27 @@
+# /etc/systemd/system/macro-extract.service
+# Oneshot service for the full data extraction (scheduled_extract.py).
+# Triggered by macro-extract.timer — not started directly.
+#
+# Install:  sudo cp deploy/macro-extract.service /etc/systemd/system/
+#           sudo cp deploy/macro-extract.timer   /etc/systemd/system/
+#           sudo systemctl daemon-reload
+#           sudo systemctl enable --now macro-extract.timer
+#
+# Manual:   sudo systemctl start macro-extract
+# Logs:     sudo journalctl -u macro-extract -f
+
+[Unit]
+Description=Macro Dashboard — Full Data Extraction (scheduled_extract.py)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/macro_2
+EnvironmentFile=/opt/macro_2/.env
+ExecStart=/opt/macro_2/venv/bin/python scheduled_extract.py --cron
+TimeoutStartSec=600
+StandardOutput=journal
+StandardError=journal

@@ -1,0 +1,40 @@
+# /etc/systemd/system/macro-dash.service
+# Gunicorn service for the Dash Macro Indicators Dashboard
+#
+# Install:  sudo cp deploy/macro-dash.service /etc/systemd/system/
+#           sudo systemctl daemon-reload
+#           sudo systemctl enable --now macro-dash
+#
+# Logs:     sudo journalctl -u macro-dash -f
+# Restart:  sudo systemctl restart macro-dash
+
+[Unit]
+Description=Macro Indicators Dash Dashboard (Gunicorn)
+After=network.target
+
+[Service]
+Type=notify
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/macro_2/dash_dashboard
+EnvironmentFile=/opt/macro_2/.env
+ExecStart=/opt/macro_2/venv/bin/gunicorn wsgi:server \
+    --bind 127.0.0.1:8050 \
+    --workers 2 \
+    --timeout 120 \
+    --access-logfile /var/log/macro-dash/access.log \
+    --error-logfile /var/log/macro-dash/error.log \
+    --capture-output
+
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/macro_2/data_cache /opt/macro_2/historical_data /opt/macro_2/data_export /var/log/macro-dash
+
+[Install]
+WantedBy=multi-user.target

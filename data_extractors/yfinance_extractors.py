@@ -195,18 +195,16 @@ def calculate_vix_move_ratio():
 
 def get_es_futures():
     """
-    Get E-mini S&P 500 Futures (ES) data.
-    Returns: dict with latest price and contract info
+    Get E-mini S&P 500 Futures (ES) data with 2-year OHLCV history.
+    Returns: dict with latest price, historical Close series, and historical_ohlcv DataFrame
     """
     try:
         es = yf.Ticker("ES=F")
 
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=60)
-
-        hist_data = es.history(start=start_date, end=end_date)
+        hist_data = es.history(period='2y')
 
         if hist_data.empty:
+            end_date = datetime.now()
             start_date = end_date - timedelta(days=730)
             hist_data = es.history(start=start_date, end=end_date)
             if hist_data.empty:
@@ -233,11 +231,18 @@ def get_es_futures():
         except:
             pass
 
+        # Build OHLCV DataFrame
+        ohlcv = hist_data[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+        if hasattr(ohlcv.index, 'tz') and ohlcv.index.tz is not None:
+            ohlcv.index = ohlcv.index.tz_localize(None)
+        ohlcv.index = ohlcv.index.normalize()
+
         result = {
             'price': float(latest_price),
             'latest_date': latest_date.strftime('%Y-%m-%d %H:%M'),
             'change_1d': float(change_1d),
             'historical': hist_data['Close'],
+            'historical_ohlcv': ohlcv,
             'source': 'yfinance'
         }
 
@@ -251,18 +256,16 @@ def get_es_futures():
 
 def get_rty_futures():
     """
-    Get Russell 2000 E-mini Futures (RTY) data.
-    Returns: dict with latest price and contract info
+    Get Russell 2000 E-mini Futures (RTY) data with 2-year OHLCV history.
+    Returns: dict with latest price, historical Close series, and historical_ohlcv DataFrame
     """
     try:
         rty = yf.Ticker("RTY=F")
 
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=60)
-
-        hist_data = rty.history(start=start_date, end=end_date)
+        hist_data = rty.history(period='2y')
 
         if hist_data.empty:
+            end_date = datetime.now()
             start_date = end_date - timedelta(days=730)
             hist_data = rty.history(start=start_date, end=end_date)
             if hist_data.empty:
@@ -289,11 +292,18 @@ def get_rty_futures():
         except:
             pass
 
+        # Build OHLCV DataFrame
+        ohlcv = hist_data[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+        if hasattr(ohlcv.index, 'tz') and ohlcv.index.tz is not None:
+            ohlcv.index = ohlcv.index.tz_localize(None)
+        ohlcv.index = ohlcv.index.normalize()
+
         result = {
             'price': float(latest_price),
             'latest_date': latest_date.strftime('%Y-%m-%d %H:%M'),
             'change_1d': float(change_1d),
             'historical': hist_data['Close'],
+            'historical_ohlcv': ohlcv,
             'source': 'yfinance'
         }
 
@@ -448,3 +458,216 @@ def get_market_concentration():
         }
     except Exception as e:
         return {'error': f"Error fetching market concentration: {str(e)}"}
+
+
+# ── v3.0: Data Extraction Requirements — P2 New Datasets ─────────────────────
+
+
+SECTOR_ETFS = {
+    'XLK': 'Technology',
+    'XLF': 'Financials',
+    'XLV': 'Health Care',
+    'XLE': 'Energy',
+    'XLI': 'Industrials',
+    'XLC': 'Communication Services',
+    'XLY': 'Consumer Discretionary',
+    'XLP': 'Consumer Staples',
+    'XLB': 'Materials',
+    'XLRE': 'Real Estate',
+    'XLU': 'Utilities',
+}
+
+
+def get_sector_etfs():
+    """Batch fetch 11 SPDR sector ETF daily Close prices with 2-year history.
+
+    Returns dict with one key per ticker (e.g. 'XLK') holding the latest price,
+    plus 'historical_<ticker>' keys with pd.Series of Close prices.
+    """
+    try:
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=730)
+
+        result = {'source': 'yfinance (SPDR Sector ETFs)'}
+        for ticker, sector_name in SECTOR_ETFS.items():
+            try:
+                t = yf.Ticker(ticker)
+                hist = t.history(start=start_date, end=end_date)
+                if not hist.empty:
+                    close = hist['Close']
+                    latest = float(close.iloc[-1])
+                    prev = float(close.iloc[-2]) if len(close) > 1 else latest
+                    change = round(((latest / prev) - 1) * 100, 2) if prev != 0 else 0.0
+                    result[ticker.lower()] = round(latest, 2)
+                    result[f'{ticker.lower()}_change_1d'] = change
+                    result[f'historical_{ticker.lower()}'] = close
+                    result['latest_date'] = close.index[-1].strftime('%Y-%m-%d')
+                else:
+                    result[ticker.lower()] = None
+            except Exception:
+                result[ticker.lower()] = None
+
+        if all(result.get(k.lower()) is None for k in SECTOR_ETFS):
+            return {'error': 'No sector ETF data available'}
+
+        return result
+
+    except Exception as e:
+        return {'error': f"Error fetching sector ETFs: {str(e)}"}
+
+
+def get_vix_term_structure():
+    """Get VIX futures term structure to measure contango/backwardation.
+
+    Fetches VIX spot (^VIX) plus generic front- and back-month VIX futures
+    contracts. Computes contango ratio (M2/M1) when available.
+
+    Returns dict with spot vix, front/back prices, contango ratio, and historical.
+    """
+    try:
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=730)
+
+        # VIX Spot
+        vix = yf.Ticker('^VIX')
+        vix_hist = vix.history(start=start_date, end=end_date)
+
+        # VIX front-month futures (generic)
+        vx1 = yf.Ticker('VX=F')
+        vx1_hist = vx1.history(start=start_date, end=end_date)
+
+        if vix_hist.empty:
+            return {'error': 'No VIX spot data available'}
+
+        vix_close = vix_hist['Close']
+        latest_vix = float(vix_close.iloc[-1])
+
+        result = {
+            'vix_spot': round(latest_vix, 2),
+            'latest_date': vix_close.index[-1].strftime('%Y-%m-%d'),
+            'source': 'yfinance (^VIX, VX=F)',
+            'historical_vix_spot': vix_close,
+        }
+
+        if not vx1_hist.empty:
+            vx1_close = vx1_hist['Close']
+            latest_vx1 = float(vx1_close.iloc[-1])
+            result['vix_front_month'] = round(latest_vx1, 2)
+            result['historical_vix_front'] = vx1_close
+
+            # Contango = futures / spot (>1 = contango, <1 = backwardation)
+            if latest_vix > 0:
+                result['contango_ratio'] = round(latest_vx1 / latest_vix, 4)
+
+            # Historical contango ratio
+            if hasattr(vix_close.index, 'tz') and vix_close.index.tz is not None:
+                vix_close_aligned = vix_close.tz_localize(None)
+            else:
+                vix_close_aligned = vix_close
+            if hasattr(vx1_close.index, 'tz') and vx1_close.index.tz is not None:
+                vx1_close_aligned = vx1_close.tz_localize(None)
+            else:
+                vx1_close_aligned = vx1_close
+
+            vix_close_aligned.index = vix_close_aligned.index.normalize()
+            vx1_close_aligned.index = vx1_close_aligned.index.normalize()
+            common = vix_close_aligned.index.intersection(vx1_close_aligned.index)
+            if len(common) > 1:
+                contango_hist = vx1_close_aligned[common] / vix_close_aligned[common]
+                contango_hist = contango_hist.replace([float('inf'), float('-inf')], float('nan')).dropna()
+                result['historical_contango'] = contango_hist
+
+        return result
+
+    except Exception as e:
+        return {'error': f"Error fetching VIX term structure: {str(e)}"}
+
+
+def get_put_call_ratio():
+    """Get CBOE Equity Put/Call ratio via yfinance (^PCPUT).
+
+    Falls back to SPY options-based approximation if ^PCPUT unavailable.
+    """
+    try:
+        # Try CBOE Put/Call index
+        pc = yf.Ticker('^PCPUT')
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=730)
+
+        hist = pc.history(start=start_date, end=end_date)
+
+        if not hist.empty:
+            close = hist['Close']
+            latest = float(close.iloc[-1])
+            prev = float(close.iloc[-2]) if len(close) > 1 else latest
+            change = round(((latest / prev) - 1) * 100, 2) if prev != 0 else 0.0
+
+            return {
+                'put_call_ratio': round(latest, 4),
+                'latest_date': close.index[-1].strftime('%Y-%m-%d'),
+                'change_1d': change,
+                'historical': close,
+                'source': 'CBOE via yfinance (^PCPUT)',
+            }
+
+        # Fallback: try total put/call
+        for alt_ticker in ['^PCALL', '^PCRATIO']:
+            try:
+                alt = yf.Ticker(alt_ticker)
+                alt_hist = alt.history(start=start_date, end=end_date)
+                if not alt_hist.empty:
+                    close = alt_hist['Close']
+                    latest = float(close.iloc[-1])
+                    prev = float(close.iloc[-2]) if len(close) > 1 else latest
+                    change = round(((latest / prev) - 1) * 100, 2) if prev != 0 else 0.0
+                    return {
+                        'put_call_ratio': round(latest, 4),
+                        'latest_date': close.index[-1].strftime('%Y-%m-%d'),
+                        'change_1d': change,
+                        'historical': close,
+                        'source': f'yfinance ({alt_ticker})',
+                    }
+            except Exception:
+                continue
+
+        return {'error': 'Put/Call ratio not available from yfinance'}
+
+    except Exception as e:
+        return {'error': f"Error fetching put/call ratio: {str(e)}"}
+
+
+def get_baltic_dry_index():
+    """Get Baltic Dry Index (^BDI) — shipping cost indicator.
+
+    Rising BDI = increased demand for shipping raw materials = economic growth.
+    """
+    try:
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=730)
+
+        bdi = yf.Ticker('^BDI')
+        hist = bdi.history(start=start_date, end=end_date)
+
+        if hist.empty:
+            # Try alternate ticker
+            bdi = yf.Ticker('BDIY')
+            hist = bdi.history(start=start_date, end=end_date)
+
+        if hist.empty:
+            return {'error': 'Baltic Dry Index not available from yfinance'}
+
+        close = hist['Close']
+        latest = float(close.iloc[-1])
+        prev = float(close.iloc[-2]) if len(close) > 1 else latest
+        change = round(((latest / prev) - 1) * 100, 2) if prev != 0 else 0.0
+
+        return {
+            'bdi': round(latest, 0),
+            'latest_date': close.index[-1].strftime('%Y-%m-%d'),
+            'change_1d': change,
+            'historical': close,
+            'source': 'yfinance (^BDI)',
+        }
+
+    except Exception as e:
+        return {'error': f"Error fetching Baltic Dry Index: {str(e)}"}

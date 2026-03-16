@@ -298,10 +298,13 @@ def get_cboe_skew_index():
 
         skew = yf.Ticker("^SKEW")
 
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=30)
+        # Fetch 2 years of history for deeper analysis
+        hist = skew.history(period='2y')
 
-        hist = skew.history(start=start_date, end=end_date)
+        if hist.empty:
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=730)
+            hist = skew.history(start=start_date, end=end_date)
 
         if hist.empty:
             return {'error': 'No SKEW index data available'}

@@ -1,0 +1,4897 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Macroeconomic Indicators Dashboard \u2014 82 indicators across 8 categories",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "title": "\ud83d\udcc8 Tab 1 \u2014 Valuation Metrics",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "red",
+                "value": 25
+              }
+            ]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "id": 10,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "title": "Forward P/E",
+      "type": "stat",
+      "targets": [
+        {
+          "columns": [],
+          "filters": [],
+          "format": "table",
+          "global_query_id": "",
+          "refId": "A",
+          "root_selector": "$.sp500_forward_pe",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 22
+              },
+              {
+                "color": "red",
+                "value": 28
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "id": 11,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "title": "Trailing P/E",
+      "type": "stat",
+      "targets": [
+        {
+          "columns": [],
+          "filters": [],
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.sp500_pe_trailing",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "id": 12,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "title": "P/B Ratio",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.sp500_pb",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 30
+              },
+              {
+                "color": "red",
+                "value": 38
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "id": 13,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "title": "Shiller CAPE",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.shiller_cape",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 150
+              },
+              {
+                "color": "red",
+                "value": 200
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "id": 14,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "title": "Market Cap / GDP (Buffett)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.marketcap_to_gdp_ratio",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "id": 15,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "title": "PEG Ratio",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.mult_peg_ratio",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 2
+              },
+              {
+                "color": "green",
+                "value": 4
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 5
+      },
+      "id": 16,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "title": "ERP (Trailing)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.erp_equity_risk_premium",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 2
+              },
+              {
+                "color": "green",
+                "value": 4
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 5
+      },
+      "id": 17,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "title": "ERP (Forward)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.erp_forward_erp",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "description": "Sector ETF trailing P/E ratios",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "id": 18,
+      "options": {
+        "footer": {
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "P/E"
+          }
+        ]
+      },
+      "title": "Sector P/E Ratios",
+      "type": "table",
+      "targets": [
+        {
+          "columns": [
+            {
+              "selector": "sector",
+              "text": "Sector",
+              "type": "string"
+            },
+            {
+              "selector": "pe",
+              "text": "P/E",
+              "type": "number"
+            }
+          ],
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.sectors",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/indicator/74_sector_pe",
+          "url_options": {
+            "method": "GET"
+          },
+          "parser": "backend"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "id": 2,
+      "title": "\ud83d\udcca Tab 2 \u2014 Market Indices",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 14
+      },
+      "id": 20,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "title": "ES Futures (S&P 500)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.es_price",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 14
+      },
+      "id": 21,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "title": "ES Change 1D",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.es_change_1d",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 14
+      },
+      "id": 22,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "title": "RTY Futures (Russell 2000)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.rty_price",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 40
+              },
+              {
+                "color": "red",
+                "value": 30
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 14
+      },
+      "id": 23,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "title": "Breadth %",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.breadth_breadth_percentage",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 14
+      },
+      "id": 24,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "title": "S&P/MA200 Ratio",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.sp_ma_sp500_to_ma200_ratio",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 14
+      },
+      "id": 25,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "title": "SPY/RSP Concentration",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.conc_spy_rsp_ratio",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 18
+      },
+      "id": 26,
+      "title": "Mkt-RF",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ff_mkt_rf",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 18
+      },
+      "id": 27,
+      "title": "SMB",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ff_smb",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 18
+      },
+      "id": 28,
+      "title": "HML",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ff_hml",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 18
+      },
+      "id": 29,
+      "title": "RMW",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ff_rmw",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 18
+      },
+      "id": 291,
+      "title": "CMA",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ff_cma",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "id": 3,
+      "title": "\u26a1 Tab 3 \u2014 Volatility & Risk",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "red",
+                "value": 30
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 23
+      },
+      "id": 30,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "title": "VIX",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.vix",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              },
+              {
+                "color": "red",
+                "value": 130
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 23
+      },
+      "id": 31,
+      "title": "MOVE Index",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.move_move",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 23
+      },
+      "id": 32,
+      "title": "VIX/MOVE Ratio",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.vix_move_ratio",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.8
+              },
+              {
+                "color": "red",
+                "value": 1.0
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 23
+      },
+      "id": 33,
+      "title": "Put/Call Ratio",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.pc_sp500_put_call_ratio",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 23
+      },
+      "id": 34,
+      "title": "CBOE SKEW",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.skew_spx_call_skew",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 23
+      },
+      "id": 35,
+      "title": "VIX Contango %",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.vfc_contango_pct",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 27
+      },
+      "id": 36,
+      "title": "SPY P/C Volume",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.pcoi_put_call_volume_ratio",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 27
+      },
+      "id": 37,
+      "title": "SPY P/C OI",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.pcoi_put_call_oi_ratio",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "id": 4,
+      "title": "\ud83c\udf0d Tab 4 \u2014 Macro & Currency",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 32
+      },
+      "id": 40,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "title": "DXY",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.dxy",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 32
+      },
+      "id": 41,
+      "title": "USD/JPY",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.jpy_jpy_rate",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 4,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 32
+      },
+      "id": 42,
+      "title": "EUR/USD",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.eur_usd",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 4,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 32
+      },
+      "id": 43,
+      "title": "GBP/USD",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.gbp_usd",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 4,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 32
+      },
+      "id": 44,
+      "title": "EUR/JPY",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.eur_jpy",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 36
+      },
+      "id": 45,
+      "title": "TGA Balance ($B)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.tga_tga_balance_billions",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 36
+      },
+      "id": 46,
+      "title": "Net Liquidity ($T)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.nliq_net_liquidity_trillions",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 36
+      },
+      "id": 47,
+      "title": "M2 ($T)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.m2_m2_trillions",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 4,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "cyan",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 36
+      },
+      "id": 48,
+      "title": "SOFR Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.sofr_sofr",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 36
+      },
+      "id": 49,
+      "title": "US 2Y Yield",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.us2y_us_2y_yield",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 36
+      },
+      "id": 50,
+      "title": "Japan 2Y Yield",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.jp2y_japan_2y_yield",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 40
+      },
+      "id": 51,
+      "title": "10Y Yield",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.t10y_10y_yield",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 40
+      },
+      "id": 52,
+      "title": "ISM Mfg PMI",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ism_ism_pmi",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 40
+      },
+      "id": 53,
+      "title": "M1 YoY%",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.mm_m1_yoy",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 40
+      },
+      "id": 54,
+      "title": "M2 YoY%",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.mm_m2_yoy",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      },
+      "id": 5,
+      "title": "\ud83d\udcb0 Tab 5 \u2014 Commodities",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#FFD700",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 45
+      },
+      "id": 60,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "title": "Gold (GC)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.gold_price",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 2,
+        "x": 4,
+        "y": 45
+      },
+      "id": 601,
+      "title": "Gold 1D",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.gold_change_1d",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#C0C0C0",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 6,
+        "y": 45
+      },
+      "id": 61,
+      "title": "Silver (SI)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.silver_price",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 2,
+        "x": 10,
+        "y": 45
+      },
+      "id": 611,
+      "title": "Silver 1D",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.silver_change_1d",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#2c2c2c",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 45
+      },
+      "id": 62,
+      "title": "Crude Oil (CL)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.oil_price",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#B87333",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 45
+      },
+      "id": 63,
+      "title": "Copper (HG)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.copper_price",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 45
+      },
+      "id": 64,
+      "title": "Natural Gas (NG)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.natgas_price",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 49
+      },
+      "id": 65,
+      "title": "Cu/Au Ratio (\u00d71000)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.cuau_cu_au_ratio",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#333",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 49
+      },
+      "id": 66,
+      "title": "Brent Crude",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.brent_price",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 53
+      },
+      "id": 7,
+      "title": "\ud83d\udcc9 Tab 7 \u2014 Rates & Credit",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 54
+      },
+      "id": 70,
+      "title": "2s10s Spread",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.us2y_spread_2s10s",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 4,
+        "y": 54
+      },
+      "id": 71,
+      "title": "US 5Y Yield",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.us5y_us_5y_yield",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 7,
+        "y": 54
+      },
+      "id": 72,
+      "title": "DE 10Y",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.de10y_germany_10y",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 10,
+        "y": 54
+      },
+      "id": 73,
+      "title": "UK 10Y",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.uk10y_uk_10y",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 13,
+        "y": 54
+      },
+      "id": 74,
+      "title": "CN 10Y",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.cn10y_china_10y",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 54
+      },
+      "id": 75,
+      "title": "Real Yield 10Y",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ry_real_yield_10y",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 54
+      },
+      "id": 76,
+      "title": "HY OAS",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.hy_hy_oas",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 58
+      },
+      "id": 77,
+      "title": "NFCI",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.nfci_nfci",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 58
+      },
+      "id": 78,
+      "title": "Fed Funds Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ffr_fed_funds_rate",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 58
+      },
+      "id": 79,
+      "title": "IG OAS",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ig_ig_oas",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 58
+      },
+      "id": 80,
+      "title": "Unemployment Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.unemp_unemployment_rate",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 250
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 58
+      },
+      "id": 81,
+      "title": "Initial Claims (K)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.claims_initial_claims_thousands",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 58
+      },
+      "id": 82,
+      "title": "Core PCE YoY",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.infl_core_pce_yoy",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 62
+      },
+      "id": 83,
+      "title": "Headline CPI YoY",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.hcpi_headline_cpi_yoy",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 62
+      },
+      "id": 84,
+      "title": "PPI YoY",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ppi_ppi_yoy",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 62
+      },
+      "id": 85,
+      "title": "ECB Deposit Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ecb_deposit",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 62
+      },
+      "id": 86,
+      "title": "ECB Refi Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ecb_refi",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 62
+      },
+      "id": 87,
+      "title": "AAA OAS",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.cs_aaa_oas",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 62
+      },
+      "id": 88,
+      "title": "BBB OAS",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.cs_bbb_oas",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "description": "CPI component breakdown",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 66
+      },
+      "id": 89,
+      "title": "Core CPI YoY",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.cpic_core_cpi_yoy",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 66
+      },
+      "id": 90,
+      "title": "Food CPI YoY",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.cpic_food_cpi_yoy",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 66
+      },
+      "id": 91,
+      "title": "Energy CPI YoY",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.cpic_energy_cpi_yoy",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 66
+      },
+      "id": 92,
+      "title": "Shelter CPI YoY",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.cpic_shelter_cpi_yoy",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "description": "European government yields",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 66
+      },
+      "id": 93,
+      "title": "EU DE 10Y",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.euy_de_10y",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 66
+      },
+      "id": 94,
+      "title": "EU IT 10Y",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.euy_it_10y",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "description": "Global CPI comparison",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 0,
+        "y": 70
+      },
+      "id": 95,
+      "title": "US CPI YoY",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.gcpi_us_cpi_yoy",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 3,
+        "y": 70
+      },
+      "id": 96,
+      "title": "EU CPI YoY",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.gcpi_eu_cpi_yoy",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 6,
+        "y": 70
+      },
+      "id": 97,
+      "title": "JP CPI YoY",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.gcpi_jp_cpi_yoy",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 9,
+        "y": 70
+      },
+      "id": 98,
+      "title": "UK CPI YoY",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.gcpi_uk_cpi_yoy",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 74
+      },
+      "id": 8,
+      "title": "\ud83d\udcca Tab 8 \u2014 Economic Activity",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 100
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 75
+      },
+      "id": 100,
+      "title": "Nonfarm Payrolls (K)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.nfp_nfp_thousands",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 75
+      },
+      "id": 101,
+      "title": "JOLTS Openings (M)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.jolts_jolts_openings_m",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 75
+      },
+      "id": 102,
+      "title": "Quits Rate",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.quits_quits_rate",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 75
+      },
+      "id": 103,
+      "title": "Sahm Rule",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.sahm_sahm_value",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 60
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 75
+      },
+      "id": 104,
+      "title": "Consumer Sentiment",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.csent_consumer_sentiment",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 75
+      },
+      "id": 105,
+      "title": "Retail Sales ($B)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.retail_retail_sales_b",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 79
+      },
+      "id": 106,
+      "title": "ISM Services PMI",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ismsvc_ism_services_pmi",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 79
+      },
+      "id": 107,
+      "title": "Industrial Production",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ip_indpro_index",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 79
+      },
+      "id": 108,
+      "title": "Housing Starts (K)",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.hs_housing_starts_k",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 100
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 79
+      },
+      "id": 109,
+      "title": "OECD CLI",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.oecd_cli_value",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "description": "International unemployment rates",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 8
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 0,
+        "y": 83
+      },
+      "id": 110,
+      "title": "US Unemployment",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.iu_us_unemployment",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 8
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 3,
+        "y": 83
+      },
+      "id": 111,
+      "title": "EU Unemployment",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.iu_eu_unemployment",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 6,
+        "y": 83
+      },
+      "id": 112,
+      "title": "JP Unemployment",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.iu_jp_unemployment",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 8
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 9,
+        "y": 83
+      },
+      "id": 113,
+      "title": "UK Unemployment",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.iu_uk_unemployment",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "description": "International GDP growth rates",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 12,
+        "y": 83
+      },
+      "id": 114,
+      "title": "US GDP Growth",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ig_us_gdp_growth",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 15,
+        "y": 83
+      },
+      "id": 115,
+      "title": "EU GDP Growth",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ig_eu_gdp_growth",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 18,
+        "y": 83
+      },
+      "id": 116,
+      "title": "JP GDP Growth",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ig_jp_gdp_growth",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 21,
+        "y": 83
+      },
+      "id": 117,
+      "title": "CN GDP Growth",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.ig_cn_gdp_growth",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "description": "Global manufacturing PMI (>50 = expansion)",
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 87
+      },
+      "id": 120,
+      "title": "US Mfg PMI",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.gpmi_us_pmi",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 87
+      },
+      "id": 121,
+      "title": "EU Mfg PMI",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.gpmi_eu_pmi",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 87
+      },
+      "id": 122,
+      "title": "JP Mfg PMI",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.gpmi_jp_pmi",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 87
+      },
+      "id": 123,
+      "title": "CN Mfg PMI",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.gpmi_cn_pmi",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_MACROAPI}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 50
+              }
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 87
+      },
+      "id": 124,
+      "title": "UK Mfg PMI",
+      "type": "stat",
+      "targets": [
+        {
+          "format": "table",
+          "refId": "A",
+          "root_selector": "$.gpmi_uk_pmi",
+          "source": "url",
+          "type": "json",
+          "url": "http://localhost:8001/api/metrics/summary",
+          "url_options": {
+            "method": "GET"
+          }
+        }
+      ]
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": [
+    "macro",
+    "finance",
+    "economics"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": false,
+          "text": "MacroAPI",
+          "value": "MacroAPI"
+        },
+        "hide": 2,
+        "includeAll": false,
+        "label": "Data Source",
+        "multi": false,
+        "name": "DS_MACROAPI",
+        "options": [],
+        "query": "yesoreyeram-infinity-datasource",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Macro Indicators Dashboard",
+  "uid": "macro-indicators-v1",
+  "version": 1,
+  "weekStart": ""
+}

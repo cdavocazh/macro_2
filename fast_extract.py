@@ -61,6 +61,18 @@ FAST_EXTRACTORS = [
     ('gold_silver_ratio', 'extract_gold_silver_ratio', 'Gold/Silver ratio'),
     # Credit proxies (bond ETFs - intraday)
     ('credit_etf_proxies', 'extract_credit_etf_proxies', 'HYG/LQD/JNK credit proxies'),
+    # Data Extraction Requirements — new real-time datasets
+    ('gold_ohlcv', 'extract_gold_ohlcv', 'Gold OHLCV'),
+    ('silver_ohlcv', 'extract_silver_ohlcv', 'Silver OHLCV'),
+    ('crude_oil_ohlcv', 'extract_crude_oil_ohlcv', 'Crude Oil OHLCV'),
+    ('copper_ohlcv', 'extract_copper_ohlcv', 'Copper OHLCV'),
+    ('es_futures_ohlcv', 'extract_es_futures_ohlcv', 'ES Futures OHLCV'),
+    ('rty_futures_ohlcv', 'extract_rty_futures_ohlcv', 'RTY Futures OHLCV'),
+    ('brent_crude_ohlcv', 'extract_brent_crude_ohlcv', 'Brent Crude OHLCV'),
+    ('sector_etfs', 'extract_sector_etfs', 'Sector ETFs (11 SPDR)'),
+    ('vix_term_structure', 'extract_vix_term_structure', 'VIX term structure'),
+    ('put_call_ratio', 'extract_put_call_ratio', 'Put/Call ratio'),
+    ('baltic_dry_index', 'extract_baltic_dry_index', 'Baltic Dry Index'),
 ]
 
 
@@ -95,6 +107,19 @@ def _check_network():
         return False
 
 
+def _write_progress(current, total, label, status="running"):
+    """Write extraction progress for the dashboard to read."""
+    try:
+        progress_file = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     'data_cache', '.extract_progress.json')
+        import json
+        with open(progress_file, 'w') as f:
+            json.dump({"current": current, "total": total, "label": label,
+                       "status": status, "timestamp": datetime.now().isoformat()}, f)
+    except Exception:
+        pass
+
+
 def run_fast_extraction(force=False, quiet=False, dry_run=False):
     """Extract only real-time yfinance indicators to historical CSVs."""
     start_time = time.time()
@@ -123,8 +148,12 @@ def run_fast_extraction(force=False, quiet=False, dry_run=False):
 
     succeeded = 0
     failed = 0
+    total = len(FAST_EXTRACTORS)
 
-    for key, func_name, desc in FAST_EXTRACTORS:
+    _write_progress(0, total, "Starting fast extract...", "running")
+
+    for i, (key, func_name, desc) in enumerate(FAST_EXTRACTORS, 1):
+        _write_progress(i, total, key, "running")
         try:
             func = getattr(ehd, func_name)
             result = func()
@@ -138,6 +167,7 @@ def run_fast_extraction(force=False, quiet=False, dry_run=False):
                 print(f"  ❌ {key}: {e}")
 
     _update_freshness()
+    _write_progress(total, total, "Complete", "done")
 
     elapsed = time.time() - start_time
     ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')

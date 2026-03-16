@@ -1,0 +1,16 @@
+# /etc/systemd/system/macro-fast-extract.timer
+# Runs fast_extract.py every 5 minutes, 24/7.
+#
+# Install:  sudo systemctl enable --now macro-fast-extract.timer
+# Check:    systemctl list-timers macro-fast-extract.timer
+
+[Unit]
+Description=Macro Dashboard — Fast Extraction (every 5 min)
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=300
+AccuracySec=30
+
+[Install]
+WantedBy=timers.target

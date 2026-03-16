@@ -1,0 +1,25 @@
+# /etc/systemd/system/macro-extract.timer
+# Runs scheduled_extract.py 5x per day (Mon–Sat).
+# Times are UTC — adjust for your timezone.
+#   UTC 17:00 = 01:00 GMT+8    (1am catch-up)
+#   UTC 00:30 = 08:30 GMT+8    (pre-market)
+#   UTC 05:00 = 13:00 GMT+8    (midday)
+#   UTC 09:00 = 17:00 GMT+8    (market close)
+#   UTC 14:00 = 22:00 GMT+8    (end of day)
+#
+# Install:  sudo systemctl enable --now macro-extract.timer
+# Check:    systemctl list-timers macro-extract.timer
+
+[Unit]
+Description=Macro Dashboard — Extraction Schedule
+
+[Timer]
+OnCalendar=Mon..Sat *-*-* 17:00:00
+OnCalendar=Mon..Sat *-*-* 00:30:00
+OnCalendar=Mon..Sat *-*-* 05:00:00
+OnCalendar=Mon..Sat *-*-* 09:00:00
+OnCalendar=Mon..Sat *-*-* 14:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,15 +1,15 @@
 # Project Status Report: Macroeconomic Indicators Dashboard
 
 **Project:** macro_2 - Real-time Macroeconomic Indicators Dashboard
-**Last Updated:** March 5, 2026
-**Version:** 2.3.0
+**Last Updated:** March 13, 2026
+**Version:** 2.4.0
 **Status:** Production Ready
 
 ---
 
 ## Summary
 
-A Streamlit dashboard tracking 62+ macroeconomic indicators and quarterly financials for S&P 500 companies from multiple data sources (Yahoo Finance, SEC EDGAR, FRED, Trading Economics, MOF Japan, web scrapers). Includes global sovereign yields, yield curve regime classification, credit spreads, economic activity indicators (employment, consumer, production), FX pairs, market concentration, dual-source equity financials, expandable price charts, automated launchd scheduling, earnings monitoring, data freshness review, and a data discrepancy review agent.
+A Streamlit dashboard tracking 75+ macroeconomic indicators and quarterly financials for S&P 500 companies from multiple data sources (Yahoo Finance, SEC EDGAR, FRED, Trading Economics, MOF Japan, AAII, web scrapers). Includes 2-year OHLCV history for commodities/futures, global sovereign yields, yield curve regime classification, credit spreads, economic activity indicators (employment, consumer, production), FX pairs, market concentration, sector ETF tracking, high-frequency macro proxies (GDPNow, WEI), dual-source equity financials, 13F institutional holdings, expandable price charts, compact dense layout, auto-reload cache, automated launchd scheduling, earnings monitoring, data freshness review, and a data discrepancy review agent.
 
 ---
 
@@ -26,9 +26,31 @@ A Streamlit dashboard tracking 62+ macroeconomic indicators and quarterly financ
 | 7 | Rates & Credit | Yield curve regime, 2s10s spread, global yields (US 5Y/10Y, DE/UK/CN 10Y), real yield, breakevens, HY/IG OAS, NFCI, Fed Funds, bank reserves, SLOOS, unemployment, claims (initial+continuing), headline/core CPI, PPI, core PCE | Working |
 | 8 | Economic Activity | Nonfarm Payrolls, JOLTS, Quits Rate, Sahm Rule, Consumer Sentiment, Retail Sales, ISM Services PMI, Industrial Production, Housing Starts | Working |
 
-## Recent Features (v2.3.0)
+## Recent Features (v2.4.0)
 
-### Economic Activity Tab (Tab 8) + 21 New Indicators
+### Dashboard Compact Layout + Cache Auto-Reload
+
+**Cache auto-reload** — Fixed stale dashboard data caused by singleton aggregator pattern. Added `reload_if_stale()` to `data_aggregator.py` that compares cache file mtime against in-memory `last_update` (~0.1ms). Dashboard now picks up `scheduled_extract.py` updates automatically on Streamlit rerun without manual Refresh.
+
+**Compact dense layout** — Custom CSS injection reduces Streamlit default spacing by ~40%:
+- Metric padding shrunk to 0.2rem, value font 1.3rem, label 0.72rem
+- Column/block gaps reduced to 0.3rem, captions 0.68rem
+- 17 tab dividers removed, 21+ verbose captions pruned
+- 7 standalone charts collapsed into `st.expander()` (saves ~400px each when collapsed)
+- Tab 1: Deleted Historical Valuation section (removed slow `yf.Ticker("SPY")` network call + 500px chart)
+- Tab 3: VIX/MOVE/Ratio merged into 3 columns (was 2 + full-width)
+- Tab 4: All 5 FX pairs merged into single 5-column row (was 2 + 3 in separate rows)
+- Sidebar About collapsed from ~200px into single expander
+
+**Data extraction expansion (v2.3.1)** — 13 new extractors, 75+ total indicators:
+- 7 OHLCV CSVs with 2-year history (504 trading days) for commodities + futures
+- Sector ETFs (11 SPDR), VIX term structure, GDPNow, WEI
+- Fidenza Macro gap-fill: Brent, Nikkei, EM indices, SOFR/FF futures, XAU/JPY, Au/Ag ratio, AAII sentiment
+- FRED additions: ADP employment, WALCL, term premia, existing home sales
+
+**Files changed:** `app.py` (2401→2297 lines), `data_aggregator.py` (+`reload_if_stale()`)
+
+### Previous: Economic Activity Tab (Tab 8) + 21 New Indicators (v2.3.0)
 Expanded dashboard from 41 to 62+ indicators across 8 tabs.
 
 **New Tab 8: Economic Activity** — 3 sections:
@@ -125,25 +147,34 @@ AI agent in `/agent/` subfolder that reviews financial data quality using 8 shar
 | Issue | Impact | Workaround |
 |-------|--------|------------|
 | Forward P/E 403 errors | MacroMicro bot detection | Falls back to trailing P/E |
-| Put/Call ratio unreliable | CBOE/ycharts DOM changes | Falls back to FRED PCERTOT |
+| Put/Call ratio unreliable | CBOE/ycharts DOM changes + yfinance tickers delisted | Falls back to FRED PCERTOT |
 | TSM (IFRS) | SEC EDGAR returns no us-gaap data | Yahoo Finance only |
 | ISM PMI proxy | Uses Industrial Production normalized to PMI scale | Approximation, ~5% error |
 | SEC rate limit | 10 req/sec | Built-in 0.15s delay between requests |
+| Baltic Dry Index | yfinance ^BDI/BDIY tickers delisted | Returns error dict gracefully |
+| VIX Futures (VX=F) | Ticker not available on yfinance | VIX spot works, front-month unavailable |
+| OPEC Production | No EIA_API_KEY; Trading Economics page changed | Returns error dict gracefully |
+| Gold Reserves Share | WGC URL returns 404 | Returns error dict gracefully |
+| SPY ETF expanded fundamentals | forwardPE, trailingEps, forwardEps return None from yfinance for ETFs | 5 basic fields work (P/E, P/B, earnings yield, div yield, price) |
 
 ## Scheduling
 
-**macOS launchd** runs `scheduled_extract.py` at 1:00 AM, 8:30 AM, 1:00 PM, 5:00 PM, 10:00 PM GMT+8, Mon-Sat. Catches up missed runs after sleep. Freshness guard prevents redundant fetches within 15 minutes. A 10-minute `TimeOut` auto-kills hung processes to prevent blocking subsequent runs.
+Two **macOS launchd** jobs:
+- **fast-extract**: Every 5 minutes (24/7) — real-time yfinance only (31 extractors, ~5s, 4-min timeout)
+- **scheduled-extract**: 5x/day Mon-Sat (1am, 8:30am, 1pm, 5pm, 10pm GMT+8) — full FRED/SEC/web scrapers (10-min timeout)
+
+Both catch up missed runs after sleep. Freshness guards (3-min fast, 15-min scheduled) prevent overlap. Dashboard auto-reloads cache via `reload_if_stale()` when `scheduled_extract.py` updates the JSON file.
 
 ## File Count
 
 - **Python modules**: 21+ files
-- **Dashboard**: ~2,350+ lines (app.py)
+- **Dashboard**: ~2,300 lines (app.py, compact layout)
 - **SEC extractor**: ~1,250 lines
 - **Total LOC**: ~10,000+
 - **Documentation**: 10+ markdown files
 
 ---
 
-**Document Version:** 2.3.0
-**Last Updated:** March 5, 2026
+**Document Version:** 2.4.0
+**Last Updated:** March 13, 2026
 **Repository:** https://github.com/cdavocazh/macro_2

@@ -1,0 +1,23 @@
+# Grafana data source provisioning — Macro Dashboard JSON API
+# Uses the Infinity plugin for JSON API queries
+apiVersion: 1
+
+datasources:
+  - name: MacroAPI
+    type: yesoreyeram-infinity-datasource
+    access: proxy
+    url: http://api-bridge:8001
+    isDefault: true
+    editable: true
+    jsonData:
+      # Base URL for all queries
+      url: http://api-bridge:8001
+    version: 1
+
+  # SimpleJSON-compatible data source (alternative)
+  - name: MacroSimpleJSON
+    type: grafana-simple-json-datasource
+    access: proxy
+    url: http://api-bridge:8001
+    editable: true
+    version: 1

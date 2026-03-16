@@ -61,6 +61,16 @@ logs/
 *.db
 *.sqlite
 
+# Virtual environments (nested)
+.venv/
+
+# Claude config
+.claude/
+
+# Stray/temporary files
+=*
+f_year.txt
+
 # Temporary files
 tmp/
 temp/

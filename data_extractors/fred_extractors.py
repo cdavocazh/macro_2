@@ -1735,3 +1735,111 @@ def get_treasury_term_premia():
         return result
     except Exception as e:
         return {'error': f"Error fetching treasury term premia: {str(e)}"}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Data Extraction Requirements — Additional FRED Series
+# ──────────────────────────────────────────────────────────────────────────────
+
+def get_existing_home_sales():
+    """
+    Get home sales data from FRED.
+    Primary: HSN1F (New One Family Houses Sold, Monthly, SA, Thousands)
+    Fallback: EXHOSLUSM495S (Existing Home Sales — only available from 2025)
+    HSN1F has 60+ years of history, providing the 3+ year depth needed.
+    """
+    try:
+        fred = get_fred_client()
+
+        # Primary: New One Family Houses Sold (long history)
+        data = fred.get_series('HSN1F')
+        source_id = 'HSN1F'
+
+        if data is None or data.empty or len(data) < 36:
+            # Fallback: Existing Home Sales (limited history, from 2025)
+            data = fred.get_series('EXHOSLUSM495S')
+            source_id = 'EXHOSLUSM495S'
+
+        if data is None or data.empty:
+            return {'error': 'No home sales data available'}
+
+        data = data.dropna()
+        latest = float(data.iloc[-1])
+        latest_date = data.index[-1]
+
+        prev = float(data.iloc[-2]) if len(data) >= 2 else latest
+        change = round(((latest / prev) - 1) * 100, 2) if prev != 0 else 0
+
+        return {
+            'existing_home_sales': latest,
+            'change_mom_pct': change,
+            'latest_date': latest_date.strftime('%Y-%m-%d'),
+            'units': 'Thousands of Units (SAAR)',
+            'source': f'FRED ({source_id})',
+            'historical': data,
+        }
+    except Exception as e:
+        return {'error': f"Error fetching Home Sales: {str(e)}"}
+
+
+def get_gdpnow():
+    """
+    Get Atlanta Fed GDPNow estimate from FRED.
+    Series: GDPNOW (Real GDP nowcast, updated ~weekly during quarter)
+    """
+    try:
+        fred = get_fred_client()
+        data = fred.get_series('GDPNOW')
+
+        if data is None or data.empty:
+            return {'error': 'No GDPNow data available'}
+
+        data = data.dropna()
+        latest = float(data.iloc[-1])
+        latest_date = data.index[-1]
+
+        prev = float(data.iloc[-2]) if len(data) >= 2 else latest
+        change = round(latest - prev, 2)
+
+        return {
+            'gdpnow': latest,
+            'change': change,
+            'latest_date': latest_date.strftime('%Y-%m-%d'),
+            'units': 'Percent (SAAR)',
+            'source': 'FRED (GDPNOW — Atlanta Fed)',
+            'historical': data,
+        }
+    except Exception as e:
+        return {'error': f"Error fetching GDPNow: {str(e)}"}
+
+
+def get_weekly_economic_index():
+    """
+    Get NY Fed Weekly Economic Index (WEI) from FRED.
+    Series: WEI (Weekly Economic Index)
+    Measures real economic activity, scaled to 4-quarter GDP growth units.
+    """
+    try:
+        fred = get_fred_client()
+        data = fred.get_series('WEI')
+
+        if data is None or data.empty:
+            return {'error': 'No WEI data available'}
+
+        data = data.dropna()
+        latest = float(data.iloc[-1])
+        latest_date = data.index[-1]
+
+        prev = float(data.iloc[-2]) if len(data) >= 2 else latest
+        change = round(latest - prev, 2)
+
+        return {
+            'wei': latest,
+            'change': change,
+            'latest_date': latest_date.strftime('%Y-%m-%d'),
+            'units': 'Percent (4Q GDP growth scale)',
+            'source': 'FRED (WEI — NY Fed)',
+            'historical': data,
+        }
+    except Exception as e:
+        return {'error': f"Error fetching WEI: {str(e)}"}
