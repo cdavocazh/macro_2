@@ -13,13 +13,13 @@ Description=Macro Indicators Dash Dashboard (Gunicorn)
 After=network.target
 
 [Service]
-Type=notify
+Type=simple
 User=ubuntu
 Group=ubuntu
-WorkingDirectory=/opt/macro_2/dash_dashboard
-EnvironmentFile=/opt/macro_2/.env
-ExecStart=/opt/macro_2/venv/bin/gunicorn wsgi:server \
-    --bind 127.0.0.1:8050 \
+WorkingDirectory=/home/ubuntu/macro_2/dash_dashboard
+EnvironmentFile=/home/ubuntu/macro_2/.env
+ExecStart=/home/ubuntu/macro_2/venv/bin/gunicorn wsgi:server \
+    --bind 127.0.0.1:8051 \
     --workers 2 \
     --timeout 120 \
     --access-logfile /var/log/macro-dash/access.log \
@@ -34,7 +34,7 @@ StandardError=journal
 # Hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/opt/macro_2/data_cache /opt/macro_2/historical_data /opt/macro_2/data_export /var/log/macro-dash
+ReadWritePaths=/home/ubuntu/macro_2/data_cache /home/ubuntu/macro_2/historical_data /home/ubuntu/macro_2/data_export /var/log/macro-dash
 
 [Install]
 WantedBy=multi-user.target
