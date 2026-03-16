@@ -18,7 +18,7 @@ from plotly.subplots import make_subplots
 import pandas as pd
 import json
 
-from data_loader import get_loader, format_value, fmt_dollar, fmt_pct, CACHE_FILE
+from data_loader import get_loader, format_value, fmt_dollar, fmt_pct, CACHE_FILE, to_gmt8, to_gmt8_date
 
 # Progress file written by data_aggregator / fast_extract
 PROGRESS_FILE = os.path.join(PARENT_DIR, 'data_cache', '.extract_progress.json')
@@ -66,6 +66,7 @@ app = Dash(
     title="Macro Indicators Dashboard",
     update_title=None,
     suppress_callback_exceptions=True,
+    requests_pathname_prefix=os.environ.get('DASH_PREFIX', '/'),
 )
 server = app.server  # Expose Flask server for Gunicorn
 
@@ -269,7 +270,7 @@ def indicator_with_chart(data, label, value_key, value_fmt=2, delta_key='change_
     if delta_val is not None:
         delta_str = f"{format_value(delta_val, value_fmt)}{delta_suffix}"
 
-    cap = f"As of: {data.get(caption_key, 'N/A')}" if caption_key else None
+    cap = f"As of: {to_gmt8_date(data.get(caption_key))}" if caption_key else None
     card = metric_card(label, format_value(val, value_fmt), delta_str, cap, bc)
 
     expander = history_expander(data, label, color, hist_key, days=days)
@@ -470,7 +471,7 @@ def build_tab1(loader):
         cape_row = []
         cape_row.append(html.Div([
             metric_card("Shiller CAPE", format_value(cape_data.get('shiller_cape'), 2),
-                         caption=f"As of: {cape_data.get('latest_date', 'N/A')}",
+                         caption=f"As of: {to_gmt8_date(cape_data.get('latest_date'))}",
                          border_color='#8e24aa'),
         ]))
         # Interpretation info box
@@ -582,7 +583,7 @@ def build_tab2(loader):
         else:
             card = metric_card(label, format_value(data.get(vk), 2),
                                     f"{format_value(data.get('change_1d', 0), 2)}%",
-                                    f"As of: {data.get('latest_date', 'N/A')}", border_color=clr)
+                                    f"As of: {to_gmt8_date(data.get('latest_date'))}", border_color=clr)
             exp = history_expander(data, label, clr, days=365)
             row.append(html.Div([card, exp]) if exp else card)
     children.append(html.Div(row, className='metrics-row cols-2'))
@@ -673,7 +674,7 @@ def build_tab2(loader):
         children.append(html.Div([
             metric_card("SPY/RSP Ratio", format_value(conc.get('spy_rsp_ratio'), 4),
                          f"{format_value(conc.get('change_1d', 0), 2)}%",
-                         f"As of: {conc.get('latest_date', 'N/A')}", '#7b1fa2'),
+                         f"As of: {to_gmt8_date(conc.get('latest_date'))}", '#7b1fa2'),
             metric_card("30-Day Change", f"{format_value(conc.get('change_30d', 0), 2)}%",
                          caption=conc.get('interpretation', ''), border_color='#7b1fa2'),
         ], className='metrics-row cols-2'))
@@ -868,7 +869,7 @@ def build_tab4(loader):
     else:
         tga_card = metric_card("TGA Balance ($B)", format_value(tga.get('tga_balance_billions'), 1),
                                 f"{format_value(tga.get('change_wow_pct', 0), 1)}% WoW",
-                                f"As of: {tga.get('latest_date', 'N/A')}", '#6a1b9a')
+                                f"As of: {to_gmt8_date(tga.get('latest_date'))}", '#6a1b9a')
         exp = history_expander(tga, 'TGA Balance ($M)', '#6a1b9a', days=730)
         liq_row.append(html.Div([tga_card, exp]) if exp else tga_card)
 
@@ -877,7 +878,7 @@ def build_tab4(loader):
     else:
         nl_card = metric_card("Net Liquidity ($T)", format_value(net_liq.get('net_liquidity_trillions'), 3),
                                f"{format_value(net_liq.get('change_pct', 0), 2)}%",
-                               f"As of: {net_liq.get('latest_date', 'N/A')}", '#1565c0')
+                               f"As of: {to_gmt8_date(net_liq.get('latest_date'))}", '#1565c0')
         exp = history_expander(net_liq, 'Net Liquidity ($M)', '#1565c0', days=730)
         liq_row.append(html.Div([nl_card, exp]) if exp else nl_card)
     children.append(html.Div(liq_row, className='metrics-row cols-2'))
@@ -889,7 +890,7 @@ def build_tab4(loader):
     else:
         m2_card = metric_card("M2 ($T)", format_value(m2.get('m2_trillions'), 2),
                                f"{format_value(m2.get('m2_yoy_growth', 0), 1)}% YoY",
-                               f"As of: {m2.get('latest_date', 'N/A')}", '#00695c')
+                               f"As of: {to_gmt8_date(m2.get('latest_date'))}", '#00695c')
         exp = history_expander(m2, 'M2 ($T)', '#00695c', days=730)
         children.append(html.Div([m2_card, exp]) if exp else m2_card)
 
@@ -902,14 +903,14 @@ def build_tab4(loader):
     else:
         s_card = metric_card("SOFR Rate (%)", format_value(sofr.get('sofr'), 4),
                               f"{format_value(sofr.get('change_1d', 0), 4)} bps",
-                              f"As of: {sofr.get('latest_date', 'N/A')}", '#00838f')
+                              f"As of: {to_gmt8_date(sofr.get('latest_date'))}", '#00838f')
         exp = history_expander(sofr, 'SOFR (%)', '#00838f', days=730)
         rates_row.append(html.Div([s_card, exp]) if exp else s_card)
 
     if 'error' in us2y:
         rates_row.append(error_card("US 2Y Yield", us2y['error']))
     else:
-        cap_parts = [f"As of: {us2y.get('latest_date', 'N/A')}"]
+        cap_parts = [f"As of: {to_gmt8_date(us2y.get('latest_date'))}"]
         if 'spread_2s10s' in us2y:
             sp = us2y['spread_2s10s']
             clr = "🔴" if sp < 0 else "🟢"
@@ -928,7 +929,7 @@ def build_tab4(loader):
     if 'error' in jp2y:
         jp_row.append(error_card("Japan 2Y Yield", jp2y['error']))
     else:
-        cap = f"As of: {jp2y.get('latest_date', 'N/A')}"
+        cap = f"As of: {to_gmt8_date(jp2y.get('latest_date'))}"
         if 'japan_10y_yield' in jp2y:
             cap += f" | JGB 10Y: {jp2y['japan_10y_yield']}%"
         jp_card = metric_card("JGB 2Y Yield (%)", format_value(jp2y.get('japan_2y_yield'), 3),
@@ -996,13 +997,13 @@ def build_tab4(loader):
         macro_row = []
         # 10Y with expander
         y10_card = metric_card("10Y Treasury Yield", f"{format_value(y10.get('10y_yield'), 2)}%",
-                                caption=f"As of: {y10.get('latest_date', 'N/A')}", border_color='#1565c0')
+                                caption=f"As of: {to_gmt8_date(y10.get('latest_date'))}", border_color='#1565c0')
         exp_y10 = history_expander(y10, '10Y Yield (%)', '#1565c0', days=730)
         macro_row.append(html.Div([y10_card, exp_y10]) if exp_y10 else y10_card)
 
         # ISM with expander
         ism_card = metric_card("ISM Manufacturing PMI", format_value(ism.get('ism_pmi'), 1),
-                                caption=f"As of: {ism.get('latest_date', 'N/A')}", border_color='#e65100')
+                                caption=f"As of: {to_gmt8_date(ism.get('latest_date'))}", border_color='#e65100')
         exp_ism = history_expander(ism, 'ISM PMI', '#e65100', days=730)
         macro_row.append(html.Div([ism_card, exp_ism]) if exp_ism else ism_card)
 
@@ -1054,7 +1055,7 @@ def build_tab4(loader):
             metric_card("M2 YoY%", f"{format_value(mm.get('m2_yoy'))}%"),
         ], className='metrics-row cols-4'))
         children.append(html.Div(
-            f"As of: {mm.get('latest_date', 'N/A')} | Source: {mm.get('source', 'N/A')}",
+            f"As of: {to_gmt8_date(mm.get('latest_date'))} | Source: {mm.get('source', 'N/A')}",
             style={'fontSize': '0.72rem', 'color': '#888'}))
         # M2 historical chart
         mm_exp = history_expander(mm, 'M2 Money Supply (B$)', '#00695c', days=730)
@@ -1107,7 +1108,7 @@ def build_tab5(loader):
         children.append(error_card("COT Data", cot['error']))
     else:
         children.append(html.Div(
-            f"As of: {cot.get('latest_date', 'N/A')}",
+            f"As of: {to_gmt8_date(cot.get('latest_date'))}",
             style={'fontSize': '0.75rem', 'color': '#888', 'marginBottom': '4px'}))
 
         for metal, metal_name in [('gold', 'Gold'), ('silver', 'Silver')]:
@@ -1526,7 +1527,7 @@ def build_tab7(loader):
         inv_label = " | INVERTED" if inverted else ""
         yc_card = metric_card("2s10s Spread", f"{format_value(spread_val, 2)}%",
                                f"{format_value(yc.get('change_1d', 0), 4)}",
-                               f"As of: {yc.get('latest_date', 'N/A')}{inv_label}", '#ff7f0e')
+                               f"As of: {to_gmt8_date(yc.get('latest_date'))}{inv_label}", '#ff7f0e')
 
         regime_badge = html.Div([
             html.Span(f"{emoji} ", style={'fontSize': '1.6em'}),
@@ -1581,7 +1582,7 @@ def build_tab7(loader):
         else:
             card = metric_card(label, f"{format_value(data.get(vk), 2)}%",
                                 f"{format_value(data.get('change_1d', 0), 3)}",
-                                f"As of: {data.get('latest_date', 'N/A')}", clr)
+                                f"As of: {to_gmt8_date(data.get('latest_date'))}", clr)
             exp = history_expander(data, label.split(' ', 1)[-1] + ' (%)', clr)
             y_row.append(html.Div([card, exp]) if exp else card)
     children.append(html.Div(y_row, className='metrics-row cols-5'))
@@ -1726,7 +1727,7 @@ def build_tab7(loader):
         else:
             val = data.get(vk, 'N/A')
             card = metric_card(label, f"{format_value(val, dec)}{suffix}",
-                                caption=f"As of: {data.get('latest_date', 'N/A')}", border_color=clr)
+                                caption=f"As of: {to_gmt8_date(data.get('latest_date'))}", border_color=clr)
             exp = history_expander(data, label, clr)
             lb_row.append(html.Div([card, exp]) if exp else card)
 
@@ -1757,7 +1758,7 @@ def build_tab7(loader):
             val = data.get(vk, 'N/A')
             suffix = '%' if 'cpi' in vk or 'ppi' in vk else ''
             card = metric_card(label, f"{format_value(val, 2 if suffix else 1)}{suffix}",
-                                caption=f"As of: {data.get('latest_date', 'N/A')}", border_color=clr)
+                                caption=f"As of: {to_gmt8_date(data.get('latest_date'))}", border_color=clr)
             exp = history_expander(data, label, clr)
             extra_row.append(html.Div([card, exp]) if exp else card)
     children.append(html.Div(extra_row, className='metrics-row cols-3'))
@@ -1871,7 +1872,7 @@ def build_tab8(loader):
             suffix = '%' if 'rate' in vk else ''
             delta = data.get(delta_key, 0)
             delta_suffix = 'K MoM' if 'nfp' in vk else ('% MoM' if 'jolts' in vk else ' MoM')
-            cap = f"As of: {data.get('latest_date', 'N/A')}"
+            cap = f"As of: {to_gmt8_date(data.get('latest_date'))}"
             if vk == 'sahm_value':
                 triggered = data.get('triggered', False)
                 cap += ' | RECESSION SIGNAL' if triggered else ' | Below threshold'
@@ -1956,7 +1957,7 @@ def build_tab8(loader):
         signal_clr = '#2e7d32' if signal == "Expansion" else '#c62828'
         children.append(html.Div([
             metric_card("OECD US Leading Indicator", format_value(cli_val, 2),
-                        caption=f"As of: {oecd.get('latest_date', 'N/A')} | {signal}", border_color='#1565c0'),
+                        caption=f"As of: {to_gmt8_date(oecd.get('latest_date'))} | {signal}", border_color='#1565c0'),
             html.Div([
                 html.Span("Signal: ", style={'fontSize': '0.78rem', 'color': '#666'}),
                 html.Span(signal, style={'fontSize': '0.78rem', 'fontWeight': 'bold', 'color': signal_clr}),
@@ -2102,7 +2103,7 @@ app.layout = html.Div([
 def update_header_status(n):
     loader = get_loader()
     # Don't auto-reload here — just show the timestamp of currently loaded data
-    return f"Last updated: {loader.last_update.strftime('%Y-%m-%d %H:%M:%S') if loader.last_update else 'N/A'} ({loader.get_cache_age_str()})"
+    return f"Last updated: {loader.get_last_update_gmt8()} ({loader.get_cache_age_str()})"
 
 
 # ── Refresh progress panel (top-right) ─────────────────────────────────────
@@ -2268,7 +2269,7 @@ def apply_refresh(n, tab, ticker, custom_ticker, source):
     loader._file_mtime = None  # Force reload
     loader.load()
     new_mtime = os.path.getmtime(CACHE_FILE) if os.path.exists(CACHE_FILE) else None
-    header = f"Last updated: {loader.last_update.strftime('%Y-%m-%d %H:%M:%S') if loader.last_update else 'N/A'} ({loader.get_cache_age_str()})"
+    header = f"Last updated: {loader.get_last_update_gmt8()} ({loader.get_cache_age_str()})"
     return _render_tab_content(tab, ticker, custom_ticker, source, loader), new_mtime, {'display': 'none'}, header
 
 

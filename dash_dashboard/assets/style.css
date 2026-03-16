@@ -121,6 +121,7 @@ body {
 .metrics-row.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
 .metrics-row.cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
 .metrics-row.cols-5 { grid-template-columns: 1fr 1fr 1fr 1fr 1fr; }
+.metrics-row.cols-6 { grid-template-columns: 1fr 1fr 1fr 1fr 1fr 1fr; }
 
 /* Section headers */
 .section-header {
@@ -206,6 +207,7 @@ body {
 
 /* Responsive */
 @media (max-width: 768px) {
+    .metrics-row.cols-6,
     .metrics-row.cols-5,
     .metrics-row.cols-4 {
         grid-template-columns: 1fr 1fr;

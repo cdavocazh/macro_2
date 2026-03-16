@@ -6,10 +6,79 @@ Zero-duplication: no separate extraction logic — reads the same cache file.
 import os
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 import pandas as pd
 import numpy as np
+
+# Display timezone: GMT+8 (Asia/Hong_Kong / Singapore)
+_TZ_OFFSET = timedelta(hours=8)
+_TZ_GMT8 = timezone(_TZ_OFFSET)
+
+
+def to_gmt8(dt_or_str):
+    """Convert a datetime or date string to GMT+8 display string.
+
+    Accepts:
+      - datetime object (naive assumed UTC, aware converted)
+      - string like '2026-03-14', '2026-03-14 16:00', '2026-03-14T16:00:00'
+    Returns: string formatted as 'YYYY-MM-DD HH:MM (GMT+8)'
+    """
+    if dt_or_str is None or dt_or_str == 'N/A':
+        return 'N/A'
+    try:
+        if isinstance(dt_or_str, datetime):
+            dt = dt_or_str
+        elif isinstance(dt_or_str, str):
+            # Try parsing various formats
+            for fmt in ('%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S',
+                        '%Y-%m-%d %H:%M', '%Y-%m-%d'):
+                try:
+                    dt = datetime.strptime(dt_or_str, fmt)
+                    break
+                except ValueError:
+                    continue
+            else:
+                return str(dt_or_str)  # unparseable, return as-is
+        else:
+            return str(dt_or_str)
+
+        # If naive, assume UTC
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        # Convert to GMT+8
+        dt_gmt8 = dt.astimezone(_TZ_GMT8)
+        return dt_gmt8.strftime('%Y-%m-%d %H:%M (GMT+8)')
+    except Exception:
+        return str(dt_or_str)
+
+
+def to_gmt8_date(dt_or_str):
+    """Convert to GMT+8 date-only string (for daily indicators where time is irrelevant)."""
+    if dt_or_str is None or dt_or_str == 'N/A':
+        return 'N/A'
+    try:
+        if isinstance(dt_or_str, datetime):
+            dt = dt_or_str
+        elif isinstance(dt_or_str, str):
+            for fmt in ('%Y-%m-%dT%H:%M:%S.%f', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S',
+                        '%Y-%m-%d %H:%M', '%Y-%m-%d'):
+                try:
+                    dt = datetime.strptime(dt_or_str, fmt)
+                    break
+                except ValueError:
+                    continue
+            else:
+                return str(dt_or_str)
+        else:
+            return str(dt_or_str)
+
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        dt_gmt8 = dt.astimezone(_TZ_GMT8)
+        return dt_gmt8.strftime('%Y-%m-%d')
+    except Exception:
+        return str(dt_or_str)
 
 # Add parent directory to path so we can import project modules
 PARENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -94,6 +163,12 @@ class DashDataLoader:
             return f"{mins}m ago"
         hrs = mins // 60
         return f"{hrs}h {mins % 60}m ago"
+
+    def get_last_update_gmt8(self):
+        """Return last update time formatted in GMT+8."""
+        if not self.last_update:
+            return 'N/A'
+        return to_gmt8(self.last_update)
 
 
 # Singleton
