@@ -39,7 +39,77 @@ Then open **http://localhost:3000** (credentials: `admin` / `macro2024`).
 
 The dashboard auto-provisions on first start — no manual import needed.
 
-### Option 2: Local Development
+### Option 2: Local via Homebrew (macOS, no Docker)
+
+```bash
+cd grafana_dashboard
+./start.sh local
+```
+
+This will:
+1. Install Grafana via Homebrew (if not already installed)
+2. Install the Infinity plugin
+3. Set up provisioning (datasource + dashboard auto-load)
+4. Start the API bridge on `:8001`
+5. Start Grafana on `:3000`
+
+Then open **http://localhost:3000** (default credentials: `admin` / `admin`).
+
+**Manual setup (if `start.sh local` has path issues):**
+
+```bash
+# 1. Install Grafana + plugin
+brew install grafana
+grafana cli --homepath $(brew --prefix grafana)/share/grafana \
+  --pluginsDir /opt/homebrew/var/lib/grafana/plugins \
+  plugins install yesoreyeram-infinity-datasource
+
+# 2. Create datasource provisioning
+PROV_DIR="$(find /opt/homebrew/Cellar/grafana -path '*/conf/provisioning' -type d | head -1)"
+cat > "$PROV_DIR/datasources/macro_api.yaml" <<'YAML'
+apiVersion: 1
+datasources:
+  - name: MacroAPI
+    type: yesoreyeram-infinity-datasource
+    access: proxy
+    url: http://localhost:8001
+    isDefault: true
+    editable: true
+    jsonData:
+      url: http://localhost:8001
+    version: 1
+YAML
+
+# 3. Create dashboard provider
+cat > "$PROV_DIR/dashboards/macro_dashboard.yaml" <<YAML
+apiVersion: 1
+providers:
+  - name: "Macro Dashboard"
+    orgId: 1
+    type: file
+    options:
+      path: $(pwd)/dashboards
+YAML
+
+# 4. Start API bridge
+cd /path/to/macro_2
+python -m uvicorn grafana_dashboard.api_bridge.main:app --host 0.0.0.0 --port 8001 &
+
+# 5. Start Grafana
+brew services start grafana
+# Open http://localhost:3000
+```
+
+**Stop everything:**
+
+```bash
+./start.sh stop
+# or manually:
+brew services stop grafana
+lsof -ti:8001 | xargs kill
+```
+
+### Option 3: Local Development (manual, any OS)
 
 ```bash
 # Terminal 1: Start API Bridge
@@ -47,7 +117,7 @@ cd /path/to/macro_2
 pip install fastapi uvicorn
 python -m uvicorn grafana_dashboard.api_bridge.main:app --host 0.0.0.0 --port 8001 --reload
 
-# Terminal 2: Start Grafana (via Docker or system install)
+# Terminal 2: Start Grafana (via Docker)
 docker run -d -p 3000:3000 \
   -e GF_INSTALL_PLUGINS=yesoreyeram-infinity-datasource \
   -e GF_SECURITY_ADMIN_PASSWORD=macro2024 \
@@ -56,9 +126,9 @@ docker run -d -p 3000:3000 \
   grafana/grafana:11.4.0
 ```
 
-### Option 3: Existing Grafana Instance
+### Option 4: Existing Grafana Instance
 
-1. Install the **Infinity** plugin: `grafana-cli plugins install yesoreyeram-infinity-datasource`
+1. Install the **Infinity** plugin: `grafana cli plugins install yesoreyeram-infinity-datasource`
 2. Add a JSON data source pointing to `http://localhost:8001`
 3. Import `dashboards/macro_dashboard.json` via Grafana UI
 

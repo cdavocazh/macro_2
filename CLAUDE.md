@@ -2,7 +2,7 @@
 
 ## What is this project?
 
-Macroeconomic indicators dashboard with large-cap equity financials. Fetches 90+ indicators from financial APIs (yfinance, FRED, SEC EDGAR, Trading Economics, web scrapers, MOF Japan, AAII), displays them in a Streamlit dashboard with 8 tabs, caches locally for fast startup, and exports to CSV. Includes 2-year OHLCV history for commodities and futures, sector ETF tracking, and high-frequency macro proxies.
+Macroeconomic indicators dashboard with large-cap equity financials. Fetches 85+ indicators from financial APIs (yfinance, FRED, SEC EDGAR, OpenBB/Finviz, web scrapers, MOF Japan, AAII), displays them across **4 dashboard frontends** (Streamlit, Plotly Dash, Grafana, React), caches locally for fast startup, and exports to CSV. Includes 2-year OHLCV history for commodities and futures, sector ETF tracking, and high-frequency macro proxies.
 
 **Repo:** https://github.com/cdavocazh/macro_2
 **Branch:** main
@@ -10,8 +10,17 @@ Macroeconomic indicators dashboard with large-cap equity financials. Fetches 90+
 ## Quick commands
 
 ```bash
-# Run the dashboard (loads from cache if available, otherwise fetches live)
+# Run the Streamlit dashboard (loads from cache if available, otherwise fetches live)
 streamlit run app.py
+
+# Run the Plotly Dash dashboard (standalone, reads from same cache)
+python dash_dashboard/app.py              # http://localhost:8050
+
+# Run the Grafana dashboard (local mode with API bridge)
+bash grafana_dashboard/start.sh local     # http://localhost:3000
+
+# Run the React dashboard (Vite + FastAPI)
+bash react_dashboard/start.sh             # http://localhost:5173
 
 # Refresh data manually (updates cache + CSVs, skips if <15min old)
 python scheduled_extract.py
@@ -74,7 +83,7 @@ python -m agent.langchain_agents.agent "Compare Yahoo vs SEC for AAPL"
 
 ```
 app.py                        Streamlit dashboard (8 tabs, compact layout, ~2,300 lines)
-data_aggregator.py            Orchestrator — fetches all 82 indicators, saves/loads cache, auto-reload
+data_aggregator.py            Orchestrator — fetches all 85 indicators, saves/loads cache, auto-reload
   ├── data_extractors/
   │   ├── yfinance_extractors.py       18+ indicators (VIX, DXY, Russell, ES/RTY futures w/ OHLCV, JPY, EUR/USD, GBP/USD, EUR/JPY, SPY/RSP, sector ETFs, VIX term structure, put/call ratio, BDI)
   │   ├── fred_extractors.py           38 indicators (GDP, yields, ISM PMI, TGA, liquidity, SOFR, spreads, inflation, labor, M2, JOLTS, Sahm, SLOOS, ADP, WALCL, term premia, home sales, GDPNow, WEI)
@@ -92,6 +101,25 @@ data_aggregator.py            Orchestrator — fetches all 82 indicators, saves/
   │   ├── fidenza_extractors.py       13 indicators (Brent, Nikkei, EM indices, SOFR/FF futures, XAU/JPY, Au/Ag ratio, AAII, OPEC, gold reserves)
   │   └── sp500_tickers.py             S&P 500 constituent list (Wikipedia + cache)
   └── utils/helpers.py               Cache serialization, CSV export, formatting
+
+dash_dashboard/               Plotly Dash dashboard (standalone, ~2,300 lines)
+  ├── app.py                  Main Dash app with 8 tabs, expandable historical charts
+  ├── data_loader.py          Singleton cache reader with lazy loading + mtime auto-reload
+  ├── assets/style.css        Custom CSS for compact layout
+  ├── wsgi.py                 Gunicorn WSGI entry point
+  └── deploy/                 AWS Lightsail deployment (systemd, nginx, deploy.sh)
+
+grafana_dashboard/            Grafana dashboard (111 panels, Docker + local mode)
+  ├── api_bridge/main.py      FastAPI bridge translating data_aggregator → Grafana JSON
+  ├── dashboards/             Pre-built dashboard JSON (auto-provisioned)
+  ├── provisioning/           Grafana datasource + dashboard provider configs
+  ├── docker-compose.yml      Docker mode (Grafana + API bridge containers)
+  └── start.sh                Start script (supports `local` and `docker` modes)
+
+react_dashboard/              React + Vite dashboard with FastAPI backend
+  ├── backend/main.py         FastAPI server reading from data_aggregator cache
+  ├── frontend/src/           React components (8 tab panels, metric cards, charts)
+  └── start.sh                Start script (backend + frontend concurrently)
 
 fast_extract.py               5-minute real-time yfinance extraction (20 extractors, ~5s)
 scheduled_extract.py          Full catch-up script — FRED, SEC, web scrapers (does NOT touch app.py)
@@ -121,7 +149,18 @@ agent/                        Financial data discrepancy review agent
 | 7 | Rates & Credit | Yield curve regime, 2s10s spread, global yields (US 5Y/10Y, DE/UK/CN 10Y), real yield, breakevens, HY/IG OAS, NFCI, Fed Funds, bank reserves, SLOOS, unemployment, claims, CPI, PPI, PCE, ECB Rates, CPI Components, EU Yields, Global CPI, Full Treasury Curve, Corporate Spreads |
 | 8 | Economic Activity | Nonfarm Payrolls, JOLTS, Quits Rate, Sahm Rule, Consumer Sentiment, Retail Sales, ISM Services PMI, Industrial Production, Housing Starts, OECD CLI, Intl Unemployment, Intl GDP, Global PMI |
 
-## Dashboard features
+## Dashboard frontends
+
+All 4 frontends read from the same `data_cache/all_indicators.json` (populated by `data_aggregator.py`):
+
+| Frontend | Directory | Port | Best for |
+|----------|-----------|------|----------|
+| **Streamlit** | `app.py` (root) | 8501 | Quick local dev, interactive widgets, Streamlit Cloud deploy |
+| **Plotly Dash** | `dash_dashboard/` | 8050 | Production deploy (gunicorn), expandable historical charts, AWS Lightsail |
+| **Grafana** | `grafana_dashboard/` | 3000 | Time-series panels, alerting, multi-user monitoring |
+| **React + Vite** | `react_dashboard/` | 5173 | Custom SPA, modern UI, extensibility |
+
+## Dashboard features (Streamlit)
 
 - **Compact dense layout**: Custom CSS injection shrinks metrics (1.3rem value, 0.72rem label), reduces column/block gaps to 0.3rem, and compresses captions (0.68rem). ~40% more indicators visible per screen vs default Streamlit spacing.
 - **Expandable 3M price charts**: Every indicator in tabs 1, 3, 4, 5 has a collapsible plotly chart with 1W/1M/3M zoom buttons
@@ -132,6 +171,15 @@ agent/                        Financial data discrepancy review agent
 - **Custom ticker input**: Tab 6 has a text input alongside the Top 20 dropdown — type any ticker for on-demand fetching
 - **Revenue segments**: SEC EDGAR source shows business segment breakdown from 10-K filings
 - **Auto-reload on rerun**: Dashboard detects when `scheduled_extract.py` has updated the cache file (via file mtime) and reloads automatically — no manual Refresh needed
+
+## Dashboard features (Plotly Dash)
+
+- **Expandable historical charts**: `html.Details` + `html.Summary` pattern for click-to-expand charts across Valuation, Indices, Volatility, Macro & FX tabs (hidden by default)
+- **Range selectors**: 1W/1M/3M/6M/1Y/2Y buttons on historical charts
+- **S&P 500 Multiples**: 3-tier data cascade — OpenBB/Finviz per-stock weighted → multpl.com scrape → yfinance SPY
+- **ERP with forward PE**: Uses OpenBB/Finviz forward_pe data for forward ERP computation
+- **Production-ready**: Gunicorn WSGI, systemd services, nginx reverse proxy, AWS Lightsail deploy script
+- **Auto-reload**: `data_loader.py` checks cache file mtime every 60 seconds, reloads if stale
 
 ## Data flow
 
@@ -217,6 +265,10 @@ TOP_20_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM
 - **Sector ETFs:** 11 SPDR sector ETFs (XLK, XLF, XLV, XLE, XLI, XLC, XLY, XLP, XLB, XLRE, XLU) tracked via `get_sector_etfs()` in `yfinance_extractors.py`. Wide-format CSV with one column per ETF.
 - **High-frequency macro proxies:** GDPNow (Atlanta Fed, FRED GDPNOW), WEI (NY Fed Weekly Economic Index, FRED WEI) for macro nowcasting. VIX term structure (spot vs futures, contango ratio). BDI and put/call ratio attempted but not available on yfinance (known limitation).
 - **Compact dashboard layout:** Custom CSS via `st.markdown(unsafe_allow_html=True)` overrides Streamlit's default spacing. Key rules: metric padding 0.2rem, value font 1.3rem, label 0.72rem, caption 0.68rem, column gap 0.3rem. Tab dividers removed, verbose captions pruned, sidebar About collapsed into expander. Tab 3 uses 3 columns (VIX/MOVE/Ratio), Tab 4 FX uses 5 columns (DXY/JPY/EUR-USD/GBP-USD/EUR-JPY). Tab 1 Historical Valuation section removed (was making a slow `yf.Ticker("SPY")` network call on every page load).
+
+- **Multi-frontend architecture:** All 4 dashboards (Streamlit, Dash, Grafana, React) share the same data layer (`data_aggregator.py` → `data_cache/all_indicators.json`). No frontend has its own data fetching logic. Dash uses `data_loader.py` (singleton with mtime check), Grafana uses `api_bridge/main.py` (FastAPI reading aggregator), React uses its own FastAPI backend. This means `scheduled_extract.py` and `fast_extract.py` feed all dashboards simultaneously.
+- **S&P 500 Multiples 3-tier cascade:** `_sp500_multiples_openbb()` (OpenBB/Finviz per-stock, market-cap weighted for Top 20) → `_sp500_multiples_fallback()` (multpl.com scraping for index-level ratios) → yfinance SPY ETF (last resort). The OpenBB path also scrapes Finviz quote pages for PEG ratio and EPS growth rates not available via the API.
+- **ERP forward PE sourcing:** `get_equity_risk_premium()` checks if indicator `65_sp500_multiples` has a valid `forward_pe` from OpenBB/Finviz before computing forward ERP. Falls back to yfinance SPY `forwardPE` (usually None).
 
 - **OpenBB-based extractors (20 functions):** All live in `openbb_extractors.py` behind `OPENBB_AVAILABLE` guard. Every function has a fallback path (FRED, yfinance, direct API, or computation) so the dashboard works without OpenBB installed. Free providers used: CBOE, Finviz, EconDB, ECB SDW, OECD, Fama-French, Federal Reserve. Fixes 3 known-broken indicators (VIX futures, Put/Call ratio, Forward P/E) and adds 17 new indicators across tabs 1-4, 7-8. Not included in `fast_extract.py` (too slow for 5-min polling). ECB rates fallback uses direct ECB SDW REST API. Fama-French fallback downloads ZIP from Ken French's data library. Indicator keys: 63-82.
 
@@ -323,6 +375,19 @@ python extract_13f_holdings.py --max-filings 4          # last 4 quarters only
 2. Add entry to `FUND_REGISTRY` in `data_extractors/thirteenf_extractor.py`
 3. Run `python extract_13f_holdings.py --funds new_fund_key`
 
+**Deploy Dash dashboard to AWS Lightsail:**
+```bash
+cd dash_dashboard/deploy
+cp .env.example .env && vim .env   # set LIGHTSAIL_IP, SSH_KEY_PATH
+bash deploy.sh                     # rsync + systemd setup on remote
+```
+
+**Run Grafana locally (no Docker):**
+```bash
+bash grafana_dashboard/start.sh local   # starts API bridge + Grafana
+# Dashboard auto-provisions at http://localhost:3000
+```
+
 **Change extraction schedule:**
 1. Edit times in `com.macro2.scheduled-extract.plist`
 2. Update the echo line in `setup_launchd.sh` to match
@@ -340,6 +405,9 @@ python extract_13f_holdings.py --max-filings 4          # last 4 quarters only
 | requirements.txt changes | CLAUDE.md "Tech stack", README.md if a new data source |
 | Key design decisions or bug fixes | CLAUDE.md "Key design decisions", STATUS.md "Known Limitations" if relevant |
 | Branch, repo, or deployment changes | All three: CLAUDE.md, STATUS.md, README.md headers/footers |
+| Dash dashboard changes | `dash_dashboard/` files, CLAUDE.md "Dashboard features (Plotly Dash)" |
+| Grafana dashboard changes | `grafana_dashboard/CLAUDE.md`, `grafana_dashboard/README.md` |
+| React dashboard changes | `react_dashboard/CLAUDE.md`, `react_dashboard/README.md` |
 
 **Never commit code changes without checking these docs for staleness.** When in doubt, update. Bump the version in STATUS.md for any non-trivial change.
 
@@ -350,12 +418,26 @@ python extract_13f_holdings.py --max-filings 4          # last 4 quarters only
 ## Tech stack
 
 - Python 3.10 (mambaforge), compatible with 3.8-3.13
-- Streamlit, pandas, yfinance, fredapi, beautifulsoup4, plotly, requests
-- SEC EDGAR XBRL API (no key needed)
+- **Data extraction:** pandas, yfinance, fredapi, beautifulsoup4, requests, OpenBB (optional)
+- **Streamlit dashboard:** streamlit, plotly
+- **Dash dashboard:** dash, plotly, gunicorn
+- **Grafana dashboard:** FastAPI (api_bridge), Grafana + Infinity datasource plugin
+- **React dashboard:** React, Vite, FastAPI backend
+- SEC EDGAR XBRL API (no key needed), Finviz (via OpenBB or direct scrape)
 - macOS launchd for scheduling
 - Agent: openai-agents, langchain, langgraph, Minimax LLM API
 
 ## Changelog
+
+### 2026-03-16
+- **Added: Plotly Dash dashboard** (`dash_dashboard/`) — Full 8-tab dashboard with expandable historical charts, production deploy configs (gunicorn, systemd, nginx), AWS Lightsail deployment script. Fixed Tab 8 callback error (`color=` → `border_color=`), Global PMI key mismatch (`us_pmi` → `us_mfg_pmi`).
+- **Added: Grafana dashboard** (`grafana_dashboard/`) — 111 panels with FastAPI API bridge, Docker + local mode support, Infinity datasource. Fixed `"format": 1` → `"format": "table"` and Docker hostname → localhost for local mode.
+- **Added: React dashboard** (`react_dashboard/`) — Vite + React SPA with FastAPI backend, 8 tab panels, metric cards, history charts.
+- **Fixed: S&P 500 Multiples N/A** — Added 3-tier cascade: OpenBB/Finviz per-stock market-cap weighted → multpl.com scrape → yfinance SPY. Now shows Forward P/E, Trailing P/E, PEG, P/S, P/B, P/Cash.
+- **Fixed: ERP Forward N/A** — `get_equity_risk_premium()` now pulls `forward_pe` from OpenBB/Finviz multiples data (indicator 65) when available, instead of relying on yfinance SPY (which doesn't expose forward PE).
+- **Fixed: Fama-French parser crash** — Empty line between monthly/annual sections caused `IndexError`. Added empty-string guard.
+- **Fixed: Global PMI discontinued series** — FRED `NAPM` series discontinued. Replaced with `IPMAN` (Industrial Production: Manufacturing) with PMI-like scaling.
+- **Updated: Architecture section** — Added 3 new dashboard frontends, updated indicator count to 85.
 
 ### 2026-03-15
 - **Fixed: OOM kill on dashboard startup** — `debug=True` with Dash spawns a reloader subprocess that doubles memory usage. Added `use_reloader=False` to prevent the second process. Also fixes the "leaked semaphore objects" warning.
