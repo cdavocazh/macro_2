@@ -1165,6 +1165,93 @@ def build_tab5(loader):
                 dcc.Graph(figure=fig, config={'displayModeBar': False}),
             ]))
 
+    # COT Positioning — Energy & Copper
+    children.append(section_header("CFTC COT Positioning — Crude Oil, Brent, Copper, Natural Gas"))
+    children.append(html.Div(
+        "Weekly positioning data from CFTC Disaggregated report via SODA API. "
+        "Managed money = hedge funds/CTAs. Producer = physical hedgers.",
+        style={'fontSize': '0.75rem', 'color': '#888', 'marginBottom': '6px'}))
+
+    cot_em = loader.get('83_cot_energy_metals')
+    if 'error' in cot_em:
+        children.append(error_card("COT Energy/Metals", cot_em['error']))
+    else:
+        children.append(html.Div(
+            f"As of: {to_gmt8_date(cot_em.get('latest_date'))}",
+            style={'fontSize': '0.75rem', 'color': '#888', 'marginBottom': '4px'}))
+
+        commodity_map = [
+            ('crude_oil', 'Crude Oil (WTI)'),
+            ('brent', 'Brent Crude'),
+            ('copper', 'Copper'),
+            ('natural_gas', 'Natural Gas'),
+        ]
+        for key, label in commodity_map:
+            c = cot_em.get(key, {})
+            if not c or 'error' in c:
+                children.append(error_card(f"{label} COT", c.get('error', 'No data') if c else 'No data'))
+                continue
+
+            children.append(section_subheader(f"{label} Positioning"))
+            items = []
+            oi = c.get('open_interest')
+            if oi is not None:
+                items.append(metric_card("Open Interest", f"{int(oi):,}"))
+            mm_long = c.get('managed_money_long')
+            mm_short = c.get('managed_money_short')
+            mm_net = c.get('managed_money_net')
+            if mm_net is not None:
+                items.append(metric_card("MM Net", f"{int(mm_net):,}",
+                                         caption="Bullish" if mm_net > 0 else "Bearish"))
+            if mm_long is not None:
+                items.append(metric_card("MM Long", f"{int(mm_long):,}"))
+            if mm_short is not None:
+                items.append(metric_card("MM Short", f"{int(mm_short):,}"))
+            lr = c.get('mm_long_ratio')
+            if lr is not None:
+                pct = lr * 100
+                items.append(metric_card("Long Ratio", f"{pct:.1f}%",
+                                         "Bullish" if pct > 60 else ("Bearish" if pct < 40 else "Neutral")))
+            prod_net = c.get('producer_net')
+            if prod_net is not None:
+                items.append(metric_card("Producer Net", f"{int(prod_net):,}"))
+
+            if items:
+                children.append(html.Div(items, className=f'metrics-row cols-{min(len(items), 6)}'))
+
+        # Historical chart: long vs short for all 4 commodities
+        fig_traces = []
+        colors = {'crude_oil': '#2c2c2c', 'brent': '#795548', 'copper': '#ef6c00', 'natural_gas': '#1565c0'}
+        labels = {'crude_oil': 'Crude Oil', 'brent': 'Brent', 'copper': 'Copper', 'natural_gas': 'Nat Gas'}
+        for key in ['crude_oil', 'brent', 'copper', 'natural_gas']:
+            c = cot_em.get(key, {})
+            hist_long = c.get('historical_long')
+            hist_short = c.get('historical_short')
+            col = colors[key]
+            lbl = labels[key]
+            if hist_long is not None and hasattr(hist_long, 'index'):
+                fig_traces.append(go.Scatter(
+                    x=hist_long.index, y=hist_long.values,
+                    name=f"{lbl} Long", line=dict(color=col, width=2)))
+            if hist_short is not None and hasattr(hist_short, 'index'):
+                fig_traces.append(go.Scatter(
+                    x=hist_short.index, y=hist_short.values,
+                    name=f"{lbl} Short", line=dict(color=col, width=1, dash='dash')))
+
+        if fig_traces:
+            fig = go.Figure(data=fig_traces)
+            fig.update_layout(
+                title="CFTC COT: Managed Money Long vs Short",
+                xaxis_title="Date", yaxis_title="Contracts",
+                hovermode='x unified', height=480,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            )
+            children.append(html.Details([
+                html.Summary("Energy & Copper COT Chart", style={
+                    'cursor': 'pointer', 'fontSize': '0.78rem', 'color': '#666', 'padding': '4px 0'}),
+                dcc.Graph(figure=fig, config={'displayModeBar': False}),
+            ]))
+
     return html.Div(children, className='tab-content')
 
 

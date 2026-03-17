@@ -645,8 +645,15 @@ class MacroIndicatorAggregator:
         self._fetch_with_error_handling('81_global_pmi', openbb_extractors.get_global_pmi)
 
         # 82. Equity Risk Premium
-        print("  [82/82] Fetching Equity Risk Premium...")
+        print("  [82/83] Fetching Equity Risk Premium...")
         self._fetch_with_error_handling('82_erp', openbb_extractors.get_equity_risk_premium)
+
+        # 83. CFTC COT Positioning (Energy & Copper)
+        print("  [83/83] Fetching CFTC COT positioning data (Crude Oil, Brent, Copper, Nat Gas)...")
+        self._fetch_with_error_handling(
+            '83_cot_energy_metals',
+            cot_extractor.get_cot_energy_metals
+        )
 
         print(f"\nCompleted! Last update: {self.last_update.strftime('%Y-%m-%d %H:%M:%S')}")
 
@@ -657,7 +664,7 @@ class MacroIndicatorAggregator:
 
         # Save to local cache after fetching
         self._save_to_local_cache()
-        _write_progress(82, 82, "Complete", "done")
+        _write_progress(83, 83, "Complete", "done")
 
         return self.indicators
 
@@ -719,6 +726,7 @@ class MacroIndicatorAggregator:
             '16_copper': 'Copper Futures',
             '17_all_commodities': 'All Commodities',
             '22_cot_positioning': 'CFTC COT Positioning (Gold & Silver)',
+            '83_cot_energy_metals': 'CFTC COT Positioning (Crude Oil, Brent, Copper, Nat Gas)',
             '23_tga_balance': 'TGA Balance',
             '24_net_liquidity': 'Fed Net Liquidity',
             '25_sofr': 'SOFR',

@@ -2,7 +2,7 @@
 
 ## What is this project?
 
-Macroeconomic indicators dashboard with large-cap equity financials. Fetches 85+ indicators from financial APIs (yfinance, FRED, SEC EDGAR, OpenBB/Finviz, web scrapers, MOF Japan, AAII), displays them across **4 dashboard frontends** (Streamlit, Plotly Dash, Grafana, React), caches locally for fast startup, and exports to CSV. Includes 2-year OHLCV history for commodities and futures, sector ETF tracking, and high-frequency macro proxies.
+Macroeconomic indicators dashboard with large-cap equity financials. Fetches 86+ indicators from financial APIs (yfinance, FRED, SEC EDGAR, OpenBB/Finviz, web scrapers, MOF Japan, AAII), displays them across **4 dashboard frontends** (Streamlit, Plotly Dash, Grafana, React), caches locally for fast startup, and exports to CSV. Includes 2-year OHLCV history for commodities and futures, sector ETF tracking, and high-frequency macro proxies.
 
 **Repo:** https://github.com/cdavocazh/macro_2
 **Branch:** main
@@ -83,7 +83,7 @@ python -m agent.langchain_agents.agent "Compare Yahoo vs SEC for AAPL"
 
 ```
 app.py                        Streamlit dashboard (8 tabs, compact layout, ~2,300 lines)
-data_aggregator.py            Orchestrator — fetches all 85 indicators, saves/loads cache, auto-reload
+data_aggregator.py            Orchestrator — fetches all 86 indicators, saves/loads cache, auto-reload
   ├── data_extractors/
   │   ├── yfinance_extractors.py       18+ indicators (VIX, DXY, Russell, ES/RTY futures w/ OHLCV, JPY, EUR/USD, GBP/USD, EUR/JPY, SPY/RSP, sector ETFs, VIX term structure, put/call ratio, BDI)
   │   ├── fred_extractors.py           38 indicators (GDP, yields, ISM PMI, TGA, liquidity, SOFR, spreads, inflation, labor, M2, JOLTS, Sahm, SLOOS, ADP, WALCL, term premia, home sales, GDPNow, WEI)
@@ -91,7 +91,7 @@ data_aggregator.py            Orchestrator — fetches all 85 indicators, saves/
   │   ├── shiller_extractor.py          1 indicator  (CAPE ratio from Yale Excel)
   │   ├── openbb_extractors.py         21 indicators (S&P fundamentals + 20 OpenBB-based: VIX futures, put/call, multiples, ECB rates, OECD CLI, CPI components, Fama-French, IV skew, EU yields, global CPI, earnings, sector P/E, treasury curve, corp spreads, intl unemployment/GDP, screener, money measures, PMI, ERP; optional dep)
   │   ├── commodities_extractors.py     7 indicators (gold, silver, oil, copper, natural gas, Cu/Au ratio) — all with 2y OHLCV
-  │   ├── cot_extractor.py              1 indicator  (CFTC COT positioning, gold & silver)
+  │   ├── cot_extractor.py              2 indicators (CFTC COT positioning: gold/silver + crude oil/Brent/copper/nat gas via SODA API)
   │   ├── japan_yield_extractor.py      2 indicators (Japan 2Y yield, US-JP spread)
   │   ├── global_yields_extractor.py    4 indicators (Germany/UK/China 10Y yields, ISM Services PMI)
   │   ├── yield_curve_extractor.py      1 indicator  (2s10s spread + regime classification)
@@ -144,7 +144,7 @@ agent/                        Financial data discrepancy review agent
 | 2 | Market Indices | ES/RTY futures, breadth, Russell 2000 V/G, S&P 500/200MA, SPY/RSP concentration, Fama-French 5 Factors, Earnings Calendar |
 | 3 | Volatility & Risk | VIX, MOVE, VIX/MOVE ratio, Put/Call, CBOE SKEW, VIX Futures Curve, SPY Put/Call OI, IV Skew |
 | 4 | Macro & Currency | DXY, USD/JPY, EUR/USD, GBP/USD, EUR/JPY, TGA, net liquidity, M2, SOFR, US 2Y, Japan 2Y, yield spread, 10Y yield, ISM PMI, Money Supply (M1/M2) |
-| 5 | Commodities | Gold, Silver, Crude Oil, Copper, Natural Gas, Cu/Au ratio, CFTC COT positioning |
+| 5 | Commodities | Gold, Silver, Crude Oil, Copper, Natural Gas, Cu/Au ratio, CFTC COT positioning (gold/silver + energy/copper via SODA API) |
 | 6 | Large-cap Financials | Top 20 dropdown + any-ticker text input, dual-source (Yahoo + SEC EDGAR), quarterly statements |
 | 7 | Rates & Credit | Yield curve regime, 2s10s spread, global yields (US 5Y/10Y, DE/UK/CN 10Y), real yield, breakevens, HY/IG OAS, NFCI, Fed Funds, bank reserves, SLOOS, unemployment, claims, CPI, PPI, PCE, ECB Rates, CPI Components, EU Yields, Global CPI, Full Treasury Curve, Corporate Spreads |
 | 8 | Economic Activity | Nonfarm Payrolls, JOLTS, Quits Rate, Sahm Rule, Consumer Sentiment, Retail Sales, ISM Services PMI, Industrial Production, Housing Starts, OECD CLI, Intl Unemployment, Intl GDP, Global PMI |
@@ -261,6 +261,7 @@ TOP_20_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM
 - **SEC freshness review:** `review_data_freshness.py` uses the SEC submissions endpoint (~100KB per call, <200ms) via `get_latest_filing_dates()` to compare filing dates without downloading full companyfacts data.
 - **13F holdings extraction:** `thirteenf_extractor.py` parses SEC 13F-HR XML infotables for 5 tracked institutional funds. Reuses `_rate_limit()` and `SEC_HEADERS` from `sec_extractor.py`. Handles 13F-HR/A amendments (prefers latest per quarter). Computes QoQ changes keyed by `(cusip, put_call)`. XML `<value>` field is in dollars (not thousands despite SEC form instructions).
 - **Fidenza Macro gap-fill extractors:** `fidenza_extractors.py` adds 10 functions for instruments/indicators from the Fidenza Macro trading newsletter. Includes yfinance price series (Brent, Nikkei, EM indices, SOFR/Fed Funds futures), computed ratios (XAU/JPY, Gold/Silver), and web scrapes (AAII sentiment, OPEC production, gold reserves share). FRED additions (ADP, WALCL, term premia) live in `fred_extractors.py`. All 13 extraction wrappers are registered in `extract_historical_data.py`. SOFR futures use dynamic quarterly contract ticker generation (SR3{H/M/U/Z}{YY}.CME format). XAU/JPY and Gold/Silver ratio use `.tz_localize(None).normalize()` to handle cross-timezone yfinance index joins.
+- **CFTC COT SODA API:** `cot_extractor.py` uses CFTC SODA API (`publicreporting.cftc.gov/resource/72hh-3qpy.json`) as fast primary path for COT positioning data (crude oil `067651`, Brent `06765T`, copper `085692`, natural gas `023651`, gold `088691`, silver `084691`). Falls back to `cot-reports` bulk download if SODA fails. Returns managed money long/short/net, producer net, swap positions, and historical series. Disaggregated futures report format.
 - **OHLCV extension (Data Extraction Requirements):** Commodities (GC=F, SI=F, CL=F, HG=F), ES/RTY futures, and Brent crude now return `historical_ohlcv` (DataFrame with Open/High/Low/Close/Volume) alongside existing `historical` (Close-only Series) for backward compatibility. All use `period='2y'` for ~504 trading days of history. OHLCV CSVs use `{prefix}_open/high/low/close/volume` column naming. `_extract_ohlcv_series()` helper in `extract_historical_data.py` handles the DataFrame → CSV conversion.
 - **Sector ETFs:** 11 SPDR sector ETFs (XLK, XLF, XLV, XLE, XLI, XLC, XLY, XLP, XLB, XLRE, XLU) tracked via `get_sector_etfs()` in `yfinance_extractors.py`. Wide-format CSV with one column per ETF.
 - **High-frequency macro proxies:** GDPNow (Atlanta Fed, FRED GDPNOW), WEI (NY Fed Weekly Economic Index, FRED WEI) for macro nowcasting. VIX term structure (spot vs futures, contango ratio). BDI and put/call ratio attempted but not available on yfinance (known limitation).
@@ -428,6 +429,12 @@ bash grafana_dashboard/start.sh local   # starts API bridge + Grafana
 - Agent: openai-agents, langchain, langgraph, Minimax LLM API
 
 ## Changelog
+
+### 2026-03-17
+- **Added: COT energy/copper positioning (indicator 83)** — Extended `cot_extractor.py` with CFTC SODA API as fast primary path for crude oil, Brent, copper, natural gas positioning. Falls back to `cot-reports` bulk download. Returns managed money long/short/net, producer net, swap positions, long ratio, and historical series.
+- **Added: Dash dashboard COT display** — Tab 5 shows positioning metrics (OI, MM Long/Short/Net, Long Ratio, Producer Net) for all 4 energy/metals commodities, plus expandable historical long vs short chart.
+- **Added: GMT+8 timezone display (Dash)** — All timestamps in the Dash dashboard now display in GMT+8 via `to_gmt8()` / `to_gmt8_date()` helpers.
+- **Fixed: S&P 500 Multiples layout** — Added CSS `cols-6` grid rule for horizontal layout instead of vertical stacking.
 
 ### 2026-03-16
 - **Added: Plotly Dash dashboard** (`dash_dashboard/`) — Full 8-tab dashboard with expandable historical charts, production deploy configs (gunicorn, systemd, nginx), AWS Lightsail deployment script. Fixed Tab 8 callback error (`color=` → `border_color=`), Global PMI key mismatch (`us_pmi` → `us_mfg_pmi`).

@@ -653,6 +653,55 @@ def extract_cot_positioning():
         return None
 
 
+def extract_cot_energy_metals():
+    """Extract CFTC COT positioning data for Crude Oil, Brent, Copper, Natural Gas."""
+    print("\n📊 Extracting CFTC COT Positioning (Energy & Copper)...")
+    try:
+        data = cot_extractor.get_cot_energy_metals()
+        if isinstance(data, dict) and 'error' in data:
+            print(f"  ❌ Error: {data['error']}")
+            return None
+
+        results = []
+        for key, csv_name in [('crude_oil', 'cot_crude_oil.csv'), ('brent', 'cot_brent.csv'),
+                               ('copper', 'cot_copper.csv'), ('natural_gas', 'cot_natural_gas.csv')]:
+            commodity_data = data.get(key, {})
+            if not isinstance(commodity_data, dict) or 'error' in commodity_data:
+                print(f"  ⚠️  No data for {key}: {commodity_data.get('error', 'unknown')}")
+                continue
+
+            hist = commodity_data.get('historical')
+            if hist is None or not isinstance(hist, pd.Series) or hist.empty:
+                continue
+
+            df = pd.DataFrame({
+                'timestamp': hist.index,
+                'date': [d.date() if hasattr(d, 'date') else d for d in hist.index],
+                'managed_money_net': hist.values,
+            })
+
+            hist_oi = commodity_data.get('historical_oi')
+            if hist_oi is not None and isinstance(hist_oi, pd.Series) and not hist_oi.empty:
+                oi_df = pd.DataFrame({
+                    'timestamp': hist_oi.index,
+                    'open_interest': hist_oi.values,
+                })
+                df = pd.merge(df, oi_df, on='timestamp', how='left')
+
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            append_to_csv(csv_name, df)
+            results.append({
+                'indicator': f'COT {key.replace("_", " ").title()}',
+                'last_date': df['date'].max(),
+                'rows': len(df)
+            })
+
+        return results if results else None
+    except Exception as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
+
+
 def extract_tga_balance():
     """Extract TGA Balance historical data."""
     return _extract_simple_series(
@@ -2271,6 +2320,9 @@ def extract_all_historical_data():
 
     # ── Indicator 22: CFTC COT Positioning ───────────────────
     _run(extract_cot_positioning, 'cot_positioning')
+
+    # ── Indicator 83: CFTC COT Energy & Copper ────────────────
+    _run(extract_cot_energy_metals, 'cot_energy_metals')
 
     # ── Indicators 23-25: TGA, Net Liquidity, SOFR ──────────
     _run(extract_tga_balance, 'tga_balance')
