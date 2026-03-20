@@ -27,6 +27,17 @@ wheels/
 .env
 .env.local
 
+# launchd plist files (contain local paths/username)
+*.plist
+
+# Virtual environments
+.venv/
+dash_dashboard/.venv/
+
+# Node modules
+node_modules/
+**/node_modules/
+
 # Data cache
 data_cache/
 *.cache

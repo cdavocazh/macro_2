@@ -9,10 +9,10 @@ import os
 try:
     import streamlit as st
     # Try Streamlit secrets first (for Streamlit Cloud deployment)
-    FRED_API_KEY = st.secrets.get('FRED_API_KEY', os.getenv('FRED_API_KEY', 'REDACTED_FRED_API_KEY'))
+    FRED_API_KEY = st.secrets.get('FRED_API_KEY', os.getenv('FRED_API_KEY', ''))
 except (ImportError, FileNotFoundError, KeyError):
     # Fall back to environment variable or hardcoded key
-    FRED_API_KEY = os.getenv('FRED_API_KEY', 'REDACTED_FRED_API_KEY')
+    FRED_API_KEY = os.getenv('FRED_API_KEY', '')
 
 # Data cache settings
 CACHE_DIR = 'data_cache'
