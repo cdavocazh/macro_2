@@ -91,10 +91,7 @@ def get_vix():
     try:
         vix = yf.Ticker("^VIX")
 
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=365)
-
-        hist_data = vix.history(start=start_date, end=end_date)
+        hist_data = vix.history(period='5y')
 
         if hist_data.empty:
             return {'error': 'No VIX data available'}
@@ -119,10 +116,7 @@ def get_move_index():
     try:
         move = yf.Ticker("^MOVE")
 
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=365)
-
-        hist_data = move.history(start=start_date, end=end_date)
+        hist_data = move.history(period='5y')
 
         if hist_data.empty:
             return {'error': 'No MOVE Index data available'}
@@ -147,10 +141,7 @@ def get_dxy():
     try:
         dxy = yf.Ticker("DX-Y.NYB")
 
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=365)
-
-        hist_data = dxy.history(start=start_date, end=end_date)
+        hist_data = dxy.history(period='5y')
 
         if hist_data.empty:
             return {'error': 'No DXY data available'}

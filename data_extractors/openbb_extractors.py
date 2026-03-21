@@ -235,7 +235,7 @@ def _vix_futures_curve_fallback():
         import yfinance as yf
 
         vix = yf.Ticker("^VIX")
-        hist = vix.history(period='2y')
+        hist = vix.history(period='5y')
         if hist.empty:
             return {'error': 'No VIX data available'}
 

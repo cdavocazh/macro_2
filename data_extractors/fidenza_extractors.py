@@ -45,8 +45,10 @@ def _yf_price(symbol, name, key=None, period_days=365, include_ohlcv=False):
     try:
         ticker = yf.Ticker(symbol)
 
-        # Use period='2y' for 730+ day requests, else explicit date range
-        if period_days >= 730:
+        # Use period string for 2y+ requests, else explicit date range
+        if period_days >= 1800:
+            hist = ticker.history(period='5y')
+        elif period_days >= 730:
             hist = ticker.history(period='2y')
         else:
             end_date = datetime.now()
@@ -55,9 +57,7 @@ def _yf_price(symbol, name, key=None, period_days=365, include_ohlcv=False):
 
         if hist.empty:
             # Retry with longer window
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=730)
-            hist = ticker.history(start=start_date, end=end_date)
+            hist = ticker.history(period='5y')
 
         if hist.empty:
             return {'error': f'No data available for {name} ({symbol})'}
@@ -242,7 +242,7 @@ def get_fed_funds_futures():
     Implied rate = 100 − price.
     """
     try:
-        result = _yf_price('ZQ=F', 'Fed Funds Futures', key='price')
+        result = _yf_price('ZQ=F', 'Fed Funds Futures', key='price', period_days=1825)
         if 'error' in result:
             return result
         # Add implied rate
