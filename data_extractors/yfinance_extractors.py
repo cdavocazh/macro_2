@@ -17,12 +17,9 @@ def get_russell_2000_indices():
         value_ticker = yf.Ticker("IWN")
         growth_ticker = yf.Ticker("IWO")
 
-        # Get historical data (last 2 years)
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=730)
-
-        value_data = value_ticker.history(start=start_date, end=end_date)
-        growth_data = growth_ticker.history(start=start_date, end=end_date)
+        # Get historical data (last 5 years)
+        value_data = value_ticker.history(period='5y')
+        growth_data = growth_ticker.history(period='5y')
 
         result = {
             'russell_2000_value': {
@@ -56,11 +53,8 @@ def get_sp500_data():
     try:
         sp500 = yf.Ticker("^GSPC")
 
-        # Get 2 years of data to calculate 200-day MA
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=730)
-
-        hist_data = sp500.history(start=start_date, end=end_date)
+        # Get 5 years of data (200-day MA needs ~200 trading days)
+        hist_data = sp500.history(period='5y')
 
         if hist_data.empty:
             return {'error': 'No data available for S&P 500'}
@@ -192,12 +186,10 @@ def get_es_futures():
     try:
         es = yf.Ticker("ES=F")
 
-        hist_data = es.history(period='2y')
+        hist_data = es.history(period='5y')
 
         if hist_data.empty:
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=730)
-            hist_data = es.history(start=start_date, end=end_date)
+            hist_data = es.history(period='2y')
             if hist_data.empty:
                 return {'error': 'No ES futures data available'}
 
@@ -253,12 +245,10 @@ def get_rty_futures():
     try:
         rty = yf.Ticker("RTY=F")
 
-        hist_data = rty.history(period='2y')
+        hist_data = rty.history(period='5y')
 
         if hist_data.empty:
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=730)
-            hist_data = rty.history(start=start_date, end=end_date)
+            hist_data = rty.history(period='2y')
             if hist_data.empty:
                 return {'error': 'No RTY futures data available'}
 
@@ -314,10 +304,7 @@ def get_jpy_exchange_rate():
     try:
         jpy = yf.Ticker("JPY=X")
 
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=365)
-
-        hist_data = jpy.history(start=start_date, end=end_date)
+        hist_data = jpy.history(period='5y')
 
         if hist_data.empty:
             return {'error': 'No JPY exchange rate data available'}
@@ -359,16 +346,14 @@ def get_major_fx_pairs():
             'EURJPY=X': ('eur_jpy', 'EUR/JPY'),
         }
 
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=365)
         result = {'source': 'yfinance', 'units': 'Exchange rates'}
 
         for ticker_symbol, (key, label) in pairs.items():
             try:
                 ticker = yf.Ticker(ticker_symbol)
-                hist = ticker.history(start=start_date, end=end_date)
+                hist = ticker.history(period='5y')
                 if hist.empty:
-                    hist = ticker.history(start=end_date - timedelta(days=730), end=end_date)
+                    hist = ticker.history(period='2y')
 
                 if not hist.empty:
                     latest = float(hist['Close'].iloc[-1])
@@ -401,14 +386,11 @@ def get_market_concentration():
     Falling ratio = market broadening.
     """
     try:
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=365)
-
         spy = yf.Ticker("SPY")
         rsp = yf.Ticker("RSP")
 
-        spy_hist = spy.history(start=start_date, end=end_date)
-        rsp_hist = rsp.history(start=start_date, end=end_date)
+        spy_hist = spy.history(period='5y')
+        rsp_hist = rsp.history(period='5y')
 
         if spy_hist.empty or rsp_hist.empty:
             return {'error': 'No SPY or RSP data available'}
@@ -476,14 +458,11 @@ def get_sector_etfs():
     plus 'historical_<ticker>' keys with pd.Series of Close prices.
     """
     try:
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=730)
-
         result = {'source': 'yfinance (SPDR Sector ETFs)'}
         for ticker, sector_name in SECTOR_ETFS.items():
             try:
                 t = yf.Ticker(ticker)
-                hist = t.history(start=start_date, end=end_date)
+                hist = t.history(period='5y')
                 if not hist.empty:
                     close = hist['Close']
                     latest = float(close.iloc[-1])
@@ -516,16 +495,13 @@ def get_vix_term_structure():
     Returns dict with spot vix, front/back prices, contango ratio, and historical.
     """
     try:
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=730)
-
         # VIX Spot
         vix = yf.Ticker('^VIX')
-        vix_hist = vix.history(start=start_date, end=end_date)
+        vix_hist = vix.history(period='5y')
 
         # VIX front-month futures (generic)
         vx1 = yf.Ticker('VX=F')
-        vx1_hist = vx1.history(start=start_date, end=end_date)
+        vx1_hist = vx1.history(period='5y')
 
         if vix_hist.empty:
             return {'error': 'No VIX spot data available'}
@@ -582,10 +558,7 @@ def get_put_call_ratio():
     try:
         # Try CBOE Put/Call index
         pc = yf.Ticker('^PCPUT')
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=730)
-
-        hist = pc.history(start=start_date, end=end_date)
+        hist = pc.history(period='5y')
 
         if not hist.empty:
             close = hist['Close']
@@ -633,16 +606,13 @@ def get_baltic_dry_index():
     Rising BDI = increased demand for shipping raw materials = economic growth.
     """
     try:
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=730)
-
         bdi = yf.Ticker('^BDI')
-        hist = bdi.history(start=start_date, end=end_date)
+        hist = bdi.history(period='5y')
 
         if hist.empty:
             # Try alternate ticker
             bdi = yf.Ticker('BDIY')
-            hist = bdi.history(start=start_date, end=end_date)
+            hist = bdi.history(period='5y')
 
         if hist.empty:
             return {'error': 'Baltic Dry Index not available from yfinance'}

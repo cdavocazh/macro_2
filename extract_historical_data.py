@@ -1897,7 +1897,11 @@ def extract_financial_agent_historical():
     timestamp, date, {value_column}.
     """
     print("\n📊 Extracting Financial Agent FRED series (27 series)...")
-    batch_results = get_all_financial_agent_series()
+    try:
+        batch_results = get_all_financial_agent_series()
+    except (ValueError, Exception) as e:
+        print(f"  ❌ Error: {str(e)}")
+        return None
     results = []
 
     for key, (series_id, col_name) in FA_SERIES_MAP.items():

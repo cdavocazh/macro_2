@@ -19,14 +19,12 @@ def get_commodity_data(symbol, name):
     try:
         ticker = yf.Ticker(symbol)
 
-        # Get 2 years of historical data for full OHLCV
-        hist_data = ticker.history(period='2y')
+        # Get 5 years of historical data for full OHLCV
+        hist_data = ticker.history(period='5y')
 
         if hist_data.empty:
-            # Fallback: try with explicit date range
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=730)
-            hist_data = ticker.history(start=start_date, end=end_date)
+            # Fallback: try with shorter period
+            hist_data = ticker.history(period='2y')
 
             if hist_data.empty:
                 return {'error': f'No data available for {name}'}

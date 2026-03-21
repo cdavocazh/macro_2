@@ -25,7 +25,7 @@ from bs4 import BeautifulSoup
 #         pattern without importing to keep this module self-contained)
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _yf_price(symbol, name, key=None, period_days=365, include_ohlcv=False):
+def _yf_price(symbol, name, key=None, period_days=1825, include_ohlcv=False):
     """Fetch latest price + history for a yfinance ticker.
 
     Args:
@@ -98,7 +98,7 @@ def _yf_price(symbol, name, key=None, period_days=365, include_ohlcv=False):
 
 def get_brent_crude():
     """Get Brent Crude Oil (BZ=F) futures continuous contract data with 2-year OHLCV."""
-    return _yf_price('BZ=F', 'Brent Crude', key='price', period_days=730, include_ohlcv=True)
+    return _yf_price('BZ=F', 'Brent Crude', key='price', period_days=1825, include_ohlcv=True)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -107,7 +107,7 @@ def get_brent_crude():
 
 def get_nikkei_225():
     """Get Nikkei 225 index (^N225) data."""
-    return _yf_price('^N225', 'Nikkei 225', key='nikkei_225')
+    return _yf_price('^N225', 'Nikkei 225', key='nikkei_225', period_days=1825)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -126,15 +126,13 @@ def get_em_indices():
     }
 
     result = {'source': 'yfinance'}
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=365)
 
     for symbol, (key, label) in indices.items():
         try:
             ticker = yf.Ticker(symbol)
-            hist = ticker.history(start=start_date, end=end_date)
+            hist = ticker.history(period='5y')
             if hist.empty:
-                hist = ticker.history(start=end_date - timedelta(days=730), end=end_date)
+                hist = ticker.history(period='2y')
             if not hist.empty:
                 close = hist['Close']
                 latest = float(close.iloc[-1])
@@ -198,14 +196,11 @@ def get_sofr_futures_term_structure():
         # Build candidate ticker list
         candidates = ['SR3=F'] + _generate_sofr_contract_tickers()
 
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=730)
-
         contracts = []
         for symbol in candidates:
             try:
                 ticker = yf.Ticker(symbol)
-                hist = ticker.history(start=start_date, end=end_date)
+                hist = ticker.history(period='5y')
                 if hist.empty:
                     continue
                 close = hist['Close']
@@ -262,11 +257,8 @@ def get_xau_jpy():
     Uses aligned daily close prices for the product.
     """
     try:
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=365)
-
-        gold = yf.Ticker('GC=F').history(start=start_date, end=end_date)['Close']
-        jpy = yf.Ticker('JPY=X').history(start=start_date, end=end_date)['Close']
+        gold = yf.Ticker('GC=F').history(period='5y')['Close']
+        jpy = yf.Ticker('JPY=X').history(period='5y')['Close']
 
         if gold.empty or jpy.empty:
             return {'error': 'No data for GC=F or JPY=X'}
@@ -307,11 +299,8 @@ def get_gold_silver_ratio():
     Falling = silver outperformance (risk-on).
     """
     try:
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=365)
-
-        gold = yf.Ticker('GC=F').history(start=start_date, end=end_date)['Close']
-        silver = yf.Ticker('SI=F').history(start=start_date, end=end_date)['Close']
+        gold = yf.Ticker('GC=F').history(period='5y')['Close']
+        silver = yf.Ticker('SI=F').history(period='5y')['Close']
 
         if gold.empty or silver.empty:
             return {'error': 'No data for GC=F or SI=F'}
