@@ -2,7 +2,7 @@
 
 ## What is this project?
 
-Macroeconomic indicators dashboard with large-cap equity financials. Fetches 86+ indicators from financial APIs (yfinance, FRED, SEC EDGAR, OpenBB/Finviz, web scrapers, MOF Japan, AAII), displays them across **4 dashboard frontends** (Streamlit, Plotly Dash, Grafana, React), caches locally for fast startup, and exports to CSV. Includes 2-year OHLCV history for commodities and futures, sector ETF tracking, and high-frequency macro proxies.
+Macroeconomic indicators dashboard with large-cap equity financials. Fetches 88+ indicators from financial APIs (yfinance, FRED, SEC EDGAR, OpenBB/Finviz, web scrapers, MOF Japan, AAII, Hyperliquid), displays them across **4 dashboard frontends** (Streamlit, Plotly Dash, Grafana, React), caches locally for fast startup, and exports to CSV. Includes 5-year OHLCV history for commodities and futures (back to 2021), sector ETF tracking, high-frequency macro proxies, and Hyperliquid DeFi perpetual futures with 1-minute refresh and multi-interval OHLCV candlestick charts.
 
 **Repo:** https://github.com/cdavocazh/macro_2
 **Branch:** main
@@ -69,10 +69,15 @@ python fast_extract.py                # run once
 python fast_extract.py --dry-run      # list what would be extracted
 python fast_extract.py --force        # ignore freshness guard
 
-# Install macOS launchd auto-scheduler (both jobs)
-bash setup_launchd.sh                 # install scheduled-extract + fast-extract
-bash setup_launchd.sh --status        # check both jobs
-bash setup_launchd.sh --uninstall     # remove both jobs
+# Hyperliquid extraction — 1-minute perp + spot data (~0.5s)
+python hl_extract.py                  # run once
+python hl_extract.py --dry-run        # show what would be extracted
+python hl_extract.py --force          # ignore freshness guard
+
+# Install macOS launchd auto-scheduler (all 3 jobs)
+bash setup_launchd.sh                 # install scheduled-extract + fast-extract + hl-extract
+bash setup_launchd.sh --status        # check all jobs
+bash setup_launchd.sh --uninstall     # remove all jobs
 
 # Run data review agent (requires MINIMAX_API_KEY)
 python -m agent.openai_agents.agent "Scan all companies for missing data"
@@ -99,6 +104,7 @@ data_aggregator.py            Orchestrator — fetches all 86 indicators, saves/
   │   ├── sec_extractor.py              Top 20 company financials (SEC EDGAR XBRL)
   │   ├── thirteenf_extractor.py       13F-HR institutional holdings (5 funds, QoQ changes)
   │   ├── fidenza_extractors.py       13 indicators (Brent, Nikkei, EM indices, SOFR/FF futures, XAU/JPY, Au/Ag ratio, AAII, OPEC, gold reserves)
+  │   ├── hyperliquid_extractor.py    2 indicators (HL perps: BTC/ETH/SOL/PAXG/HYPE/OIL + HIP-3 spot stocks)
   │   └── sp500_tickers.py             S&P 500 constituent list (Wikipedia + cache)
   └── utils/helpers.py               Cache serialization, CSV export, formatting
 
@@ -121,7 +127,8 @@ react_dashboard/              React + Vite dashboard with FastAPI backend
   ├── frontend/src/           React components (8 tab panels, metric cards, charts)
   └── start.sh                Start script (backend + frontend concurrently)
 
-fast_extract.py               5-minute real-time yfinance extraction (20 extractors, ~5s)
+fast_extract.py               5-minute real-time yfinance extraction (31 extractors, ~5s) + cache merge into all_indicators.json
+hl_extract.py                 1-minute Hyperliquid extraction (perps + spot, ~0.5s) + partial cache merge
 scheduled_extract.py          Full catch-up script — FRED, SEC, web scrapers (does NOT touch app.py)
 extract_historical_data.py    Append-only historical CSV builder (dual-source equity)
 extract_sp500_financials.py   Batch extraction of S&P 500 financials (~30-40 min)
@@ -144,7 +151,7 @@ agent/                        Financial data discrepancy review agent
 | 2 | Market Indices | ES/RTY futures, breadth, Russell 2000 V/G, S&P 500/200MA, SPY/RSP concentration, Fama-French 5 Factors, Earnings Calendar |
 | 3 | Volatility & Risk | VIX, MOVE, VIX/MOVE ratio, Put/Call, CBOE SKEW, VIX Futures Curve, SPY Put/Call OI, IV Skew |
 | 4 | Macro & Currency | DXY, USD/JPY, EUR/USD, GBP/USD, EUR/JPY, TGA, net liquidity, M2, SOFR, US 2Y, Japan 2Y, yield spread, 10Y yield, ISM PMI, Money Supply (M1/M2) |
-| 5 | Commodities | Gold, Silver, Crude Oil, Copper, Natural Gas, Cu/Au ratio, CFTC COT positioning (gold/silver + energy/copper via SODA API) |
+| 5 | Commodities | Gold, Silver, Crude Oil, Copper, Natural Gas, Cu/Au ratio, CFTC COT positioning (gold/silver + energy/copper via SODA API), Hyperliquid perps (BTC, ETH, SOL, PAXG, HYPE, OIL) + HIP-3 spot stocks |
 | 6 | Large-cap Financials | Top 20 dropdown + any-ticker text input, dual-source (Yahoo + SEC EDGAR), quarterly statements |
 | 7 | Rates & Credit | Yield curve regime, 2s10s spread, global yields (US 5Y/10Y, DE/UK/CN 10Y), real yield, breakevens, HY/IG OAS, NFCI, Fed Funds, bank reserves, SLOOS, unemployment, claims, CPI, PPI, PCE, ECB Rates, CPI Components, EU Yields, Global CPI, Full Treasury Curve, Corporate Spreads |
 | 8 | Economic Activity | Nonfarm Payrolls, JOLTS, Quits Rate, Sahm Rule, Consumer Sentiment, Retail Sales, ISM Services PMI, Industrial Production, Housing Starts, OECD CLI, Intl Unemployment, Intl GDP, Global PMI |
@@ -244,7 +251,8 @@ TOP_20_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM
 
 ## Key design decisions
 
-- **Cache-first startup with auto-reload:** Dashboard loads from `data_cache/all_indicators.json` instantly. `reload_if_stale()` in `data_aggregator.py` compares file mtime against in-memory `last_update` (~0.1ms syscall) and re-reads JSON only when the cache file is newer. This means `scheduled_extract.py` updates are picked up on next Streamlit rerun without manual Refresh.
+- **Cache-first startup with auto-reload:** Dashboard loads from `data_cache/all_indicators.json` instantly. `reload_if_stale()` in `data_aggregator.py` compares file mtime against in-memory `last_update` (~0.1ms syscall) and re-reads JSON only when the cache file is newer. Both `scheduled_extract.py` (full, 5x/day) and `fast_extract.py` (yfinance subset, every 5 min) update the cache file, so dashboards stay fresh even if the full extraction fails. `load_from_cache()` falls back to stale data when the cache is expired (>24h), preventing 503 errors.
+- **Fast extract cache merge:** `fast_extract.py` merges ~18 yfinance-based indicators into `all_indicators.json` after each run using atomic write (`os.rename`). This keeps the cache timestamp fresh so dashboards never see an expired cache during market hours. The extractors are called a second time but yfinance's internal HTTP cache makes this near-free.
 - **Pandas serialization:** `helpers.py` has `_serialize_value()` / `_deserialize_value()` to handle `pd.Series`, `pd.DataFrame`, numpy types in JSON cache. These must stay in sync.
 - **Freshness guard:** `scheduled_extract.py` skips if cache is <15 minutes old. Prevents duplicate API calls.
 - **Append-only CSVs:** `extract_historical_data.py` uses `append_to_csv()` which deduplicates by timestamp column. Never overwrites.
@@ -262,7 +270,7 @@ TOP_20_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM
 - **13F holdings extraction:** `thirteenf_extractor.py` parses SEC 13F-HR XML infotables for 5 tracked institutional funds. Reuses `_rate_limit()` and `SEC_HEADERS` from `sec_extractor.py`. Handles 13F-HR/A amendments (prefers latest per quarter). Computes QoQ changes keyed by `(cusip, put_call)`. XML `<value>` field is in dollars (not thousands despite SEC form instructions).
 - **Fidenza Macro gap-fill extractors:** `fidenza_extractors.py` adds 10 functions for instruments/indicators from the Fidenza Macro trading newsletter. Includes yfinance price series (Brent, Nikkei, EM indices, SOFR/Fed Funds futures), computed ratios (XAU/JPY, Gold/Silver), and web scrapes (AAII sentiment, OPEC production, gold reserves share). FRED additions (ADP, WALCL, term premia) live in `fred_extractors.py`. All 13 extraction wrappers are registered in `extract_historical_data.py`. SOFR futures use dynamic quarterly contract ticker generation (SR3{H/M/U/Z}{YY}.CME format). XAU/JPY and Gold/Silver ratio use `.tz_localize(None).normalize()` to handle cross-timezone yfinance index joins.
 - **CFTC COT SODA API:** `cot_extractor.py` uses CFTC SODA API (`publicreporting.cftc.gov/resource/72hh-3qpy.json`) as fast primary path for COT positioning data (crude oil `067651`, Brent `06765T`, copper `085692`, natural gas `023651`, gold `088691`, silver `084691`). Falls back to `cot-reports` bulk download if SODA fails. Returns managed money long/short/net, producer net, swap positions, and historical series. Disaggregated futures report format.
-- **OHLCV extension (Data Extraction Requirements):** Commodities (GC=F, SI=F, CL=F, HG=F), ES/RTY futures, and Brent crude now return `historical_ohlcv` (DataFrame with Open/High/Low/Close/Volume) alongside existing `historical` (Close-only Series) for backward compatibility. All use `period='2y'` for ~504 trading days of history. OHLCV CSVs use `{prefix}_open/high/low/close/volume` column naming. `_extract_ohlcv_series()` helper in `extract_historical_data.py` handles the DataFrame → CSV conversion.
+- **OHLCV extension (Data Extraction Requirements):** Commodities (GC=F, SI=F, CL=F, HG=F), ES/RTY futures, and Brent crude now return `historical_ohlcv` (DataFrame with Open/High/Low/Close/Volume) alongside existing `historical` (Close-only Series) for backward compatibility. All use `period='5y'` for ~1,260 trading days of history (back to 2021). OHLCV CSVs use `{prefix}_open/high/low/close/volume` column naming. `_extract_ohlcv_series()` helper in `extract_historical_data.py` handles the DataFrame → CSV conversion.
 - **Sector ETFs:** 11 SPDR sector ETFs (XLK, XLF, XLV, XLE, XLI, XLC, XLY, XLP, XLB, XLRE, XLU) tracked via `get_sector_etfs()` in `yfinance_extractors.py`. Wide-format CSV with one column per ETF.
 - **High-frequency macro proxies:** GDPNow (Atlanta Fed, FRED GDPNOW), WEI (NY Fed Weekly Economic Index, FRED WEI) for macro nowcasting. VIX term structure (spot vs futures, contango ratio). BDI and put/call ratio attempted but not available on yfinance (known limitation).
 - **Compact dashboard layout:** Custom CSS via `st.markdown(unsafe_allow_html=True)` overrides Streamlit's default spacing. Key rules: metric padding 0.2rem, value font 1.3rem, label 0.72rem, caption 0.68rem, column gap 0.3rem. Tab dividers removed, verbose captions pruned, sidebar About collapsed into expander. Tab 3 uses 3 columns (VIX/MOVE/Ratio), Tab 4 FX uses 5 columns (DXY/JPY/EUR-USD/GBP-USD/EUR-JPY). Tab 1 Historical Valuation section removed (was making a slow `yf.Ticker("SPY")` network call on every page load).
@@ -284,23 +292,25 @@ TOP_20_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM
 
 ## Scheduling (launchd)
 
-Two launchd jobs run at different frequencies:
+Three launchd jobs run at different frequencies:
 
 | Job | Plist | Schedule | What it extracts | Timeout |
 |-----|-------|----------|-----------------|---------|
-| **fast-extract** | `com.macro2.fast-extract.plist` | Every 5 minutes (24/7) | Real-time yfinance only: futures, FX, commodities, indices, credit ETFs, sector ETFs, OHLCV, VIX term structure (31 extractors) | 4 min |
-| **scheduled-extract** | `com.macro2.scheduled-extract.plist` | 5x/day Mon-Sat (1am, 8:30am, 1pm, 5pm, 10pm GMT+8) | Full extraction: FRED, SEC, web scrapers, yfinance, all CSVs | 10 min |
+| **hl-extract** | `com.macro2.hl-extract.plist` | Every 1 minute (24/7) | Hyperliquid perps (BTC, ETH, SOL, PAXG, HYPE, OIL) + HIP-3 spot stocks. Partial cache merge (keys 84/85 only). | 50s |
+| **fast-extract** | `com.macro2.fast-extract.plist` | Every 5 minutes (24/7) | Real-time yfinance only: futures, FX, commodities, indices, credit ETFs, sector ETFs, OHLCV, VIX term structure (31 extractors). Also merges ~18 indicators into `all_indicators.json` cache so dashboards stay fresh. | 4 min |
+| **scheduled-extract** | `com.macro2.scheduled-extract.plist` | 5x/day Mon-Sat (1am, 8:30am, 1pm, 5pm, 10pm GMT+8) | Full extraction: FRED, SEC, web scrapers, yfinance, all CSVs | 20 min |
 
 **Python path:** `/Users/kriszhang/mambaforge/bin/python3`
-**Logs:** `logs/launchd_stdout.log`, `logs/fast_extract_stdout.log`
+**Logs:** `logs/launchd_stdout.log`, `logs/fast_extract_stdout.log`, `logs/hl_extract_stdout.log`
 
-launchd catches up missed runs after sleep (unlike cron). `fast_extract.py` has a 3-minute freshness guard to prevent overlap. `scheduled_extract.py` has a 15-minute freshness guard. The `TimeOut` in each plist auto-kills hung processes.
+launchd catches up missed runs after sleep (unlike cron). `hl_extract.py` has a 45-second freshness guard. `fast_extract.py` has a 3-minute freshness guard. `scheduled_extract.py` has a 15-minute freshness guard. The `TimeOut` in each plist auto-kills hung processes.
 
 ## API keys
 
-- **FRED:** Hardcoded fallback in `config.py`, overridden by `FRED_API_KEY` env var or Streamlit secrets
+- **FRED:** Set `FRED_API_KEY` in `.env` file (gitignored), env var, or Streamlit secrets. Get a free key from https://fred.stlouisfed.org/docs/api/api_key.html
 - **SEC EDGAR:** No key needed (User-Agent header required, set in `sec_extractor.py`)
 - **yfinance:** No key needed
+- **Hyperliquid:** No key needed (public REST API + WebSocket)
 - **Minimax (agent only):** `MINIMAX_API_KEY` env var required for agent subfolder
 - **All others:** No key needed (web scraping or public data)
 
@@ -329,6 +339,23 @@ Equity financials return a nested dict per company with `income_statement`, `bal
 | Put/Call Ratio | yfinance ^PCPUT/^PCALL | Tickers delisted from yfinance | Returns error dict gracefully |
 | Baltic Dry Index | yfinance ^BDI/BDIY | Tickers delisted from yfinance | Returns error dict gracefully |
 | VIX Futures (VX=F) | yfinance VX=F | Ticker not available on yfinance | VIX spot (^VIX) works, front-month futures unavailable. **Also see** `63_vix_futures_curve` (CBOE/yfinance) |
+| Shiller CAPE | Robert Shiller Yale Excel | `ie_data.xls` last updated Oct 2023 — source is dead | Stuck at Sep 2023 value (30.81). Needs switch to multpl.com or FRED computation |
+| Global CPI (US) | FRED `CPALTT01USM657N` | OECD CPI YoY series discontinued, frozen at Mar 2024 | EU/JP/UK series still updating. Switch US to `CPIAUCSL` with manual YoY calc |
+
+## QA / Testing
+
+**MANDATORY:** Every code change — new feature, bug fix, or refactor — must pass the testing checklist in [`QA_SOP.md`](QA_SOP.md) before being considered complete. This includes:
+
+- React `<details>` chart pattern verification (Section 1)
+- Duplicate timestamp deduplication (Section 2)
+- API response validation (Section 3)
+- Cache merge safety (Section 4)
+- React build + tab navigation + console error check (Section 5)
+- Dash dashboard render check (Section 6)
+- Data extractor round-trip test (Section 7)
+- Cross-dashboard consistency (Section 8)
+
+The `QA_SOP.md` file also contains a **Bug Log** documenting every production bug encountered and its root cause, to prevent regressions.
 
 ## Common tasks
 
@@ -409,8 +436,11 @@ bash grafana_dashboard/start.sh local   # starts API bridge + Grafana
 | Dash dashboard changes | `dash_dashboard/` files, CLAUDE.md "Dashboard features (Plotly Dash)" |
 | Grafana dashboard changes | `grafana_dashboard/CLAUDE.md`, `grafana_dashboard/README.md` |
 | React dashboard changes | `react_dashboard/CLAUDE.md`, `react_dashboard/README.md` |
+| New bug fix or pattern fix | `QA_SOP.md` Bug Log table, relevant checklist section |
 
 **Never commit code changes without checking these docs for staleness.** When in doubt, update. Bump the version in STATUS.md for any non-trivial change.
+
+**After every code change**, run the QA checklist in `QA_SOP.md` Section 10 (Pre-Commit Quick Check).
 
 ## Deployment gotcha (Streamlit Cloud)
 
@@ -429,6 +459,21 @@ bash grafana_dashboard/start.sh local   # starts API bridge + Grafana
 - Agent: openai-agents, langchain, langgraph, Minimax LLM API
 
 ## Changelog
+
+### 2026-03-30
+- **Extended: All yfinance indicators to 5y history** — Changed `period='2y'` / `timedelta(days=730)` to `period='5y'` across `yfinance_extractors.py`, `commodities_extractors.py`, and `fidenza_extractors.py`. Affects Russell 2000, S&P 500/MA200, ES/RTY futures, DXY, JPY, FX pairs, market concentration, sector ETFs, VIX term structure, commodities (gold/silver/crude/copper), Brent, Nikkei, EM indices, XAU/JPY, gold/silver ratio, credit ETFs. 68 CSVs now have 1,000+ rows (back to March 2021), up from 15 previously.
+- **Fixed: extract_historical_data.py crash** — `extract_financial_agent_historical()` crashed with unhandled `ValueError` when `FRED_API_KEY` not set. Now catches gracefully and returns `None`.
+- **Identified: 2 broken data sources** — Shiller CAPE stuck at Sep 2023 (Yale Excel file no longer updated), Global CPI stuck at Mar 2024 (FRED `CPALTT01USM657N` series discontinued).
+
+### 2026-03-22
+- **Added: Hyperliquid perpetual futures (indicators 84, 85)** — New `hyperliquid_extractor.py` fetches perp data (BTC, ETH, SOL, PAXG, HYPE, OIL) and HIP-3 spot stock tokens (TSLA, NVDA, AAPL, GOOGL, AMZN, META, MSFT, SPY, QQQ). OIL (`flx:OIL`) is a Felix-deployed WTI crude oil perp — price derived from 1m candle close since it's not in standard allMids.
+- **Added: OHLCV candlestick charts** — All 4 dashboards now show multi-interval OHLCV candlestick charts for HL instruments AND yfinance instruments (DXY, FX pairs, commodities, VIX, MOVE, ES/RTY). React uses TradingView lightweight-charts; Dash/Streamlit use Plotly `go.Candlestick()`. Intervals: 1m–1D (HL) and 1H–1W (yfinance).
+- **Added: Intraday OHLCV API endpoints** — `GET /api/intraday/{key}?interval=` (yfinance, 17 instruments) and `GET /api/hl/ohlcv/{coin}?interval=` (Hyperliquid, 6 perps) in React and Grafana backends.
+- **Added: 1-minute Hyperliquid extraction** (`hl_extract.py`) — Standalone minutely script with partial cache merge (updates only keys 84/85 in shared JSON cache via atomic write). 45-second freshness guard. New `com.macro2.hl-extract.plist` launchd job.
+- **Added: Real-time WebSocket relay (React)** — `hl_ws_service.py` connects to Hyperliquid WebSocket, relays ~1s price updates. OIL price fetched via REST (not in WS allMids). Toggle-controlled.
+- **Added: Live toggle (Dash/Streamlit)** — 1-minute on-demand HL data refresh via toggle button (no background service).
+- **Fixed: Candle timestamp normalization** — `get_hl_candles()` no longer calls `.normalize()` on timestamps (was collapsing intraday candles to midnight).
+- **Fixed: Dash Tab5 metric_card 'sub' kwarg error** — Rewritten commodities section to use `indicator_with_chart()` pattern.
 
 ### 2026-03-17
 - **Added: COT energy/copper positioning (indicator 83)** — Extended `cot_extractor.py` with CFTC SODA API as fast primary path for crude oil, Brent, copper, natural gas positioning. Falls back to `cot-reports` bulk download. Returns managed money long/short/net, producer net, swap positions, long ratio, and historical series.
