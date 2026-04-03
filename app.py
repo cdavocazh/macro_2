@@ -1185,6 +1185,49 @@ with tab5:
             )
             st.plotly_chart(fig, use_container_width=True)
 
+    # ── Hyperliquid Perpetual Futures ─────────────────────────────────────────
+    st.subheader("Hyperliquid Perpetual Futures")
+    st.caption("DeFi perpetual futures on Hyperliquid. 24/7 markets, no expiry. Funding rate annualized.")
+
+    hl_perps = aggregator.get_indicator('84_hl_perps')
+    if 'error' in hl_perps:
+        st.error(f"⚠️ {hl_perps['error']}")
+    else:
+        hl_coins = [
+            ('btc', 'Bitcoin (BTC)', '#F7931A'),
+            ('eth', 'Ethereum (ETH)', '#627EEA'),
+            ('sol', 'Solana (SOL)', '#9945FF'),
+            ('hype', 'Hyperliquid (HYPE)', '#00D4AA'),
+            ('paxg', 'PAX Gold (PAXG)', '#FFD700'),
+            ('oil', 'WTI Crude Oil (OIL)', '#8B4513'),
+            ('sp500', 'S&P 500 (SP500)', '#1565c0'),
+            ('xyz100', 'Nasdaq 100 (XYZ100)', '#7b1fa2'),
+            ('natgas', 'Natural Gas (NATGAS)', '#4a148c'),
+            ('copper_hl', 'Copper (COPPER)', '#B87333'),
+            ('brentoil', 'Brent Crude (BRENTOIL)', '#2c2c2c'),
+        ]
+        for coin_key, label, color in hl_coins:
+            coin = hl_perps.get(coin_key, {})
+            if not isinstance(coin, dict) or 'price' not in coin:
+                continue
+            st.markdown(f"**{label}**")
+            c1, c2, c3, c4 = st.columns(4)
+            price = coin['price']
+            with c1:
+                price_str = f"${price:,.2f}" if price >= 100 else f"${price:,.4f}"
+                st.metric("Mid Price", price_str, f"{coin.get('change_1d', 0):+.2f}%")
+            with c2:
+                st.metric("Funding (ann.)", f"{coin.get('funding_rate', 0):.2f}%")
+                st.caption(f"8h: {coin.get('funding_rate_8h', 0)}%")
+            with c3:
+                oi = coin.get('open_interest', 0)
+                st.metric("Open Interest", f"${oi / 1e6:.1f}M" if oi else "N/A")
+            with c4:
+                vol = coin.get('volume_24h', 0)
+                st.metric("24h Volume", f"${vol / 1e6:.1f}M" if vol else "N/A")
+            # HL OHLCV candlestick chart
+            _render_history_expander(coin, label, color)
+
 # Tab 6: Large-cap Financials
 
 def _fmt_dollar(v):

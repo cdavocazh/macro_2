@@ -44,14 +44,18 @@ def _deserialize_value(obj):
     """Restore pandas objects from cached JSON."""
     if isinstance(obj, dict):
         if obj.get('__type__') == 'pd.Series':
-            idx = pd.to_datetime(obj['index'], errors='coerce')
+            idx = pd.to_datetime(obj['index'], utc=True, errors='coerce')
             if idx.isna().all():
                 idx = obj['index']
+            else:
+                idx = idx.tz_localize(None)
             return pd.Series(obj['values'], index=idx, name=obj.get('name'))
         elif obj.get('__type__') == 'pd.DataFrame':
-            idx = pd.to_datetime(obj['index'], errors='coerce')
+            idx = pd.to_datetime(obj['index'], utc=True, errors='coerce')
             if idx.isna().all():
                 idx = obj['index']
+            else:
+                idx = idx.tz_localize(None)
             df = pd.DataFrame(obj['data'], index=idx)
             return df
         elif obj.get('__type__') == 'datetime':
@@ -77,8 +81,12 @@ def save_to_cache(data, cache_key, cache_dir='data_cache'):
         json.dump(cache_data, f, default=str)
 
 
-def load_from_cache(cache_key, cache_dir='data_cache', max_age_hours=24):
-    """Load data from cache if available and not expired."""
+def load_from_cache(cache_key, cache_dir='data_cache', max_age_hours=24, fallback_stale=False):
+    """Load data from cache if available and not expired.
+
+    If fallback_stale=True, returns expired data instead of None when
+    the cache file exists but is older than max_age_hours.
+    """
     cache_file = os.path.join(cache_dir, f"{cache_key}.json")
 
     if not os.path.exists(cache_file):
@@ -92,6 +100,8 @@ def load_from_cache(cache_key, cache_dir='data_cache', max_age_hours=24):
         age = datetime.now() - timestamp
 
         if age < timedelta(hours=max_age_hours):
+            return _deserialize_value(cache_data['data'])
+        elif fallback_stale:
             return _deserialize_value(cache_data['data'])
         else:
             return None

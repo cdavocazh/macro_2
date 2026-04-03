@@ -17,6 +17,7 @@ Schedule: com.macro2.fast-extract.plist (every 300 seconds)
 """
 
 import argparse
+import json
 import os
 import socket
 import sys
@@ -74,6 +75,94 @@ FAST_EXTRACTORS = [
     ('put_call_ratio', 'extract_put_call_ratio', 'Put/Call ratio'),
     ('baltic_dry_index', 'extract_baltic_dry_index', 'Baltic Dry Index'),
 ]
+
+
+# ── Cache merge: map fast extractors to aggregator indicator keys ──────────
+# After CSV extraction, we call these to merge fresh data into
+# data_cache/all_indicators.json so dashboards stay updated even when
+# scheduled_extract.py hasn't run recently.
+_CACHE_FILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    'data_cache', 'all_indicators.json'
+)
+
+
+def _get_cache_indicator_map():
+    """Lazy import to avoid loading heavy modules at startup."""
+    from data_extractors import yfinance_extractors, commodities_extractors, web_scrapers
+    return [
+        ('8_vix', yfinance_extractors.get_vix),
+        ('9_move_index', yfinance_extractors.get_move_index),
+        ('8b_vix_move_ratio', yfinance_extractors.calculate_vix_move_ratio),
+        ('6a_sp500_to_ma200', yfinance_extractors.get_sp500_data),
+        ('2_russell_2000', yfinance_extractors.get_russell_2000_indices),
+        ('10_dxy', yfinance_extractors.get_dxy),
+        ('20_jpy', yfinance_extractors.get_jpy_exchange_rate),
+        ('54_fx_pairs', yfinance_extractors.get_major_fx_pairs),
+        ('55_market_concentration', yfinance_extractors.get_market_concentration),
+        ('17_es_futures', yfinance_extractors.get_es_futures),
+        ('18_rty_futures', yfinance_extractors.get_rty_futures),
+        ('13_gold', commodities_extractors.get_gold),
+        ('14_silver', commodities_extractors.get_silver),
+        ('15_crude_oil', commodities_extractors.get_crude_oil),
+        ('16_copper', commodities_extractors.get_copper),
+        ('56_natural_gas', commodities_extractors.get_natural_gas),
+        ('57_cu_au_ratio', commodities_extractors.get_copper_gold_ratio),
+        ('5_spx_call_skew', web_scrapers.get_cboe_skew_index),
+    ]
+
+
+def _merge_into_cache(quiet=False):
+    """Merge fresh yfinance results into all_indicators.json.
+
+    Loads the existing cache file directly (bypassing TTL), updates only
+    the fast-extract indicator keys, and writes back atomically.
+    """
+    from utils.helpers import _serialize_value
+
+    # Load existing cache or create skeleton
+    if os.path.exists(_CACHE_FILE):
+        try:
+            with open(_CACHE_FILE, 'r') as f:
+                cache_data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            cache_data = {'timestamp': datetime.now().isoformat(), 'data': {}}
+    else:
+        os.makedirs(os.path.dirname(_CACHE_FILE), exist_ok=True)
+        cache_data = {'timestamp': datetime.now().isoformat(), 'data': {}}
+
+    indicator_map = _get_cache_indicator_map()
+    merged = 0
+
+    for key, extractor_func in indicator_map:
+        try:
+            result = extractor_func()
+            if result and not isinstance(result, dict) or (isinstance(result, dict) and 'error' not in result):
+                cache_data['data'][key] = _serialize_value(result)
+                merged += 1
+        except Exception:
+            pass  # Keep existing cached value for this key
+
+    if merged == 0:
+        return
+
+    # Update timestamp and write atomically
+    cache_data['timestamp'] = datetime.now().isoformat()
+    tmp_file = _CACHE_FILE + '.tmp'
+    try:
+        with open(tmp_file, 'w') as f:
+            json.dump(cache_data, f, default=str)
+        os.rename(tmp_file, _CACHE_FILE)
+        if not quiet:
+            print(f"  Merged {merged}/{len(indicator_map)} indicators into cache")
+    except OSError as e:
+        if not quiet:
+            print(f"  Warning: cache merge failed: {e}")
+        # Clean up tmp file
+        try:
+            os.remove(tmp_file)
+        except OSError:
+            pass
 
 
 def _check_freshness(force=False):
@@ -167,6 +256,10 @@ def run_fast_extraction(force=False, quiet=False, dry_run=False):
                 print(f"  ❌ {key}: {e}")
 
     _update_freshness()
+
+    # Merge fresh results into all_indicators.json so dashboards stay updated
+    _merge_into_cache(quiet=quiet)
+
     _write_progress(total, total, "Complete", "done")
 
     elapsed = time.time() - start_time

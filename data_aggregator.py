@@ -14,6 +14,7 @@ from data_extractors import (
     equity_financials_extractor,
     global_yields_extractor,
     yield_curve_extractor,
+    hyperliquid_extractor,
 )
 from utils.helpers import save_to_cache, load_from_cache, get_cache_timestamp, export_indicators_to_csv
 from datetime import datetime
@@ -59,7 +60,8 @@ class MacroIndicatorAggregator:
         Try to load indicators from local cache.
         Returns True if cache was loaded, False otherwise.
         """
-        cached = load_from_cache(CACHE_KEY, cache_dir=CACHE_DIR, max_age_hours=CACHE_MAX_AGE_HOURS)
+        cached = load_from_cache(CACHE_KEY, cache_dir=CACHE_DIR, max_age_hours=CACHE_MAX_AGE_HOURS,
+                                 fallback_stale=True)
         if cached is not None:
             self.indicators = cached
             self.last_update = get_cache_timestamp(CACHE_KEY, cache_dir=CACHE_DIR)
@@ -649,10 +651,24 @@ class MacroIndicatorAggregator:
         self._fetch_with_error_handling('82_erp', openbb_extractors.get_equity_risk_premium)
 
         # 83. CFTC COT Positioning (Energy & Copper)
-        print("  [83/83] Fetching CFTC COT positioning data (Crude Oil, Brent, Copper, Nat Gas)...")
+        print("  [83/85] Fetching CFTC COT positioning data (Crude Oil, Brent, Copper, Nat Gas)...")
         self._fetch_with_error_handling(
             '83_cot_energy_metals',
             cot_extractor.get_cot_energy_metals
+        )
+
+        # 84. Hyperliquid Perpetual Futures
+        print("  [84/85] Fetching Hyperliquid perps (BTC, ETH, SOL, PAXG, HYPE, OIL)...")
+        self._fetch_with_error_handling(
+            '84_hl_perps',
+            hyperliquid_extractor.get_hl_perps
+        )
+
+        # 85. Hyperliquid HIP-3 Spot Stocks
+        print("  [85/85] Fetching Hyperliquid HIP-3 spot stocks (TSLA, NVDA, AAPL, ...)...")
+        self._fetch_with_error_handling(
+            '85_hl_spot_stocks',
+            hyperliquid_extractor.get_hl_spot_stocks
         )
 
         print(f"\nCompleted! Last update: {self.last_update.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -727,6 +743,8 @@ class MacroIndicatorAggregator:
             '17_all_commodities': 'All Commodities',
             '22_cot_positioning': 'CFTC COT Positioning (Gold & Silver)',
             '83_cot_energy_metals': 'CFTC COT Positioning (Crude Oil, Brent, Copper, Nat Gas)',
+            '84_hl_perps': 'Hyperliquid Perpetual Futures (BTC, ETH, SOL, PAXG, HYPE, OIL)',
+            '85_hl_spot_stocks': 'Hyperliquid HIP-3 Spot Stocks (TSLA, NVDA, etc.)',
             '23_tga_balance': 'TGA Balance',
             '24_net_liquidity': 'Fed Net Liquidity',
             '25_sofr': 'SOFR',

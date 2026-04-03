@@ -1,17 +1,21 @@
 """
 Configuration file for API keys and settings.
-Set your API keys here or as environment variables.
+Set your API keys in .env or as environment variables.
 """
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env file from project root (works regardless of cwd)
+_PROJECT_ROOT = Path(__file__).resolve().parent
+load_dotenv(_PROJECT_ROOT / '.env')
 
 # FRED API Key (get free key from https://fred.stlouisfed.org/docs/api/api_key.html)
-# Try to import streamlit for secrets support (Streamlit Cloud)
+# Priority: Streamlit secrets > .env file > environment variable
 try:
     import streamlit as st
-    # Try Streamlit secrets first (for Streamlit Cloud deployment)
     FRED_API_KEY = st.secrets.get('FRED_API_KEY', os.getenv('FRED_API_KEY', ''))
 except (ImportError, FileNotFoundError, KeyError):
-    # Fall back to environment variable or hardcoded key
     FRED_API_KEY = os.getenv('FRED_API_KEY', '')
 
 # Data cache settings

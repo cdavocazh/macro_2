@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.macro2.hl-extract</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PYTHON_PATH__</string>
+        <string>__PROJECT_DIR__/hl_extract.py</string>
+        <string>--cron</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__PROJECT_DIR__</string>
+
+    <!--
+        Runs every 60 seconds (1 minute).
+        Extracts Hyperliquid perps + HIP-3 spot stocks.
+        Partial cache merge (~0.5s). 45-second freshness guard.
+    -->
+    <key>StartInterval</key>
+    <integer>60</integer>
+
+    <key>StandardOutPath</key>
+    <string>__PROJECT_DIR__/logs/hl_extract_stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__PROJECT_DIR__/logs/hl_extract_stderr.log</string>
+
+    <key>TimeOut</key>
+    <integer>50</integer>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>__PYTHON_BIN_DIR__:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

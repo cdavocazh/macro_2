@@ -1252,6 +1252,49 @@ def build_tab5(loader):
                 dcc.Graph(figure=fig, config={'displayModeBar': False}),
             ]))
 
+    # ── Hyperliquid Perpetual Futures ─────────────────────────────────────────
+    children.append(section_header("Hyperliquid Perpetual Futures"))
+    children.append(html.Div(
+        "DeFi perpetual futures on Hyperliquid. 24/7 markets, no expiry. Funding rate annualized.",
+        className='metric-caption', style={'marginBottom': '8px'}
+    ))
+
+    hl_perps = loader.get('84_hl_perps')
+    if isinstance(hl_perps, dict) and 'error' not in hl_perps:
+        hl_coins = [
+            ('btc', 'Bitcoin (BTC)', '#F7931A'),
+            ('eth', 'Ethereum (ETH)', '#627EEA'),
+            ('sol', 'Solana (SOL)', '#9945FF'),
+            ('hype', 'Hyperliquid (HYPE)', '#00D4AA'),
+            ('paxg', 'PAX Gold (PAXG)', '#FFD700'),
+            ('oil', 'WTI Crude Oil (OIL)', '#8B4513'),
+            ('sp500', 'S&P 500 (SP500)', '#1565c0'),
+            ('xyz100', 'Nasdaq 100 (XYZ100)', '#7b1fa2'),
+            ('natgas', 'Natural Gas (NATGAS)', '#4a148c'),
+            ('copper_hl', 'Copper (COPPER)', '#B87333'),
+            ('brentoil', 'Brent Crude (BRENTOIL)', '#2c2c2c'),
+        ]
+        for coin_key, label, color in hl_coins:
+            coin = hl_perps.get(coin_key, {})
+            if not isinstance(coin, dict) or 'price' not in coin:
+                continue
+            price = coin['price']
+            price_str = f"${price:,.2f}" if price >= 100 else f"${price:,.4f}"
+            cards = [
+                metric_card(label, price_str, delta=coin.get('change_1d'), delta_label='%',
+                            caption=f"As of: {coin.get('latest_date', 'N/A')}",
+                            border_color=color),
+                metric_card("Funding (ann.)", f"{coin.get('funding_rate', 0):.2f}%",
+                            caption=f"8h: {coin.get('funding_rate_8h', 0)}%"),
+                metric_card("Open Interest",
+                            f"${coin.get('open_interest', 0) / 1e6:.1f}M" if coin.get('open_interest') else 'N/A'),
+                metric_card("24h Volume",
+                            f"${coin.get('volume_24h', 0) / 1e6:.1f}M" if coin.get('volume_24h') else 'N/A'),
+            ]
+            children.append(html.Div(label, style={
+                'fontSize': '0.85rem', 'fontWeight': 'bold', 'marginTop': '10px', 'color': color}))
+            children.append(html.Div(cards, className='cols-4'))
+
     return html.Div(children, className='tab-content')
 
 
@@ -2098,6 +2141,235 @@ def build_tab8(loader):
     return html.Div(children, className='tab-content')
 
 
+# ─── Tab 9: Polymarket ───────────────────────────────────────────────────────
+
+def _fmt_pm_vol(v):
+    """Format Polymarket volume for display."""
+    if v is None or v == 0:
+        return '$0'
+    if v >= 1e6:
+        return f'${v / 1e6:.1f}M'
+    if v >= 1e3:
+        return f'${v / 1e3:.0f}K'
+    return f'${v:.0f}'
+
+
+def _pm_event_card(event, border_color='#1f77b4'):
+    """Create a compact Polymarket event card with link, outcomes, and price chart."""
+    if not event:
+        return html.Div()
+
+    yes_pct = event.get('yes_pct', 0)
+    pct_color = '#26a69a' if yes_pct >= 50 else '#ef5350'
+    outcomes = event.get('outcomes', [])
+    is_multi = event.get('num_markets', 1) > 1 and len(outcomes) > 1
+    end_date = event.get('end_date', '')
+    slug = event.get('slug', '')
+    event_url = f"https://polymarket.com/event/{slug}" if slug else None
+
+    # Title — link to Polymarket
+    if event_url:
+        title_el = html.A(event.get('title', ''), href=event_url, target='_blank',
+                          style={'color': '#1565c0', 'textDecoration': 'none',
+                                 'fontSize': '0.82rem', 'fontWeight': 600, 'lineHeight': '1.3'})
+    else:
+        title_el = html.Span(event.get('title', ''), style={
+            'fontSize': '0.82rem', 'fontWeight': 600, 'lineHeight': '1.3'})
+
+    children = [
+        html.Div(title_el, style={'marginBottom': '4px'}),
+        # Probability + volume
+        html.Div([
+            html.Span(f"{yes_pct}%", style={
+                'fontSize': '1.3rem', 'fontWeight': 700, 'color': pct_color,
+            }),
+            html.Span(' chance', style={'fontSize': '0.72rem', 'color': '#888', 'marginLeft': '4px'}),
+            html.Span(f"{_fmt_pm_vol(event.get('volume_24h', 0))} vol (24h)", style={
+                'fontSize': '0.72rem', 'color': '#888', 'marginLeft': 'auto',
+            }),
+        ], style={'display': 'flex', 'alignItems': 'baseline', 'gap': '8px'}),
+    ]
+
+    # Multi-outcome breakdown
+    if is_multi:
+        outcome_spans = []
+        for o in outcomes[:6]:
+            op = o.get('yes_price', 0)
+            label = o.get('label', '')
+            if len(label) > 30:
+                label = label[:30] + '...'
+            outcome_spans.append(html.Span([
+                html.Span(f"{op * 100:.0f}%", style={
+                    'color': '#26a69a' if op >= 0.5 else '#888',
+                    'fontWeight': 600 if op >= 0.1 else 400,
+                }),
+                f' {label}',
+            ], style={'fontSize': '0.68rem', 'color': '#666', 'marginRight': '12px'}))
+        if len(outcomes) > 6:
+            outcome_spans.append(html.Span(f'+{len(outcomes) - 6} more',
+                                           style={'fontSize': '0.68rem', 'color': '#999'}))
+        children.append(html.Div(outcome_spans, style={
+            'marginTop': '6px', 'display': 'flex', 'flexWrap': 'wrap', 'gap': '4px',
+        }))
+
+    # End date
+    if end_date:
+        try:
+            dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            children.append(html.Div(f"Resolves: {dt.strftime('%Y-%m-%d')}",
+                                     style={'fontSize': '0.65rem', 'color': '#aaa', 'marginTop': '4px'}))
+        except Exception:
+            pass
+
+    # Multi-outcome price chart (fetch on-demand via Plotly)
+    valid_outcomes = [o for o in outcomes if o.get('token_id')]
+    if valid_outcomes:
+        chart = _pm_price_chart_static(valid_outcomes)
+        if chart:
+            children.append(chart)
+
+    return html.Div(children, className='metric-card', style={'borderLeftColor': pct_color})
+
+
+# Color palette for multi-outcome price charts
+_PM_COLORS = ['#1976d2', '#26a69a', '#ef5350', '#ff9800', '#9c27b0',
+              '#00bcd4', '#e91e63', '#4caf50', '#ff5722', '#607d8b']
+
+
+def _pm_price_chart_static(outcomes):
+    """Fetch price history for outcomes and render a Plotly chart.
+
+    Called during page build. Uses the '1d' interval (default).
+    """
+    from data_extractors.polymarket_extractor import get_price_history
+    import plotly.graph_objects as go
+
+    traces = []
+    for i, o in enumerate(outcomes[:8]):
+        token_id = o.get('token_id')
+        if not token_id:
+            continue
+        hist = get_price_history(token_id, interval='1d')
+        if not hist:
+            continue
+        # Deduplicate by timestamp
+        seen = {}
+        for pt in hist:
+            seen[pt['t']] = pt['p']
+        sorted_pts = sorted(seen.items())
+        if not sorted_pts:
+            continue
+        label = o.get('label', f'Outcome {i+1}')
+        if len(label) > 35:
+            label = label[:35] + '...'
+        traces.append(go.Scatter(
+            x=[datetime.fromtimestamp(t) for t, _ in sorted_pts],
+            y=[v * 100 for _, v in sorted_pts],
+            mode='lines',
+            name=label,
+            line=dict(color=_PM_COLORS[i % len(_PM_COLORS)], width=2),
+            hovertemplate='%{y:.1f}%<extra>%{fullData.name}</extra>',
+        ))
+
+    if not traces:
+        return None
+
+    fig = go.Figure(data=traces)
+    fig.update_layout(
+        height=280,
+        margin=dict(l=45, r=15, t=10, b=30),
+        hovermode='x unified',
+        yaxis=dict(title='Probability (%)', range=[0, 100], ticksuffix='%'),
+        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0, font=dict(size=10)),
+        paper_bgcolor='#fff',
+        plot_bgcolor='#fafafa',
+    )
+
+    return html.Details([
+        html.Summary("Price Chart", style={
+            'cursor': 'pointer', 'fontSize': '0.78rem', 'color': '#666', 'padding': '4px 0',
+        }),
+        dcc.Graph(figure=fig, config={'displayModeBar': False, 'responsive': True}),
+    ], style={'marginTop': '4px'})
+
+
+def _pm_section(title, events, cols=2):
+    """Render a collapsible section of Polymarket event cards with hide/show toggle."""
+    if not events:
+        return html.Div()
+    cards = [_pm_event_card(e) for e in events]
+    return html.Details([
+        html.Summary([
+            html.Span(title, style={
+                'fontSize': '0.92rem', 'fontWeight': 700, 'color': '#333',
+                'borderBottom': '2px solid #1976d2', 'paddingBottom': '2px',
+            }),
+            html.Span(f' ({len(events)})', style={
+                'fontSize': '0.72rem', 'color': '#999', 'fontWeight': 400, 'marginLeft': '6px',
+            }),
+        ], style={
+            'cursor': 'pointer', 'display': 'flex', 'alignItems': 'center',
+            'justifyContent': 'space-between', 'padding': '4px 0',
+        }),
+        html.Div(cards, className=f'metrics-row cols-{cols}'),
+    ], open=True, style={'marginBottom': '16px'})
+
+
+def build_tab9(loader):
+    """Polymarket Prediction Markets."""
+    children = [section_header("Polymarket Prediction Markets")]
+
+    pm = loader.get('86_polymarket')
+    if isinstance(pm, dict) and 'error' in pm:
+        children.append(error_card("Polymarket", pm.get('error', 'Unknown error')))
+        return html.Div(children, className='tab-content')
+
+    latest = pm.get('latest_date', '')
+    if latest:
+        try:
+            dt = datetime.fromisoformat(latest)
+            latest_str = to_gmt8(dt)
+        except Exception:
+            latest_str = latest
+    else:
+        latest_str = 'N/A'
+
+    children.append(info_badge(
+        f"Real-money prediction market odds from Polymarket. Updated every 5 min. | As of: {latest_str}",
+        'info',
+    ))
+    children.append(html.Div(
+        html.A("polymarket.com", href="https://polymarket.com", target="_blank",
+               style={'color': '#1565c0', 'fontSize': '0.72rem'}),
+        style={'marginBottom': '8px'},
+    ))
+
+    part1 = pm.get('part1_fed_rate', [])
+    part2 = pm.get('part2_economy', [])
+    part3 = pm.get('part3_finance', [])
+    part4 = pm.get('part4_geopolitics', [])
+    part5 = pm.get('part5_trending', {})
+
+    if not part1 and not part2 and not part3:
+        children.append(html.Div(
+            "No Polymarket data available. Run: python polymarket_extract.py --force",
+            style={'padding': '20px', 'textAlign': 'center', 'color': '#888'},
+        ))
+        return html.Div(children, className='tab-content')
+
+    children.append(_pm_section("Fed Rate Decisions", part1))
+    children.append(_pm_section("Economy (Inflation, GDP, Unemployment, SOFR)", part2))
+    children.append(_pm_section("Finance (Gold, Silver, SPX, Crude Oil, Rate Cuts)", part3))
+    children.append(_pm_section("Geopolitics", part4))
+
+    if part5:
+        children.append(section_header("Trending by Category"))
+        for tag_label, events in part5.items():
+            children.append(_pm_section(f"Trending: {tag_label}", events))
+
+    return html.Div(children, className='tab-content')
+
+
 # ─── Layout ─────────────────────────────────────────────────────────────────
 
 app.layout = html.Div([
@@ -2134,6 +2406,7 @@ app.layout = html.Div([
         dcc.Tab(label='Financials', value='tab-6', className='tab'),
         dcc.Tab(label='Rates & Credit', value='tab-7', className='tab'),
         dcc.Tab(label='Econ Activity', value='tab-8', className='tab'),
+        dcc.Tab(label='Polymarket', value='tab-9', className='tab'),
     ]),
 
     # Financials ticker selector (only visible on tab 6)
@@ -2404,6 +2677,8 @@ def _render_tab_content(tab, ticker, custom_ticker, source, loader):
         return build_tab7(loader)
     elif tab == 'tab-8':
         return build_tab8(loader)
+    elif tab == 'tab-9':
+        return build_tab9(loader)
     return html.Div("Select a tab")
 
 

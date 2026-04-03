@@ -29,6 +29,7 @@ wheels/
 
 # launchd plist files (contain local paths/username)
 *.plist
+!*.plist.example
 
 # Virtual environments
 .venv/

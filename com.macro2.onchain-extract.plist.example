@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.macro2.onchain-extract</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PYTHON_PATH__</string>
+        <string>__PROJECT_DIR__/onchain_extract.py</string>
+        <string>--cron</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__PROJECT_DIR__</string>
+
+    <!--
+        Runs daily at 14:00 local time (GMT+8).
+        CheckOnChain charts update once daily.
+        Extracts 8 on-chain BTC metrics (~20s total).
+        20-hour freshness guard prevents duplicate runs.
+    -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>14</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>__PROJECT_DIR__/logs/onchain_extract_stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__PROJECT_DIR__/logs/onchain_extract_stderr.log</string>
+
+    <key>TimeOut</key>
+    <integer>120</integer>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>__PYTHON_BIN_DIR__:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

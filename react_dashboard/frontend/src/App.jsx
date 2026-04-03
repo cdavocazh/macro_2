@@ -9,6 +9,7 @@ import Tab5Commodities from './tabs/Tab5Commodities';
 import Tab6Financials from './tabs/Tab6Financials';
 import Tab7RatesCredit from './tabs/Tab7RatesCredit';
 import Tab8EconomicActivity from './tabs/Tab8EconomicActivity';
+import Tab9Polymarket from './tabs/Tab9Polymarket';
 
 const TABS = [
   { id: 0, label: 'Valuation Metrics' },
@@ -19,6 +20,7 @@ const TABS = [
   { id: 5, label: 'Large-cap Financials' },
   { id: 6, label: 'Rates & Credit' },
   { id: 7, label: 'Economic Activity' },
+  { id: 8, label: 'Polymarket' },
 ];
 
 const POLL_INTERVAL = 60000; // 60 seconds
@@ -105,9 +107,9 @@ export default function App() {
             <div className="error-title">Connection Error</div>
             <div>{error}</div>
             <div className="error-note" style={{ marginTop: 8 }}>
-              Make sure the FastAPI backend is running on port 8000.
+              Make sure the FastAPI backend is running.
               <br />
-              <code>cd react_dashboard/backend && python main.py</code>
+              <code>cd react_dashboard && bash start.sh</code>
             </div>
           </div>
         </div>
@@ -173,6 +175,9 @@ export default function App() {
       </TabPanel>
       <TabPanel active={activeTab === 7}>
         <Tab8EconomicActivity indicators={indicators} />
+      </TabPanel>
+      <TabPanel active={activeTab === 8}>
+        <Tab9Polymarket indicators={indicators} />
       </TabPanel>
     </div>
   );
