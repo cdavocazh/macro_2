@@ -675,22 +675,117 @@ def get_oecd_leading_indicator():
 
 
 def _oecd_cli_fallback():
-    """Fallback: FRED USALOLITONOSTSAM (OECD CLI for US, normalized)."""
+    """Fallback for OECD CLI.
+
+    Tries in order:
+      1. Direct OECD SDMX-JSON API — new STES dataset (9-dimension key with wildcards).
+         URL: OECD.SDD.STES,DSD_STES@DF_CLI / USA.M.LI.AA.AA...
+         Note: stats.oecd.org (legacy) redirects here; old DSD_CLI@DF_CLI endpoint → 404.
+         VPS note: Hostinger datacenter IPs can get throttled by OECD — expect 5-30s response.
+      2. FRED USALOLITONOSTSAM (froze Jan 2024 — OECD stopped pushing to FRED when they
+         migrated to SDMX 3.0 in 2023-2024; still useful for historical baseline).
+      3. CFNAI (Chicago Fed National Activity Index, FRED:CFNAI) — updated monthly through
+         the current period. Different scale (centered at 0, not 100) but same macro purpose:
+         leading indicator of US economic activity. Above 0 = above-trend growth.
+    """
+    # ── 1. Direct OECD SDMX 3.0 REST API (STES dataset, 9-dim key) ──────────
+    try:
+        # The new STES DF_CLI dataset requires 9 dimensions; trailing wildcards fill unknowns.
+        # USA.M.LI.AA.AA... → USA + Monthly + Leading Indicator + Amplitude Adjusted + AA + 3 wildcards
+        for url in [
+            # Primary: STES dataset (correct post-2024 location)
+            ('https://sdmx.oecd.org/public/rest/data/'
+             'OECD.SDD.STES,DSD_STES@DF_CLI/'
+             'USA.M.LI.AA.AA...'
+             '?startPeriod=2020-01&format=jsondata'),
+            # Fallback URL: older NAD/DSD_CLI dataset still served by some mirrors
+            ('https://sdmx.oecd.org/public/rest/data/'
+             'OECD.SDD.NAD,DSD_CLI@DF_CLI,1.0/'
+             'USA.M.LI.AA.AA.A'
+             '?startPeriod=2020-01&format=jsondata'),
+        ]:
+            try:
+                resp = requests.get(url, timeout=30, headers={'Accept': 'application/json'})
+                if resp.status_code == 200:
+                    payload = resp.json()
+                    ds = payload.get('dataSets', [{}])[0]
+                    series_dict = ds.get('series', {})
+                    if series_dict:
+                        obs = list(series_dict.values())[0].get('observations', {})
+                        time_periods = payload['structure']['dimensions']['observation'][0]['values']
+                        dates, values = [], []
+                        for idx, tp in enumerate(time_periods):
+                            key = str(idx)
+                            if key in obs:
+                                val = obs[key][0]
+                                if val is not None:
+                                    try:
+                                        dates.append(pd.to_datetime(tp['id']))
+                                        values.append(float(val))
+                                    except (ValueError, TypeError):
+                                        pass
+                        if dates:
+                            series = pd.Series(values, index=dates).sort_index()
+                            latest = float(series.iloc[-1])
+                            return {
+                                'cli_value': round(latest, 2),
+                                'above_100': latest > 100,
+                                'latest_date': series.index[-1].strftime('%Y-%m-%d'),
+                                'historical': series,
+                                'source': 'OECD SDMX API'
+                            }
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # ── 2. FRED USALOLITONOSTSAM (frozen Jan 2024) ────────────────────────────
+    # Root cause: OECD stopped pushing MEI data to FRED when they migrated to SDMX 3.0.
+    # Only use if data is reasonably fresh (< 400 days) — if stale, fall through to CFNAI.
     try:
         from fredapi import Fred
         import config
         fred = Fred(api_key=config.FRED_API_KEY)
-        series = fred.get_series('USALOLITONOSTSAM')
+        series = fred.get_series('USALOLITONOSTSAM').dropna()
+        if series is not None and not series.empty:
+            age_days = (pd.Timestamp.now() - series.index[-1]).days
+            if age_days < 400:   # only trust if updated within ~13 months
+                latest = float(series.iloc[-1])
+                return {
+                    'cli_value': round(latest, 2),
+                    'above_100': latest > 100,
+                    'latest_date': series.index[-1].strftime('%Y-%m-%d'),
+                    'historical': series,
+                    'source': 'FRED (USALOLITONOSTSAM)'
+                }
+            # else: stale (frozen Jan 2024) — fall through to CFNAI proxy
+    except Exception:
+        pass
+
+    # ── 3. CFNAI proxy (Chicago Fed National Activity Index) ─────────────────
+    # CFNAI is updated monthly (~4-5 weeks lag), released by Chicago Fed.
+    # Scale: centered at 0 (not 100). Above 0 = above-trend growth; below -0.7 during
+    # contraction signals high recession probability. Used here when OECD CLI unavailable.
+    try:
+        from fredapi import Fred
+        import config
+        fred = Fred(api_key=config.FRED_API_KEY)
+        series = fred.get_series('CFNAI').dropna()
         if series is not None and not series.empty:
             latest = float(series.iloc[-1])
+            # Normalise to OECD CLI-like scale: CFNAI 0 → 100, ±1 → ±10
+            # This keeps the dashboard display compatible (above_100 = expansion signal)
+            cli_equiv = round(100 + (latest * 10), 2)
             return {
-                'cli_value': round(latest, 2),
-                'above_100': latest > 100,
+                'cli_value': cli_equiv,
+                'cfnai_raw': round(latest, 3),
+                'above_100': latest > 0,
                 'latest_date': series.index[-1].strftime('%Y-%m-%d'),
-                'historical': series,
-                'source': 'FRED (USALOLITONOSTSAM)'
+                'historical': (series * 10 + 100),    # rescaled to CLI-like units
+                'historical_raw': series,
+                'source': 'FRED CFNAI (Chicago Fed — OECD CLI unavailable)'
             }
-        return {'error': 'OECD CLI unavailable from FRED'}
+        return {'error': 'OECD CLI unavailable — all sources exhausted'}
     except Exception as e:
         return {'error': f'OECD CLI fetch error: {str(e)}'}
 
@@ -1073,36 +1168,56 @@ def get_global_cpi_comparison():
 
 
 def _global_cpi_fallback():
-    """Fallback: FRED series for multi-country CPI."""
+    """Fallback: FRED series for multi-country CPI.
+
+    Series notes:
+      US:  CPALTT01USM657N was discontinued Mar 2024 → use CPIAUCSL (index) + compute YoY
+      EU:  CP0000EZ19M086NEST is an index (2015=100), NOT YoY% → compute YoY
+      JP:  CPALTT01JPM657N is already YoY%
+      UK:  CPALTT01GBM657N is already YoY%
+    """
     try:
         from fredapi import Fred
         import config
         fred = Fred(api_key=config.FRED_API_KEY)
 
-        # FRED series for CPI YoY (already in % form)
+        # (series_id, needs_yoy_computation)
+        # Series notes (last validated 2026-04):
+        #   CPALTT01USM657N  discontinued Mar 2024 → use CPIAUCSL index + compute YoY
+        #   CP0000EZ19M086NEST  is index (2015=100), NOT YoY% → compute YoY
+        #   CPALTT01JPM657N  OECD/FRED froze at Jun 2021 → use JPNCPIALLMINMEI index
+        #   CPALTT01GBM657N  froze Feb 2024 → use GBRCPIALLMINMEI index + compute YoY
         cpi_series = {
-            'us_cpi_yoy': 'CPALTT01USM657N',    # US CPI all items YoY%
-            'eu_cpi_yoy': 'CP0000EZ19M086NEST',  # Euro area HICP YoY%
-            'jp_cpi_yoy': 'CPALTT01JPM657N',     # Japan CPI YoY%
-            'uk_cpi_yoy': 'CPALTT01GBM657N',     # UK CPI YoY%
+            'us_cpi_yoy': ('CPIAUCSL', True),              # All-Urban CPI index → compute YoY
+            'eu_cpi_yoy': ('CP0000EZ19M086NEST', True),    # HICP index 2015=100 → compute YoY
+            'jp_cpi_yoy': ('JPNCPIALLMINMEI', True),        # Japan CPI index → compute YoY
+            'uk_cpi_yoy': ('GBRCPIALLMINMEI', True),        # UK CPI index → compute YoY
         }
 
         result = {'source': 'FRED (multi-country CPI)', 'latest_date': None}
         historical_series = {}
 
-        for key, series_id in cpi_series.items():
+        for key, (series_id, needs_yoy) in cpi_series.items():
             try:
                 s = fred.get_series(series_id)
-                if s is not None and not s.empty:
-                    result[key] = round(float(s.iloc[-1]), 2)
-                    if result['latest_date'] is None:
-                        result['latest_date'] = s.index[-1].strftime('%Y-%m-%d')
-                    historical_series[key] = s
+                if s is None or s.empty:
+                    result[key] = None
+                    continue
+                s = s.dropna()
+                if needs_yoy:
+                    # Convert index level to YoY % change
+                    s = s.pct_change(12).mul(100).dropna()
+                if s.empty:
+                    result[key] = None
+                    continue
+                result[key] = round(float(s.iloc[-1]), 2)
+                if result['latest_date'] is None:
+                    result['latest_date'] = s.index[-1].strftime('%Y-%m-%d')
+                historical_series[key] = s
             except Exception:
                 result[key] = None
 
         if historical_series:
-            # Store US CPI as primary historical series
             if 'us_cpi_yoy' in historical_series:
                 result['historical'] = historical_series['us_cpi_yoy']
 
@@ -1417,34 +1532,42 @@ def get_international_gdp():
         import config
         fred = Fred(api_key=config.FRED_API_KEY)
 
-        # FRED series: real GDP growth rate (QoQ SAAR or YoY)
+        # FRED series: real GDP growth rate (QoQ SAAR or QoQ %)
+        # Notes on series selection (as of 2026):
+        #   CLVMNACSCAB1GQUK (UK level) froze at 2020-Q2 → replaced by NAEXKP01GBQ657S (QoQ %)
+        #   RGDPNACNA666NRUG (China annual WB) froze at 2023 → replaced by CHNGDPNQDSMEI (QoQ %)
         series_map = {
-            'us_gdp_growth': 'A191RL1Q225SBEA',   # US real GDP QoQ SAAR
-            'eu_gdp_growth': 'CLVMNACSCAB1GQEA19', # Euro area real GDP
-            'jp_gdp_growth': 'JPNRGDPEXP',          # Japan real GDP
-            'uk_gdp_growth': 'CLVMNACSCAB1GQUK',    # UK real GDP
-            'cn_gdp_growth': 'RGDPNACNA666NRUG',    # China real GDP
+            'us_gdp_growth': ('A191RL1Q225SBEA',    False),  # US QoQ SAAR % (already %)
+            'eu_gdp_growth': ('CLVMNACSCAB1GQEA19', True),   # Euro area level → compute QoQ %
+            'jp_gdp_growth': ('JPNRGDPEXP',          True),   # Japan level → compute QoQ %
+            'uk_gdp_growth': ('NAEXKP01GBQ657S',    False),  # UK QoQ % (already %)
+            'cn_gdp_growth': ('CHNGDPNQDSMEI',      True),   # China nominal GDP level → compute QoQ %
         }
 
         result = {'source': 'FRED (multi-country GDP)', 'latest_date': None}
 
-        for key, series_id in series_map.items():
+        for key, (series_id, compute_qoq) in series_map.items():
             try:
                 s = fred.get_series(series_id)
-                if s is not None and not s.empty:
-                    if key == 'us_gdp_growth':
-                        # This series is already QoQ SAAR %
-                        result[key] = round(float(s.iloc[-1]), 2)
-                        result['historical'] = s
+                if s is None or s.empty:
+                    result[key] = None
+                    continue
+                s = s.dropna()
+                if compute_qoq:
+                    # Level series: compute QoQ % change
+                    if len(s) >= 2:
+                        latest = float(s.iloc[-1])
+                        prev = float(s.iloc[-2])
+                        result[key] = round(((latest / prev) - 1) * 100, 2) if prev != 0 else None
                     else:
-                        # Compute QoQ % change
-                        if len(s) >= 2:
-                            latest = float(s.iloc[-1])
-                            prev = float(s.iloc[-2])
-                            if prev != 0:
-                                result[key] = round(((latest / prev) - 1) * 100, 2)
-                    if result['latest_date'] is None:
-                        result['latest_date'] = s.index[-1].strftime('%Y-%m-%d')
+                        result[key] = None
+                else:
+                    # Already a % series
+                    result[key] = round(float(s.iloc[-1]), 2)
+                if key == 'us_gdp_growth':
+                    result['historical'] = s
+                if result['latest_date'] is None:
+                    result['latest_date'] = s.index[-1].strftime('%Y-%m-%d')
             except Exception:
                 result[key] = None
 

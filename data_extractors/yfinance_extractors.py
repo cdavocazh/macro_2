@@ -1,9 +1,29 @@
 """
 Data extractors using yfinance for various market indices and indicators.
 """
+import logging
+import contextlib
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
+
+
+@contextlib.contextmanager
+def _suppress_yf_warnings():
+    """Suppress yfinance WARNING-level chatter for known-delisted symbols.
+
+    VX=F, ^PCPUT, ^BDI, BDIY are all delisted from Yahoo Finance as of 2024.
+    Their .history() calls still produce HTTP 404 noise in the systemd journal
+    every 5 min via macro-fast-extract.service.  Wrapping them with this context
+    manager keeps the graceful-fallback logic intact while silencing the log noise.
+    """
+    yf_log = logging.getLogger('yfinance')
+    prev = yf_log.level
+    yf_log.setLevel(logging.CRITICAL)
+    try:
+        yield
+    finally:
+        yf_log.setLevel(prev)
 
 
 def get_russell_2000_indices():
@@ -499,9 +519,11 @@ def get_vix_term_structure():
         vix = yf.Ticker('^VIX')
         vix_hist = vix.history(period='5y')
 
-        # VIX front-month futures (generic)
-        vx1 = yf.Ticker('VX=F')
-        vx1_hist = vx1.history(period='5y')
+        # VIX front-month futures (generic — VX=F is delisted on yfinance as of 2024;
+        # suppress 404 warning, fallback gracefully to VIX spot only)
+        with _suppress_yf_warnings():
+            vx1 = yf.Ticker('VX=F')
+            vx1_hist = vx1.history(period='5y')
 
         if vix_hist.empty:
             return {'error': 'No VIX spot data available'}
@@ -551,84 +573,77 @@ def get_vix_term_structure():
 
 
 def get_put_call_ratio():
-    """Get CBOE Equity Put/Call ratio via yfinance (^PCPUT).
+    """Get Put/Call ratio via SPY option-chain volume.
 
-    Falls back to SPY options-based approximation if ^PCPUT unavailable.
+    Primary source: aggregate SPY put/call volume on nearest-term expiration.
+    Note: yfinance tickers ^PCPUT, ^PCALL, ^PCRATIO were delisted in 2024.
+    FRED has no equivalent series. CBOE publishes the authoritative daily
+    CBOE Equity Put/Call but requires direct scraping (fragile).
+    IBKR does not expose CBOE P/C indices (CPCE/CPC/CPCI — "No security definition").
+    SPY options volume is the most reliable free intraday proxy.
+
+    Best update frequency: daily post-US-close (~22:00 UTC weekdays).
+    Returns pd.Series with one row (today) for CSV append.
     """
+    import pandas as pd
     try:
-        # Try CBOE Put/Call index
-        pc = yf.Ticker('^PCPUT')
-        hist = pc.history(period='5y')
-
-        if not hist.empty:
-            close = hist['Close']
-            latest = float(close.iloc[-1])
-            prev = float(close.iloc[-2]) if len(close) > 1 else latest
-            change = round(((latest / prev) - 1) * 100, 2) if prev != 0 else 0.0
-
-            return {
-                'put_call_ratio': round(latest, 4),
-                'latest_date': close.index[-1].strftime('%Y-%m-%d'),
-                'change_1d': change,
-                'historical': close,
-                'source': 'CBOE via yfinance (^PCPUT)',
-            }
-
-        # Fallback: try total put/call
-        for alt_ticker in ['^PCALL', '^PCRATIO']:
-            try:
-                alt = yf.Ticker(alt_ticker)
-                alt_hist = alt.history(start=start_date, end=end_date)
-                if not alt_hist.empty:
-                    close = alt_hist['Close']
-                    latest = float(close.iloc[-1])
-                    prev = float(close.iloc[-2]) if len(close) > 1 else latest
-                    change = round(((latest / prev) - 1) * 100, 2) if prev != 0 else 0.0
-                    return {
-                        'put_call_ratio': round(latest, 4),
-                        'latest_date': close.index[-1].strftime('%Y-%m-%d'),
-                        'change_1d': change,
-                        'historical': close,
-                        'source': f'yfinance ({alt_ticker})',
-                    }
-            except Exception:
-                continue
-
-        return {'error': 'Put/Call ratio not available from yfinance'}
-
+        import yfinance as yf
+        spy = yf.Ticker('SPY')
+        expirations = spy.options
+        if not expirations:
+            return {'error': 'SPY options chain unavailable'}
+        exp = expirations[0]
+        oc = spy.option_chain(exp)
+        put_vol = float(oc.puts['volume'].fillna(0).sum()) if 'volume' in oc.puts.columns else 0.0
+        call_vol = float(oc.calls['volume'].fillna(0).sum()) if 'volume' in oc.calls.columns else 0.0
+        if call_vol <= 0:
+            return {'error': 'SPY call volume is zero (market likely closed)'}
+        ratio = put_vol / call_vol
+        today = pd.Timestamp.utcnow().normalize()
+        hist = pd.Series([round(ratio, 4)], index=[today])
+        return {
+            'put_call_ratio': round(ratio, 4),
+            'latest_date': today.strftime('%Y-%m-%d'),
+            'change_1d': 0.0,
+            'historical': hist,
+            'source': f'SPY options volume (nearest exp {exp})',
+            'note': f'put_vol={int(put_vol)} call_vol={int(call_vol)}',
+        }
     except Exception as e:
-        return {'error': f"Error fetching put/call ratio: {str(e)}"}
+        return {'error': f'Error fetching put/call ratio: {str(e)}'}
 
 
 def get_baltic_dry_index():
-    """Get Baltic Dry Index (^BDI) — shipping cost indicator.
+    """Get Baltic Dry Index proxy via BDRY ETF (Breakwave Dry Bulk Shipping).
 
-    Rising BDI = increased demand for shipping raw materials = economic growth.
+    BDRY tracks near-term Capesize, Panamax, and Supramax dry-bulk freight
+    futures — the same underlying freight rates the BDI aggregates. It is
+    the only reliable free proxy after yfinance delisted ^BDI and BDIY in 2024.
+    Trading Economics guest tier no longer serves BDIY data. FRED has no
+    series. Investing.com requires JS rendering.
+
+    Best update frequency: daily post-US-close (BDRY is US-listed).
     """
+    import pandas as pd
     try:
-        bdi = yf.Ticker('^BDI')
-        hist = bdi.history(period='5y')
-
+        import yfinance as yf
+        bdry = yf.Ticker('BDRY')
+        hist = bdry.history(period='5y')
         if hist.empty:
-            # Try alternate ticker
-            bdi = yf.Ticker('BDIY')
-            hist = bdi.history(period='5y')
-
-        if hist.empty:
-            return {'error': 'Baltic Dry Index not available from yfinance'}
-
-        close = hist['Close']
+            return {'error': 'BDRY ETF history unavailable from yfinance'}
+        close = hist['Close'].dropna()
+        if close.empty:
+            return {'error': 'BDRY ETF returned empty close series'}
         latest = float(close.iloc[-1])
         prev = float(close.iloc[-2]) if len(close) > 1 else latest
         change = round(((latest / prev) - 1) * 100, 2) if prev != 0 else 0.0
-
         return {
-            'bdi': round(latest, 0),
+            'bdi': round(latest, 4),
             'latest_date': close.index[-1].strftime('%Y-%m-%d'),
             'change_1d': change,
             'historical': close,
-            'source': 'yfinance (^BDI)',
+            'source': 'BDRY ETF (Breakwave Dry Bulk Shipping, proxy for BDI)',
+            'note': 'BDRY tracks Capesize/Panamax/Supramax dry-bulk futures. Use as directional proxy, not exact BDI value.',
         }
-
     except Exception as e:
-        return {'error': f"Error fetching Baltic Dry Index: {str(e)}"}
+        return {'error': f'Error fetching BDI proxy: {str(e)}'}

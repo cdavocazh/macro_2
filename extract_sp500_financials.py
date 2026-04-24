@@ -1,21 +1,27 @@
 #!/usr/bin/env python3
 """
-Batch extraction of S&P 500 equity financials.
+Batch extraction of equity financials — S&P 500, MidCap 400, or Russell 1000.
 
-Downloads quarterly financial data for all ~500 S&P 500 companies and saves
-to historical_data/equity_financials/{yahoo_finance|sec_edgar}/ CSVs.
+Downloads quarterly financial data and saves to
+historical_data/equity_financials/{yahoo_finance|sec_edgar}/ CSVs.
 
-This is a long-running script (~30-40 min for full run) and is separate from
-scheduled_extract.py (which has a 10-minute timeout).
+This is a long-running script (~30-40 min for S&P 500, ~45-60 min for MidCap 400,
+~90 min for Russell 1000) and is separate from scheduled_extract.py.
 
 Usage:
-    python extract_sp500_financials.py                              # full S&P 500, Yahoo
-    python extract_sp500_financials.py --source both                # Yahoo + SEC
-    python extract_sp500_financials.py --source sec                 # SEC only
-    python extract_sp500_financials.py --batch-size 10 --delay 3    # custom batching
-    python extract_sp500_financials.py --resume                     # skip tickers with existing CSVs
-    python extract_sp500_financials.py --exclude-top20              # skip Top 20 (already in scheduled_extract)
-    python extract_sp500_financials.py --tickers CRM,AMD,NFLX      # specific tickers only
+    python extract_sp500_financials.py                               # full S&P 500, Yahoo
+    python extract_sp500_financials.py --source both                 # Yahoo + SEC
+    python extract_sp500_financials.py --source sec                  # SEC only
+    python extract_sp500_financials.py --batch-size 10 --delay 3     # custom batching
+    python extract_sp500_financials.py --resume                      # skip tickers with existing CSVs
+    python extract_sp500_financials.py --exclude-top20               # skip Top 20
+    python extract_sp500_financials.py --tickers CRM,AMD,NFLX        # specific tickers only
+
+    # Extended indices (Fix 2: mid-cap / Russell 1000 coverage)
+    python extract_sp500_financials.py --index midcap400             # S&P MidCap 400 (~400 tickers)
+    python extract_sp500_financials.py --index russell1000           # Russell 1000 (~1000 tickers)
+    python extract_sp500_financials.py --index midcap400 --resume    # incremental update
+    python extract_sp500_financials.py --tickers CRDO,ARM,LITE,COHR,BE,AAOI  # named mid-caps
 """
 
 import warnings
@@ -229,8 +235,15 @@ def extract_batch(tickers, source='yahoo', batch_size=25, delay=5, quiet=False):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Batch extract S&P 500 equity financials.',
-        epilog='Long-running (~30-40 min for full S&P 500). Separate from scheduled_extract.py.'
+        description='Batch extract equity financials (S&P 500, MidCap 400, or Russell 1000).',
+        epilog=(
+            'Long-running (~30-40 min for full S&P 500, ~45-60 min for MidCap 400, '
+            '~90 min for Russell 1000). Separate from scheduled_extract.py.\n\n'
+            'Examples:\n'
+            '  python extract_sp500_financials.py --index midcap400\n'
+            '  python extract_sp500_financials.py --index russell1000 --resume\n'
+            '  python extract_sp500_financials.py --tickers CRDO,ARM,LITE,COHR'
+        )
     )
     parser.add_argument(
         '--source', choices=['yahoo', 'sec', 'both'], default='yahoo',
@@ -257,6 +270,10 @@ def main():
         help='Comma-separated list of specific tickers (e.g., CRM,AMD,NFLX)'
     )
     parser.add_argument(
+        '--index', choices=['sp500', 'midcap400', 'russell1000'], default='sp500',
+        help='Index universe to extract: sp500 (default), midcap400, or russell1000'
+    )
+    parser.add_argument(
         '--quiet', '-q', action='store_true',
         help='Minimal output'
     )
@@ -266,6 +283,14 @@ def main():
     if args.tickers:
         tickers = [t.strip().upper() for t in args.tickers.split(',')]
         print(f"Extracting {len(tickers)} specified tickers")
+    elif args.index == 'midcap400':
+        from data_extractors.sp500_tickers import get_midcap400_tickers
+        tickers = get_midcap400_tickers()
+        print(f"S&P MidCap 400: {len(tickers)} tickers")
+    elif args.index == 'russell1000':
+        from data_extractors.sp500_tickers import get_russell1000_tickers
+        tickers = get_russell1000_tickers()
+        print(f"Russell 1000: {len(tickers)} tickers")
     else:
         from data_extractors.sp500_tickers import get_sp500_tickers
         tickers = get_sp500_tickers()

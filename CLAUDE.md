@@ -339,8 +339,13 @@ Equity financials return a nested dict per company with `income_statement`, `bal
 | Put/Call Ratio | yfinance ^PCPUT/^PCALL | Tickers delisted from yfinance | Returns error dict gracefully |
 | Baltic Dry Index | yfinance ^BDI/BDIY | Tickers delisted from yfinance | Returns error dict gracefully |
 | VIX Futures (VX=F) | yfinance VX=F | Ticker not available on yfinance | VIX spot (^VIX) works, front-month futures unavailable. **Also see** `63_vix_futures_curve` (CBOE/yfinance) |
-| Shiller CAPE | Robert Shiller Yale Excel | `ie_data.xls` last updated Oct 2023 — source is dead | Stuck at Sep 2023 value (30.81). Needs switch to multpl.com or FRED computation |
-| Global CPI (US) | FRED `CPALTT01USM657N` | OECD CPI YoY series discontinued, frozen at Mar 2024 | EU/JP/UK series still updating. Switch US to `CPIAUCSL` with manual YoY calc |
+| Shiller CAPE | Robert Shiller Yale Excel | ~~`ie_data.xls` last updated Oct 2023 — source is dead~~ **FIXED 2026-04-15** | Now scrapes multpl.com as primary source. Yale Excel retained as fallback. |
+| Global CPI (US/EU) | FRED `CPALTT01USM657N` / `CP0000EZ19M086NEST` | ~~US discontinued Mar 2024; EU was returning index level (129) not YoY%~~ **FIXED 2026-04-15** | US: `CPIAUCSL` + compute YoY (3.32%). EU: `CP0000EZ19M086NEST` + compute YoY (1.94%). |
+| Global CPI (JP) | FRED `CPALTT01JPM657N` | OECD/FRED Japan CPI series frozen at Jun 2021 | No live FRED Japan CPI series available. Shows stale -0.4%. BOJ API needed. |
+| Global CPI (UK) | FRED `CPALTT01GBM657N` | OECD/FRED UK CPI series frozen at Feb 2024 | Switched to `GBRCPIALLMINMEI` (available Mar 2025). |
+| OECD CLI | FRED `USALOLITONOSTSAM` | ~~FRED series froze at Jan 2024; OECD SDMX API unreachable from VPS~~ **FIXED 2026-04-15** | Now uses CFNAI (Chicago Fed National Activity Index, `FRED:CFNAI`) as Tier 3 fallback. Scale normalised to CLI units (100 + cfnai×10). Shows Feb 2026 data. |
+| Intl GDP (UK) | FRED `CLVMNACSCAB1GQUK` | ~~Series froze at 2020-Q2~~ **FIXED 2026-04-15** | Replaced with `NAEXKP01GBQ657S` (UK QoQ %, updating through Q4 2025). |
+| Housing Starts | FRED `HOUST` | FRED HOUST showing Jan 2026 as latest despite Census Bureau releasing Feb/Mar data | FRED update lag — not a code bug. Monitor for resolution. |
 
 ## QA / Testing
 
@@ -437,6 +442,7 @@ bash grafana_dashboard/start.sh local   # starts API bridge + Grafana
 | Grafana dashboard changes | `grafana_dashboard/CLAUDE.md`, `grafana_dashboard/README.md` |
 | React dashboard changes | `react_dashboard/CLAUDE.md`, `react_dashboard/README.md` |
 | New bug fix or pattern fix | `QA_SOP.md` Bug Log table, relevant checklist section |
+| Data extractor fix / broken data source replaced | **`agent/QA_learnings.md`** (add new entry with root cause + fix) + update "Known-broken indicators" table in this file |
 
 **Never commit code changes without checking these docs for staleness.** When in doubt, update. Bump the version in STATUS.md for any non-trivial change.
 

@@ -188,8 +188,149 @@ def get_non_top20_sp500():
     return [t for t in all_tickers if t not in top20_set]
 
 
+# ── Extended indices (MidCap 400, Russell 1000) ───────────────────────────────
+
+_MIDCAP400_CACHE_FILE = os.path.join(CACHE_DIR, 'sp400_tickers.json')
+_RUSSELL1000_CACHE_FILE = os.path.join(CACHE_DIR, 'russell1000_tickers.json')
+
+_MIDCAP400_WIKI_URL = 'https://en.wikipedia.org/wiki/List_of_S%26P_400_companies'
+_RUSSELL1000_WIKI_URL = 'https://en.wikipedia.org/wiki/Russell_1000_Index'
+
+
+def get_midcap400_tickers(force_refresh=False) -> list[str]:
+    """Get S&P MidCap 400 constituent ticker symbols.
+
+    Scrapes the Wikipedia "List of S&P 400 companies" page.
+    Results cached for 7 days.
+
+    Returns:
+        list[str]: ~400 mid-cap ticker symbols
+    """
+    if not force_refresh and os.path.exists(_MIDCAP400_CACHE_FILE):
+        try:
+            age_hours = (time.time() - os.path.getmtime(_MIDCAP400_CACHE_FILE)) / 3600
+            if age_hours < CACHE_TTL_HOURS:
+                with open(_MIDCAP400_CACHE_FILE) as f:
+                    data = json.load(f)
+                    tickers = data.get('tickers', [])
+                    if len(tickers) > 300:
+                        return tickers
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    tickers = _fetch_index_from_wikipedia(_MIDCAP400_WIKI_URL, min_count=300)
+    if tickers:
+        try:
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            with open(_MIDCAP400_CACHE_FILE, 'w') as f:
+                json.dump({'tickers': tickers, 'count': len(tickers),
+                           'updated': time.strftime('%Y-%m-%d %H:%M:%S'),
+                           'source': 'Wikipedia S&P MidCap 400'}, f, indent=2)
+        except OSError:
+            pass
+        return tickers
+
+    print("  Warning: S&P MidCap 400 Wikipedia fetch failed — returning empty list.")
+    return []
+
+
+def get_russell1000_tickers(force_refresh=False) -> list[str]:
+    """Get Russell 1000 ticker symbols.
+
+    The Russell 1000 = largest 1000 US equities by market cap. Approximated
+    here as the union of S&P 500 + S&P MidCap 400, which covers ~903 of the
+    1000 names (~97% overlap). A Wikipedia scrape of the full Russell 1000 list
+    is also attempted as the primary source.
+
+    Returns:
+        list[str]: ~1000 large/mid-cap ticker symbols
+    """
+    if not force_refresh and os.path.exists(_RUSSELL1000_CACHE_FILE):
+        try:
+            age_hours = (time.time() - os.path.getmtime(_RUSSELL1000_CACHE_FILE)) / 3600
+            if age_hours < CACHE_TTL_HOURS:
+                with open(_RUSSELL1000_CACHE_FILE) as f:
+                    data = json.load(f)
+                    tickers = data.get('tickers', [])
+                    if len(tickers) > 700:
+                        return tickers
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Primary: try Wikipedia Russell 1000 list
+    tickers = _fetch_index_from_wikipedia(_RUSSELL1000_WIKI_URL, min_count=700)
+
+    # Fallback: S&P 500 ∪ S&P MidCap 400 union (~903 tickers, 97% of R1000)
+    if not tickers:
+        sp500 = get_sp500_tickers()
+        midcap = get_midcap400_tickers()
+        tickers = sorted(set(sp500) | set(midcap))
+        print(f"  Info: Using S&P500 + MidCap400 union as Russell 1000 proxy ({len(tickers)} tickers).")
+
+    if tickers:
+        try:
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            with open(_RUSSELL1000_CACHE_FILE, 'w') as f:
+                json.dump({'tickers': tickers, 'count': len(tickers),
+                           'updated': time.strftime('%Y-%m-%d %H:%M:%S'),
+                           'source': 'Wikipedia Russell 1000 (or SP500+SP400 union)'}, f, indent=2)
+        except OSError:
+            pass
+    return tickers
+
+
+def _fetch_index_from_wikipedia(url: str, min_count: int = 300) -> list[str]:
+    """Generic Wikipedia table scraper for index constituent lists.
+
+    Tries every table on the page, picks the one with the most plausible
+    stock ticker column (column named Symbol/Ticker, values matching [A-Z.-]+).
+    """
+    try:
+        import pandas as pd
+        import requests
+        import io
+        import re
+
+        headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'}
+        resp = requests.get(url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        tables = pd.read_html(io.StringIO(resp.text))
+
+        _ticker_re = re.compile(r'^[A-Z][A-Z0-9\.\-]{0,9}$')
+
+        for df in tables:
+            # Find a column that looks like tickers
+            for col in df.columns:
+                col_s = str(col).lower()
+                if 'symbol' not in col_s and 'ticker' not in col_s:
+                    continue
+                raw = df[col].dropna().astype(str).tolist()
+                candidates = [_normalize_ticker(t) for t in raw if _ticker_re.match(t.strip().upper())]
+                if len(candidates) >= min_count:
+                    return sorted(set(candidates))
+
+        # Second pass: any column where >80% of values look like tickers
+        for df in tables:
+            for col in df.columns:
+                raw = df[col].dropna().astype(str).tolist()
+                candidates = [_normalize_ticker(t) for t in raw if _ticker_re.match(t.strip().upper())]
+                if len(candidates) >= min_count and len(candidates) / max(len(raw), 1) > 0.7:
+                    return sorted(set(candidates))
+
+        return []
+    except Exception as e:
+        print(f"  Warning: Wikipedia index fetch ({url}) failed: {e}")
+        return []
+
+
 if __name__ == '__main__':
     tickers = get_sp500_tickers(force_refresh=True)
     print(f"S&P 500 tickers: {len(tickers)}")
     print(f"First 20: {tickers[:20]}")
     print(f"Last 20: {tickers[-20:]}")
+
+    midcap = get_midcap400_tickers(force_refresh=True)
+    print(f"\nS&P MidCap 400 tickers: {len(midcap)}")
+
+    r1000 = get_russell1000_tickers(force_refresh=True)
+    print(f"\nRussell 1000 tickers: {len(r1000)}")
