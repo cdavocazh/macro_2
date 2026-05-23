@@ -1,6 +1,6 @@
 # STATUS — macro_2
 
-_Auto-maintained by `/update-session-status`. Last updated: 2026-05-23 — committed OECD CLI CFNAI fallback, yfinance 404 suppression, and MidCap400/Russell1000 index coverage to main; pushed macro_2 + IBKR to GitHub. VPS sync pending (host unreachable). Note: substantial 2026-05-17 infra (IBKR streaming, Data QA agent, Polymarket tab, deploy/systemd) remains UNCOMMITTED — see Open threads._
+_Auto-maintained by `/update-session-status`. Last updated: 2026-05-23 — committed OECD CLI CFNAI fallback, yfinance 404 suppression, MidCap400/Russell1000 index coverage, AND the full 2026-05-17 infra body (IBKR streaming, Data QA agent, Polymarket tab, Shiller multpl.com fix, deploy/systemd) to main; pushed macro_2 + IBKR to GitHub — working tree clean. VPS sync still pending (host unreachable)._
 
 Operator briefing for this repository. Read FIRST when opening this repo in a new session — it reflects what's deployed, what's in flight, and what gotchas exist. For deeper context: see "What to read first" below.
 
