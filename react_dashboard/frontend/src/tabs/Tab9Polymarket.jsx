@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import SectionHeader from '../components/SectionHeader';
 import PolymarketPriceChart from '../components/PolymarketPriceChart';
+import { toGMT8 } from '../utils/time';
 
 function fmtVol(v) {
   if (v == null || v === 0) return '$0';
@@ -182,7 +183,7 @@ export default function Tab9Polymarket({ indicators }) {
         <a href="https://polymarket.com" target="_blank" rel="noopener noreferrer"
            style={{ color: '#1565c0' }}>Polymarket</a>.
         Updated every 5 minutes.
-        {pm.latest_date && <> | As of: {new Date(pm.latest_date).toLocaleString()}</>}
+        {pm.latest_date && <> | As of: {toGMT8(pm.latest_date)}</>}
       </div>
 
       {noData && (

@@ -3,6 +3,7 @@ import MetricCard from '../components/MetricCard';
 import ErrorCard from '../components/ErrorCard';
 import SectionHeader from '../components/SectionHeader';
 import HistoryChart from '../components/HistoryChart';
+import { toGMT8 } from '../utils/time';
 
 function fmt(v, decimals = 2) {
   if (v === null || v === undefined || v === 'N/A') return 'N/A';
@@ -51,7 +52,7 @@ export default function Tab1Valuation({ indicators }) {
           <MetricCard
             label="CAPE Ratio"
             value={cape.shiller_cape}
-            caption={`As of: ${cape.latest_date || 'N/A'}`}
+            caption={`As of: ${toGMT8(cape.latest_date)}`}
           />
           <div>
             {cape.interpretation && (

@@ -35,4 +35,22 @@ export async function fetchHistory(key, histKey = 'historical') {
   return resp.data;
 }
 
+// IBKR — list available expiries for a future symbol (GC, SI, ES, etc.)
+export async function fetchIbkrContracts(symbol) {
+  const resp = await api.get(`/ibkr/contracts/${symbol}`);
+  return resp.data;
+}
+
+// IBKR — change which expiry is being streamed for a symbol
+// expiry="" or null → reset to front month
+export async function changeIbkrExpiry(symbol, expiry) {
+  const resp = await api.post('/ibkr/subscribe', { symbol, expiry: expiry || '' });
+  return resp.data;
+}
+
+export async function fetchIbkrSubscriptions() {
+  const resp = await api.get('/ibkr/subscriptions');
+  return resp.data;
+}
+
 export default api;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Plot from 'react-plotly.js';
 import MetricCard from '../components/MetricCard';
 import ErrorCard from '../components/ErrorCard';
@@ -7,35 +7,185 @@ import HistoryChart from '../components/HistoryChart';
 import HLCandlestickChart from '../components/HLCandlestickChart';
 import IntradayCandlestickChart from '../components/IntradayCandlestickChart';
 import useHyperliquidWS from '../hooks/useHyperliquidWS';
+import { toGMT8 } from '../utils/time';
+import { fetchIbkrContracts, changeIbkrExpiry } from '../api';
 
 function fmt(v, d = 2) {
   if (v == null || v === 'N/A') return 'N/A';
   return typeof v === 'number' ? v.toFixed(d) : String(v);
 }
 
-/** Convert a UTC date string to GMT+8 display string */
-function toGMT8(utcStr) {
-  if (!utcStr) return 'N/A';
-  try {
-    // Handle "YYYY-MM-DD HH:MM UTC" or "YYYY-MM-DDTHH:MM:SSZ" or ISO formats
-    const cleaned = utcStr.replace(' UTC', 'Z').replace(' ', 'T');
-    const d = new Date(cleaned);
-    if (isNaN(d.getTime())) return utcStr; // fallback
-    // Format in GMT+8
-    return d.toLocaleString('en-US', {
-      timeZone: 'Asia/Singapore',
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-      hour12: false,
-    }) + ' GMT+8';
-  } catch {
-    return utcStr;
-  }
+// Map dashboard instrumentKey -> IBKR symbol (used by ibkr_streaming.INSTRUMENTS)
+const IBKR_SYMBOL_MAP = {
+  gold: 'GC', silver: 'SI', copper: 'HG', crude_oil: 'CL', natural_gas: 'NG',
+  es_futures: 'ES', rty_futures: 'RTY',
+};
+
+const STORAGE_KEY = 'ibkr_expiry_pref_v1';
+
+function _readPrefs() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); }
+  catch { return {}; }
+}
+function _writePrefs(prefs) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs)); } catch {}
+}
+
+/**
+ * Hook: per-card expiry preference.
+ * - On mount: if the local pref differs from the server's currently-active expiry,
+ *   POST it so the daemon swaps to the user's preferred expiry.
+ * - updatePref(expiry): write to localStorage AND POST to backend
+ * - clearPref(): localStorage delete + reset to front-month
+ */
+function useIbkrExpiryPref(ibkrSymbol, currentExpiry) {
+  const [pref, setPref] = useState(() => _readPrefs()[ibkrSymbol] || null);
+
+  // On mount: re-apply local pref if it diverges from server state.
+  // Debounce: only re-apply if the current server expiry differs.
+  useEffect(() => {
+    if (!ibkrSymbol || !pref) return;
+    if (pref === currentExpiry) return;
+    if (!currentExpiry) return; // server hasn't loaded yet, skip
+    changeIbkrExpiry(ibkrSymbol, pref).catch(err => {
+      console.warn(`[IBKR] Failed to re-apply pref ${ibkrSymbol}=${pref}:`, err);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ibkrSymbol]);
+
+  const updatePref = useCallback((newExpiry) => {
+    const all = _readPrefs();
+    if (newExpiry) all[ibkrSymbol] = newExpiry;
+    else delete all[ibkrSymbol];
+    _writePrefs(all);
+    setPref(newExpiry || null);
+  }, [ibkrSymbol]);
+
+  const clearPref = useCallback(() => updatePref(null), [updatePref]);
+
+  return { pref, updatePref, clearPref };
+}
+
+/** Format YYYYMMDD or YYYYMM -> YYYY-MM-DD or YYYY-MM */
+function formatExpiry(e) {
+  if (!e) return '';
+  if (e.length === 8) return `${e.slice(0,4)}-${e.slice(4,6)}-${e.slice(6,8)}`;
+  if (e.length === 6) return `${e.slice(0,4)}-${e.slice(4,6)}`;
+  return e;
+}
+
+function ExpiryDropdown({ ibkrSymbol, currentExpiry }) {
+  const [contracts, setContracts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const { pref, updatePref, clearPref } = useIbkrExpiryPref(ibkrSymbol, currentExpiry);
+
+  // Load available contracts on mount
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchIbkrContracts(ibkrSymbol)
+      .then(data => { if (!cancelled) setContracts(data.contracts || []); })
+      .catch(err => {
+        if (!cancelled) {
+          console.warn(`[IBKR] fetchIbkrContracts(${ibkrSymbol}) failed:`, err);
+          setContracts([]);
+        }
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [ibkrSymbol]);
+
+  const handleChange = async (e) => {
+    const newExpiry = e.target.value;
+    if (newExpiry === currentExpiry) return;
+    setBusy(true);
+    setMsg('Switching...');
+    try {
+      await changeIbkrExpiry(ibkrSymbol, newExpiry);
+      updatePref(newExpiry);
+      setMsg('Switched - daemon applying...');
+      // Clear the message after a few seconds so the dashboard refreshes
+      setTimeout(() => setMsg(null), 8000);
+    } catch (err) {
+      console.error(`[IBKR] changeIbkrExpiry(${ibkrSymbol}, ${newExpiry}) failed:`, err);
+      setMsg('Failed: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleReset = async () => {
+    setBusy(true);
+    setMsg('Resetting...');
+    try {
+      await changeIbkrExpiry(ibkrSymbol, '');
+      clearPref();
+      setMsg('Reset - daemon applying front-month...');
+      setTimeout(() => setMsg(null), 8000);
+    } catch (err) {
+      setMsg('Failed: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) return <span style={{ fontSize: '0.8em', opacity: 0.6 }}> | loading expiries...</span>;
+  if (!contracts.length) return null;
+
+  return (
+    <span style={{ fontSize: '0.85em', marginLeft: 6 }}>
+      {' | '}
+      <label style={{ marginRight: 4 }}>Expiry:</label>
+      <select
+        value={currentExpiry || ''}
+        onChange={handleChange}
+        disabled={busy}
+        style={{ fontSize: '0.95em', padding: '1px 4px' }}
+      >
+        {contracts.map(c => (
+          <option key={c.contract_id} value={c.expiry}>
+            {c.local_symbol} ({formatExpiry(c.expiry)})
+          </option>
+        ))}
+      </select>
+      {pref && (
+        <button
+          onClick={handleReset}
+          disabled={busy}
+          style={{
+            marginLeft: 6, fontSize: '0.85em', padding: '0 6px',
+            cursor: 'pointer', border: '1px solid #888', background: '#f5f5f5',
+            borderRadius: 3,
+          }}
+          title="Reset to front-month auto-roll"
+        >↺ Reset</button>
+      )}
+      {msg && <span style={{ marginLeft: 6, opacity: 0.7, fontStyle: 'italic' }}>{msg}</span>}
+    </span>
+  );
 }
 
 function CommodityCard({ data, label, unit, color, instrumentKey }) {
   if (!data) return null;
   if (data.error) return <ErrorCard title={label} error={data.error} note={data.note} />;
+
+  // Build IBKR contract info badge if real-time data is available
+  const isIbkr = data.source && data.source.includes('IBKR');
+  const ibkrTicker = data.ibkr_local_symbol;
+  const ibkrExpiry = data.ibkr_expiry;
+  const ibkrSymbol = IBKR_SYMBOL_MAP[instrumentKey];
+
+  let badge = '';
+  if (isIbkr && ibkrTicker) {
+    badge = ` | Ticker: ${ibkrTicker}${ibkrExpiry ? ' (exp ' + formatExpiry(ibkrExpiry) + ')' : ''}`;
+  }
+
+  // Bid/ask line for IBKR tickers
+  const bidAskLine = (isIbkr && data.ibkr_bid && data.ibkr_ask)
+    ? `Bid ${data.ibkr_bid} / Ask ${data.ibkr_ask}${data.ibkr_volume ? ' | Vol ' + data.ibkr_volume.toLocaleString() : ''}${data.ibkr_open_interest ? ' | OI ' + data.ibkr_open_interest.toLocaleString() : ''}`
+    : '';
 
   return (
     <div>
@@ -44,8 +194,20 @@ function CommodityCard({ data, label, unit, color, instrumentKey }) {
         value={data.price}
         delta={data.change_1d}
         deltaLabel="%"
-        caption={`As of: ${data.latest_date || 'N/A'}${data.note ? ' | ' + data.note : ''}`}
+        caption={
+          <>
+            {`As of: ${toGMT8(data.latest_date) || 'N/A'}${badge}${data.note ? ' | ' + data.note : ''}`}
+            {isIbkr && ibkrSymbol && (
+              <ExpiryDropdown ibkrSymbol={ibkrSymbol} currentExpiry={ibkrExpiry} />
+            )}
+          </>
+        }
       />
+      {bidAskLine && (
+        <div className="metric-caption" style={{ fontSize: '0.85em', opacity: 0.85, marginTop: '-8px', marginBottom: '8px' }}>
+          {bidAskLine}
+        </div>
+      )}
       <HistoryChart data={data.historical} label={`${label} (${unit})`} color={color} />
       {instrumentKey && <IntradayCandlestickChart instrumentKey={instrumentKey} label={label} color={color} />}
     </div>
@@ -158,7 +320,7 @@ export default function Tab5Commodities({ indicators }) {
               value={cuAu.cu_au_ratio}
               delta={cuAu.change_1d}
               deltaLabel="%"
-              caption={`As of: ${cuAu.latest_date || 'N/A'}${cuAu.interpretation ? ' | ' + cuAu.interpretation : ''}`}
+              caption={`As of: ${toGMT8(cuAu.latest_date)}${cuAu.interpretation ? ' | ' + cuAu.interpretation : ''}`}
             />
             <HistoryChart data={cuAu.historical} label="Cu/Au Ratio x1000" color="#ef6c00" />
           </div>
@@ -175,7 +337,7 @@ export default function Tab5Commodities({ indicators }) {
         <ErrorCard error={cot.error} note={cot.suggestion} />
       ) : (
         <>
-          <div className="metric-caption">As of: {cot.latest_date || 'N/A'}</div>
+          <div className="metric-caption">As of: {toGMT8(cot.latest_date)}</div>
 
           <div className="grid-2">
             {/* Gold COT */}

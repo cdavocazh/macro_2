@@ -1,0 +1,19 @@
+[Unit]
+Description=Macro2 IBKR Real-Time Streaming Daemon
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/macro_2
+EnvironmentFile=/root/macro_2/.env
+ExecStart=/root/macro_2/venv/bin/python ibkr_fast_extract.py --client-id 31
+Restart=on-failure
+RestartSec=3600
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=macro2-ibkr-stream
+
+[Install]
+WantedBy=multi-user.target

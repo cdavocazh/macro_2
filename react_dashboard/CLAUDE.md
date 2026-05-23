@@ -19,8 +19,9 @@ cd frontend && npm run build     # production build to frontend/dist/
 
 - `backend/main.py` -- FastAPI endpoints + `/api/intraday/{key}` + `/api/hl/ohlcv/{coin}` OHLCV endpoints
 - `backend/hl_ws_service.py` -- Hyperliquid WebSocket relay (singleton, starts/stops with server)
-- `frontend/src/App.jsx` -- 8 tabs, auto-refresh, loading states
-- `frontend/src/tabs/Tab1-8*.jsx` -- one component per tab, all 88+ indicators
+- `frontend/src/App.jsx` -- 9 tabs, auto-refresh, loading states
+- `frontend/src/tabs/Tab1-9*.jsx` -- one component per tab (includes Tab9Polymarket)
+- `frontend/src/utils/time.js` -- GMT+8 timezone conversion utility
 - `frontend/src/hooks/useHyperliquidWS.js` -- React hook for WebSocket HL data (toggle-controlled)
 - `frontend/src/components/HLCandlestickChart.jsx` -- OHLCV candlestick chart for HL perps (TradingView lightweight-charts)
 - `frontend/src/components/IntradayCandlestickChart.jsx` -- OHLCV candlestick chart for yfinance instruments (TradingView lightweight-charts)
@@ -56,6 +57,11 @@ Max candles: 5000 per request. Lookback auto-capped per interval (1m→3d, 1h→
 ## Indicator keys
 
 The backend serves indicators using the same keys as `data_aggregator.py`:
-`1_sp500_forward_pe`, `2_russell_2000`, ..., `82_erp`, `84_hl_perps`, `85_hl_spot_stocks`
+`1_sp500_forward_pe`, `2_russell_2000`, ..., `82_erp`, `84_hl_perps`, `85_hl_spot_stocks`, `polymarket`
 
 See the parent project's `CLAUDE.md` for the full indicator list and data flow.
+
+## See also
+
+- [`STATUS.md`](STATUS.md) — React dashboard implementation status and version tracking
+- [`README.md`](README.md) — User-facing overview, quick start, directory structure

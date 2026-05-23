@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchAllIndicators, refreshData } from './api';
+import { toGMT8 } from './utils/time';
 import TabPanel from './components/TabPanel';
 import Tab1Valuation from './tabs/Tab1Valuation';
 import Tab2MarketIndices from './tabs/Tab2MarketIndices';
@@ -78,9 +79,7 @@ export default function App() {
     }
   };
 
-  const fmtUpdate = lastUpdate
-    ? new Date(lastUpdate).toLocaleString()
-    : 'Never';
+  const fmtUpdate = lastUpdate ? toGMT8(lastUpdate) : 'Never';
 
   if (loading && !indicators) {
     return (

@@ -1,0 +1,15 @@
+[Unit]
+Description=Macro Dashboard — Self-Healing Cache Repair
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/macro_2
+EnvironmentFile=/root/macro_2/.env
+ExecStart=/root/macro_2/venv/bin/python /root/macro_2/scripts/repair_cache_errors.py
+TimeoutStartSec=180
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=macro-cache-repair

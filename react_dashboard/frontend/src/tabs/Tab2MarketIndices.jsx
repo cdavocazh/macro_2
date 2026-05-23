@@ -3,6 +3,7 @@ import MetricCard from '../components/MetricCard';
 import ErrorCard from '../components/ErrorCard';
 import SectionHeader from '../components/SectionHeader';
 import HistoryChart from '../components/HistoryChart';
+import { toGMT8 } from '../utils/time';
 
 function fmt(v, d = 2) {
   if (v == null || v === 'N/A') return 'N/A';
@@ -39,7 +40,7 @@ export default function Tab2MarketIndices({ indicators }) {
             value={es.price}
             delta={es.change_1d}
             deltaLabel="%"
-            caption={`As of: ${es.latest_date || 'N/A'}`}
+            caption={`As of: ${toGMT8(es.latest_date)}`}
           />
         )}
         {rty.error ? (
@@ -50,7 +51,7 @@ export default function Tab2MarketIndices({ indicators }) {
             value={rty.price}
             delta={rty.change_1d}
             deltaLabel="%"
-            caption={`As of: ${rty.latest_date || 'N/A'}`}
+            caption={`As of: ${toGMT8(rty.latest_date)}`}
           />
         )}
       </div>

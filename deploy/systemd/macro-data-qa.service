@@ -1,0 +1,16 @@
+[Unit]
+Description=Macro_2 Data QA Agent (12h schedule)
+After=network-online.target macro-react.service macro2-ibkr-stream.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/macro_2
+EnvironmentFile=-/root/macro_2/.env
+EnvironmentFile=-/root/Finl_Agent_CC/.env
+ExecStart=/root/macro_2/venv/bin/python -m agent.openai_agents.qa_agent
+TimeoutStartSec=600
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=macro-data-qa

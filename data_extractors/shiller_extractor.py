@@ -1,5 +1,7 @@
 """
-Data extractor for Shiller CAPE Ratio from Robert Shiller's website.
+Data extractor for Shiller CAPE Ratio.
+Primary source: multpl.com (monthly table).
+Fallback: Robert Shiller's Yale Excel (often stale).
 """
 import pandas as pd
 import requests
@@ -9,49 +11,107 @@ import config
 
 def get_shiller_cape():
     """
-    Get Shiller CAPE Ratio from Robert Shiller's website.
-    Downloads the Excel file and extracts the CAPE ratio.
+    Get Shiller CAPE Ratio.
+    Primary: scrape multpl.com/shiller-pe/table/by-month (live data).
+    Fallback: download Robert Shiller's Yale Excel (may be stale).
     Returns: dict with latest CAPE value and date-indexed historical Series.
     """
+    result = _get_shiller_cape_multpl()
+    if 'error' not in result:
+        return result
+    return _get_shiller_cape_yale()
+
+
+def _get_shiller_cape_multpl():
+    """Scrape Shiller CAPE from multpl.com."""
     try:
-        # Download the Excel file
+        from bs4 import BeautifulSoup
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+        }
+        resp = requests.get(
+            'https://www.multpl.com/shiller-pe/table/by-month',
+            headers=headers,
+            timeout=30
+        )
+        resp.raise_for_status()
+
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        table = soup.find('table', id='datatable')
+        if not table:
+            return {'error': 'multpl.com: CAPE table not found'}
+
+        dates = []
+        values = []
+        for row in table.find_all('tr')[1:]:
+            cols = row.find_all('td')
+            if len(cols) >= 2:
+                try:
+                    date_str = cols[0].text.strip()
+                    val_str = cols[1].text.strip().replace(',', '')
+                    date = pd.to_datetime(date_str)
+                    val = float(val_str)
+                    dates.append(date)
+                    values.append(val)
+                except (ValueError, TypeError):
+                    continue
+
+        if not dates:
+            return {'error': 'multpl.com: no CAPE rows parsed'}
+
+        cape_series = pd.Series(values, index=dates).sort_index()
+        latest_cape = float(cape_series.iloc[-1])
+        latest_date = cape_series.index[-1]
+
+        return {
+            'shiller_cape': latest_cape,
+            'latest_date': latest_date.strftime('%Y-%m-%d'),
+            'source': 'multpl.com (Shiller CAPE)',
+            'historical': cape_series,
+            'interpretation': {
+                'low': '< 15 (Undervalued)',
+                'normal': '15-25 (Fair value)',
+                'high': '25-35 (Overvalued)',
+                'very_high': '> 35 (Extremely overvalued)'
+            }
+        }
+    except ImportError:
+        return {'error': 'multpl.com: beautifulsoup4 not installed'}
+    except requests.RequestException as e:
+        return {'error': f'multpl.com request error: {str(e)}'}
+    except Exception as e:
+        return {'error': f'multpl.com parse error: {str(e)}'}
+
+
+def _get_shiller_cape_yale():
+    """Fallback: download Shiller's Yale Excel file (may be stale post-2023)."""
+    try:
         response = requests.get(config.SHILLER_DATA_URL, timeout=30)
         response.raise_for_status()
 
-        # Read the Excel file
-        # The data is in the sheet with a specific format
         excel_data = pd.read_excel(
             BytesIO(response.content),
             sheet_name='Data',
-            skiprows=7  # Skip header rows
+            skiprows=7
         )
 
-        # The CAPE ratio is typically in column 'CAPE' or 'Cyclically Adjusted PE Ratio'
-        # Column structure: Date, P, D, E, CPI, Long Rate, Real Price, Real Dividend, Real Earnings, CAPE
-
-        # Clean column names
         excel_data.columns = excel_data.columns.str.strip()
 
-        # Try to find CAPE column (it might be named differently)
         cape_column = None
         for col in excel_data.columns:
             if 'CAPE' in str(col).upper() or 'P/E10' in str(col).upper() or 'CYCLICALLY' in str(col).upper():
                 cape_column = col
                 break
 
-        # If not found by name, it's usually the 10th column (index 9)
         if cape_column is None:
             if len(excel_data.columns) > 9:
                 cape_column = excel_data.columns[9]
             else:
-                return {'error': 'CAPE column not found in data'}
+                return {'error': 'Yale Excel: CAPE column not found'}
 
-        # Build date index from the first column (fractional year format: YYYY.MM)
-        # e.g., 1881.01 = January 1881, 2026.01 = January 2026
         date_column = excel_data.columns[0]
         raw_dates = excel_data[date_column]
 
-        # Convert fractional year (e.g. 2026.03) to proper datetime
         dates = []
         for val in raw_dates:
             try:
@@ -67,15 +127,12 @@ def get_shiller_cape():
                 dates.append(pd.NaT)
 
         excel_data['_parsed_date'] = dates
-
-        # Filter rows that have both valid date and CAPE value
         mask = excel_data['_parsed_date'].notna() & excel_data[cape_column].notna()
         valid_data = excel_data.loc[mask]
 
         if valid_data.empty:
-            return {'error': 'No CAPE data available'}
+            return {'error': 'Yale Excel: no valid CAPE data'}
 
-        # Build a properly date-indexed Series
         cape_series = pd.Series(
             valid_data[cape_column].values.astype(float),
             index=valid_data['_parsed_date'].values,
@@ -89,7 +146,7 @@ def get_shiller_cape():
         return {
             'shiller_cape': latest_cape,
             'latest_date': pd.Timestamp(latest_date).strftime('%Y-%m-%d'),
-            'source': 'Robert Shiller (Yale)',
+            'source': 'Robert Shiller (Yale) — may be stale',
             'historical': cape_series,
             'interpretation': {
                 'low': '< 15 (Undervalued)',
@@ -99,6 +156,6 @@ def get_shiller_cape():
             }
         }
     except requests.RequestException as e:
-        return {'error': f"Error downloading Shiller data: {str(e)}"}
+        return {'error': f'Yale Excel download error: {str(e)}'}
     except Exception as e:
-        return {'error': f"Error processing Shiller CAPE data: {str(e)}"}
+        return {'error': f'Yale Excel parse error: {str(e)}'}

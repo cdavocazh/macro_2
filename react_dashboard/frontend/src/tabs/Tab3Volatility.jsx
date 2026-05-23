@@ -3,6 +3,7 @@ import MetricCard from '../components/MetricCard';
 import ErrorCard from '../components/ErrorCard';
 import SectionHeader from '../components/SectionHeader';
 import HistoryChart from '../components/HistoryChart';
+import { toGMT8 } from '../utils/time';
 
 function fmt(v, d = 2) {
   if (v == null || v === 'N/A') return 'N/A';
@@ -36,7 +37,7 @@ export default function Tab3Volatility({ indicators }) {
               value={vix.vix}
               delta={vix.change_1d}
               deltaLabel="%"
-              caption={`As of: ${vix.latest_date || 'N/A'}`}
+              caption={`As of: ${toGMT8(vix.latest_date)}`}
               inverse
             />
             <HistoryChart data={vix.historical} label="VIX" color="#e53935" />
@@ -52,7 +53,7 @@ export default function Tab3Volatility({ indicators }) {
               value={move.move}
               delta={move.change_1d}
               deltaLabel="%"
-              caption={`As of: ${move.latest_date || 'N/A'}`}
+              caption={`As of: ${toGMT8(move.latest_date)}`}
               inverse
             />
             <HistoryChart data={move.historical} label="MOVE Index" color="#ff9800" />

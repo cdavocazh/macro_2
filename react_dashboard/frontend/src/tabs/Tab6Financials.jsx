@@ -3,6 +3,7 @@ import { fetchFinancials } from '../api';
 import MetricCard from '../components/MetricCard';
 import ErrorCard from '../components/ErrorCard';
 import SectionHeader from '../components/SectionHeader';
+import { toGMT8 } from '../utils/time';
 
 const TOP_20 = ['AAPL','MSFT','NVDA','GOOGL','AMZN','META','BRK-B','TSM',
   'LLY','AVGO','JPM','V','WMT','MA','XOM','UNH','COST','HD','PG','JNJ'];

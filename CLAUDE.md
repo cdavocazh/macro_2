@@ -79,23 +79,35 @@ bash setup_launchd.sh                 # install scheduled-extract + fast-extract
 bash setup_launchd.sh --status        # check all jobs
 bash setup_launchd.sh --uninstall     # remove all jobs
 
+# IBKR real-time streaming daemon (VPS, requires IB Gateway)
+python ibkr_fast_extract.py                   # auto-detect port
+python ibkr_fast_extract.py --port 4001       # specify port
+python ibkr_fast_extract.py --dry-run         # list instruments, no connect
+
+# Macro catalyst calendar (FRED release dates + FOMC)
+python -c "from data_extractors.macro_calendar_extractor import build_macro_calendar; print(build_macro_calendar())"
+
 # Run data review agent (requires MINIMAX_API_KEY)
 python -m agent.openai_agents.agent "Scan all companies for missing data"
 python -m agent.langchain_agents.agent "Compare Yahoo vs SEC for AAPL"
+
+# Run dashboard data QA agent (scheduled on VPS every 12h)
+python -m agent.openai_agents.qa_agent
+python -m agent.openai_agents.qa_agent --check C3   # single check
 ```
 
 ## Architecture
 
 ```
-app.py                        Streamlit dashboard (8 tabs, compact layout, ~2,300 lines)
-data_aggregator.py            Orchestrator — fetches all 86 indicators, saves/loads cache, auto-reload
+app.py                        Streamlit dashboard (9 tabs, compact layout, ~2,300 lines)
+data_aggregator.py            Orchestrator — fetches all 88+ indicators, saves/loads cache, auto-reload
   ├── data_extractors/
   │   ├── yfinance_extractors.py       18+ indicators (VIX, DXY, Russell, ES/RTY futures w/ OHLCV, JPY, EUR/USD, GBP/USD, EUR/JPY, SPY/RSP, sector ETFs, VIX term structure, put/call ratio, BDI)
   │   ├── fred_extractors.py           38 indicators (GDP, yields, ISM PMI, TGA, liquidity, SOFR, spreads, inflation, labor, M2, JOLTS, Sahm, SLOOS, ADP, WALCL, term premia, home sales, GDPNow, WEI)
   │   ├── web_scrapers.py               4 indicators (Forward P/E, Put/Call, SKEW, breadth)
-  │   ├── shiller_extractor.py          1 indicator  (CAPE ratio from Yale Excel)
+  │   ├── shiller_extractor.py          1 indicator  (CAPE ratio — multpl.com primary, Yale Excel fallback)
   │   ├── openbb_extractors.py         21 indicators (S&P fundamentals + 20 OpenBB-based: VIX futures, put/call, multiples, ECB rates, OECD CLI, CPI components, Fama-French, IV skew, EU yields, global CPI, earnings, sector P/E, treasury curve, corp spreads, intl unemployment/GDP, screener, money measures, PMI, ERP; optional dep)
-  │   ├── commodities_extractors.py     7 indicators (gold, silver, oil, copper, natural gas, Cu/Au ratio) — all with 2y OHLCV
+  │   ├── commodities_extractors.py     7 indicators (gold, silver, oil, copper, natural gas, Cu/Au ratio) — all with 5y OHLCV
   │   ├── cot_extractor.py              2 indicators (CFTC COT positioning: gold/silver + crude oil/Brent/copper/nat gas via SODA API)
   │   ├── japan_yield_extractor.py      2 indicators (Japan 2Y yield, US-JP spread)
   │   ├── global_yields_extractor.py    4 indicators (Germany/UK/China 10Y yields, ISM Services PMI)
@@ -105,6 +117,8 @@ data_aggregator.py            Orchestrator — fetches all 86 indicators, saves/
   │   ├── thirteenf_extractor.py       13F-HR institutional holdings (5 funds, QoQ changes)
   │   ├── fidenza_extractors.py       13 indicators (Brent, Nikkei, EM indices, SOFR/FF futures, XAU/JPY, Au/Ag ratio, AAII, OPEC, gold reserves)
   │   ├── hyperliquid_extractor.py    2 indicators (HL perps: BTC/ETH/SOL/PAXG/HYPE/OIL + HIP-3 spot stocks)
+  │   ├── macro_calendar_extractor.py 1 output (forward-looking US macro release calendar + FOMC dates)
+  │   ├── ibkr_streaming.py           IBKR real-time streaming module (ib_async, tick-level futures/FX/indices)
   │   └── sp500_tickers.py             S&P 500 constituent list (Wikipedia + cache)
   └── utils/helpers.py               Cache serialization, CSV export, formatting
 
@@ -124,11 +138,12 @@ grafana_dashboard/            Grafana dashboard (111 panels, Docker + local mode
 
 react_dashboard/              React + Vite dashboard with FastAPI backend
   ├── backend/main.py         FastAPI server reading from data_aggregator cache
-  ├── frontend/src/           React components (8 tab panels, metric cards, charts)
+  ├── frontend/src/           React components (9 tab panels, metric cards, charts)
   └── start.sh                Start script (backend + frontend concurrently)
 
 fast_extract.py               5-minute real-time yfinance extraction (31 extractors, ~5s) + cache merge into all_indicators.json
 hl_extract.py                 1-minute Hyperliquid extraction (perps + spot, ~0.5s) + partial cache merge
+ibkr_fast_extract.py          IBKR real-time streaming daemon (VPS, ib_async, 3s snapshot writes)
 scheduled_extract.py          Full catch-up script — FRED, SEC, web scrapers (does NOT touch app.py)
 extract_historical_data.py    Append-only historical CSV builder (dual-source equity)
 extract_sp500_financials.py   Batch extraction of S&P 500 financials (~30-40 min)
@@ -137,10 +152,16 @@ monitor_earnings.py           Earnings date monitoring — flags stale companies
 review_data_freshness.py      Weekly SEC filing date comparison — flags stale data (~2 min)
 config.py                     API keys, cache settings
 
-agent/                        Financial data discrepancy review agent
-  ├── shared/tools.py         8 shared validation tools
-  ├── openai_agents/agent.py  OpenAI Agents SDK + Minimax LLM
-  └── langchain_agents/agent.py  LangChain + LangGraph + Minimax LLM
+deploy/systemd/               VPS systemd unit files (IBKR stream, data QA, cache repair)
+scripts/                      Utility scripts (repair_cache_errors.py)
+
+agent/                        Financial data QA agents (equity cross-source + dashboard health)
+  ├── shared/tools.py         8 equity QA tools
+  ├── shared/qa_tools.py      11 dashboard data QA tools
+  ├── shared/freshness_sla.py Per-indicator SLA definitions
+  ├── openai_agents/agent.py  Equity QA — OpenAI Agents SDK + Minimax LLM
+  ├── openai_agents/qa_agent.py  Dashboard QA — scheduled 12h health check + Telegram alerts
+  └── langchain_agents/agent.py  Equity QA — LangChain + LangGraph + Minimax LLM
 ```
 
 ## Dashboard tabs
@@ -155,6 +176,7 @@ agent/                        Financial data discrepancy review agent
 | 6 | Large-cap Financials | Top 20 dropdown + any-ticker text input, dual-source (Yahoo + SEC EDGAR), quarterly statements |
 | 7 | Rates & Credit | Yield curve regime, 2s10s spread, global yields (US 5Y/10Y, DE/UK/CN 10Y), real yield, breakevens, HY/IG OAS, NFCI, Fed Funds, bank reserves, SLOOS, unemployment, claims, CPI, PPI, PCE, ECB Rates, CPI Components, EU Yields, Global CPI, Full Treasury Curve, Corporate Spreads |
 | 8 | Economic Activity | Nonfarm Payrolls, JOLTS, Quits Rate, Sahm Rule, Consumer Sentiment, Retail Sales, ISM Services PMI, Industrial Production, Housing Starts, OECD CLI, Intl Unemployment, Intl GDP, Global PMI |
+| 9 | Polymarket | Prediction market events (politics, crypto, macro), YES/NO prices, volume, multi-outcome markets |
 
 ## Dashboard frontends
 
@@ -275,6 +297,10 @@ TOP_20_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM
 - **High-frequency macro proxies:** GDPNow (Atlanta Fed, FRED GDPNOW), WEI (NY Fed Weekly Economic Index, FRED WEI) for macro nowcasting. VIX term structure (spot vs futures, contango ratio). BDI and put/call ratio attempted but not available on yfinance (known limitation).
 - **Compact dashboard layout:** Custom CSS via `st.markdown(unsafe_allow_html=True)` overrides Streamlit's default spacing. Key rules: metric padding 0.2rem, value font 1.3rem, label 0.72rem, caption 0.68rem, column gap 0.3rem. Tab dividers removed, verbose captions pruned, sidebar About collapsed into expander. Tab 3 uses 3 columns (VIX/MOVE/Ratio), Tab 4 FX uses 5 columns (DXY/JPY/EUR-USD/GBP-USD/EUR-JPY). Tab 1 Historical Valuation section removed (was making a slow `yf.Ticker("SPY")` network call on every page load).
 
+- **IBKR streaming architecture:** `ibkr_fast_extract.py` is a long-running daemon (not a periodic script) that maintains live WebSocket connections to IB Gateway. Writes atomic JSON snapshots to `data_cache/ibkr_realtime.json` every 3 seconds. 17 instruments: 3 index futures (ES/NQ/RTY), 3 metals (GC/SI/HG), 2 energy (CL/NG), 4 treasury futures (ZN/ZB/ZF/ZT), 2 micro yield futures (10Y/2YY), VIX index, 2 FX (EUR/USD, USD/JPY). Connection retry: 1 hour backoff if IBKR unavailable. Manifest pin system allows contract spec overrides via `data_cache/ibkr_subscriptions.json`. CSV overlay writes 5-min summary rows into existing `historical_data/*.csv` files (matches yfinance column names for seamless merge).
+- **Macro catalyst calendar:** `macro_calendar_extractor.py` queries FRED `/release/dates` API for 8 key macro releases (CPI, PPI, NFP, GDP, PCE, ISM, JOLTS, retail sales) + scrapes FOMC meeting dates from `federalreserve.gov`. Output: `historical_data/macro_catalyst_calendar.csv`. Consumed by `Finl_Agent_CC/tools/option_strategy.py` for non-earnings catalyst veto logic in sell-vol strategies.
+- **Dashboard Data QA agent:** `agent/openai_agents/qa_agent.py` runs 11 checks in a fixed sequence (no agent framework tool-calling), sends aggregated findings to Minimax LLM for triage synthesis, then pushes CRITICAL-severity findings to Telegram. Scheduled every 12h on VPS via systemd timer (00:00 + 12:00 UTC). SLA thresholds in `agent/shared/freshness_sla.py` were calibrated post-first-run: relaxed from strict (monthly=45d) to realistic (monthly=75d) to match actual publication schedules.
+
 - **Multi-frontend architecture:** All 4 dashboards (Streamlit, Dash, Grafana, React) share the same data layer (`data_aggregator.py` → `data_cache/all_indicators.json`). No frontend has its own data fetching logic. Dash uses `data_loader.py` (singleton with mtime check), Grafana uses `api_bridge/main.py` (FastAPI reading aggregator), React uses its own FastAPI backend. This means `scheduled_extract.py` and `fast_extract.py` feed all dashboards simultaneously.
 - **S&P 500 Multiples 3-tier cascade:** `_sp500_multiples_openbb()` (OpenBB/Finviz per-stock, market-cap weighted for Top 20) → `_sp500_multiples_fallback()` (multpl.com scraping for index-level ratios) → yfinance SPY ETF (last resort). The OpenBB path also scrapes Finviz quote pages for PEG ratio and EPS growth rates not available via the API.
 - **ERP forward PE sourcing:** `get_equity_risk_premium()` checks if indicator `65_sp500_multiples` has a valid `forward_pe` from OpenBB/Finviz before computing forward ERP. Falls back to yfinance SPY `forwardPE` (usually None).
@@ -305,13 +331,21 @@ Three launchd jobs run at different frequencies:
 
 launchd catches up missed runs after sleep (unlike cron). `hl_extract.py` has a 45-second freshness guard. `fast_extract.py` has a 3-minute freshness guard. `scheduled_extract.py` has a 15-minute freshness guard. The `TimeOut` in each plist auto-kills hung processes.
 
+**VPS scheduling (systemd):** Three additional services run on the Hostinger VPS (`187.77.136.160`) via systemd — see `deploy/systemd/README.md` for unit files and deployment instructions:
+- `macro2-ibkr-stream.service` — always-on IBKR streaming daemon (3s JSON snapshots)
+- `macro-data-qa.timer` — 12h Data QA agent (00:00 + 12:00 UTC)
+- `macro-cache-repair.timer` — periodic cache error auto-repair
+
 ## API keys
 
 - **FRED:** Set `FRED_API_KEY` in `.env` file (gitignored), env var, or Streamlit secrets. Get a free key from https://fred.stlouisfed.org/docs/api/api_key.html
 - **SEC EDGAR:** No key needed (User-Agent header required, set in `sec_extractor.py`)
 - **yfinance:** No key needed
 - **Hyperliquid:** No key needed (public REST API + WebSocket)
+- **IBKR (VPS streaming):** No API key, but requires IB Gateway (or TWS) running on the same host (default port 4001). `ib_async` connects locally.
+- **Polymarket:** No key needed (public CLOB API at `clob.polymarket.com`)
 - **Minimax (agent only):** `MINIMAX_API_KEY` env var required for agent subfolder
+- **Telegram (agent alerts):** `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` in `.env` (optional, for CRITICAL alert push)
 - **All others:** No key needed (web scraping or public data)
 
 ## Extractor return format
@@ -455,13 +489,13 @@ bash grafana_dashboard/start.sh local   # starts API bridge + Grafana
 ## Tech stack
 
 - Python 3.10 (mambaforge), compatible with 3.8-3.13
-- **Data extraction:** pandas, yfinance, fredapi, beautifulsoup4, requests, OpenBB (optional)
+- **Data extraction:** pandas, yfinance, fredapi, beautifulsoup4, requests, OpenBB (optional), ib_async (IBKR streaming)
 - **Streamlit dashboard:** streamlit, plotly
 - **Dash dashboard:** dash, plotly, gunicorn
 - **Grafana dashboard:** FastAPI (api_bridge), Grafana + Infinity datasource plugin
 - **React dashboard:** React, Vite, FastAPI backend
-- SEC EDGAR XBRL API (no key needed), Finviz (via OpenBB or direct scrape)
-- macOS launchd for scheduling
+- SEC EDGAR XBRL API (no key needed), Finviz (via OpenBB or direct scrape), Polymarket CLOB API
+- macOS launchd for scheduling (local), systemd for VPS scheduling
 - Agent: openai-agents, langchain, langgraph, Minimax LLM API
 
 ## Changelog
@@ -502,3 +536,30 @@ bash grafana_dashboard/start.sh local   # starts API bridge + Grafana
 - **Added: Extraction progress tracking** — `data_aggregator.py` and `fast_extract.py` now write progress to `data_cache/.extract_progress.json` (current/total indicator, label, status). Dashboard polls this file every 3 seconds.
 - **Added: Refresh status panel (top-right header)** — Shows live extraction progress bar with indicator name and count (e.g., "🔄 Refreshing 45/82 (gold)"). Detects stalled extractions (>2 min since last progress update) and displays a warning with "Apply Available Data" option.
 - **Changed: Dashboard no longer auto-refreshes on new cache data** — Removed `refresh-interval` from `render_tab` inputs. When the cache file changes, a green confirmation banner appears ("📊 Fresh data is available") with "Apply Refreshed Data" / "Dismiss" buttons. Data is only swapped in when the user clicks Apply, preventing disruption during active use.
+
+---
+
+## Downstream consumer: Opportunity_scanner
+
+[`Opportunity_scanner/`](../Opportunity_scanner/) consumes outputs of this repo as a **read-only downstream**, following the **parallel-pipeline contract** (see [`../Opportunity_scanner/CLAUDE.md`](../Opportunity_scanner/CLAUDE.md)):
+
+- **No edits** are made to `data_aggregator.py`, the per-source extractors, the launchd timers, the dashboard frontends, or any cache file in this repo.
+- **No schema mutations** to per-ticker `equity_financials/<TICKER>_quarterly.csv` files. The scanner sidesteps that risk entirely by writing its own sibling files (e.g. `consensus_history/<TICKER>.json` under the scanner's strategy folder).
+- The scanner reads cache files this repo writes anyway, or runs its own scripts against the same upstream APIs (FRED, yfinance, EDGAR, CFTC) with independent rate-limit budgets.
+
+### Cache files / outputs the scanner reads
+
+| File / output | Consumed by |
+|---|---|
+| `data_cache/all_indicators.json` (yield curve, sector ETFs, HL perps, HIP-3, 13F, FX) | [strategy 02](../Opportunity_scanner/strategies/02_crypto_funding_carry/README.md), [strategy 03](../Opportunity_scanner/strategies/03_hip3_ibkr_basis/README.md), [strategy 05](../Opportunity_scanner/strategies/05_treasury_curve_cot/README.md), [strategy 09](../Opportunity_scanner/strategies/09_sector_rotation/README.md) |
+| `historical_data/equity_financials/<TICKER>_quarterly.csv` (read-only — actuals only) | [strategy 01](../Opportunity_scanner/strategies/01_news_event_equity_overlay/README.md), [strategy 06](../Opportunity_scanner/strategies/06_earnings_drift/README.md) |
+
+### Scanner's independent fetches that share upstream APIs with this repo
+
+| Upstream API | Scanner script | Coordination |
+|---|---|---|
+| **yfinance** (sector ETF shares-out) | [strategy 09 — `fetch_shares_out.py`](../Opportunity_scanner/strategies/09_sector_rotation/README.md) | Daily, scanner-owned cadence; independent rate budget |
+| **CFTC SODA** (treasury COT) | [strategy 05 — `fetch_cot_treasuries.py`](../Opportunity_scanner/strategies/05_treasury_curve_cot/README.md) | Weekly Tuesday post-release; free public API |
+| **EDGAR XBRL** (consensus EPS history) | [strategy 06 — `fetch_consensus_eps.py`](../Opportunity_scanner/strategies/06_earnings_drift/README.md) | Polite backoff, ~10 req/sec EDGAR limit; scanner-side schema (does NOT mutate this repo's per-ticker JSONs) |
+
+**No expected changes** to this repo from the scanner's side beyond doc-only updates to this section.

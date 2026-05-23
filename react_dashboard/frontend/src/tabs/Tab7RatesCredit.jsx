@@ -4,6 +4,7 @@ import MetricCard from '../components/MetricCard';
 import ErrorCard from '../components/ErrorCard';
 import SectionHeader from '../components/SectionHeader';
 import HistoryChart from '../components/HistoryChart';
+import { toGMT8 } from '../utils/time';
 
 function fmt(v, d = 2) {
   if (v == null || v === 'N/A') return 'N/A';
@@ -57,7 +58,7 @@ export default function Tab7RatesCredit({ indicators }) {
                 value={yc.spread_2s10s}
                 suffix="%"
                 delta={yc.change_1d}
-                caption={`As of: ${yc.latest_date || 'N/A'}`}
+                caption={`As of: ${toGMT8(yc.latest_date)}`}
               />
               {yc.is_inverted && (
                 <div className="badge badge-danger" style={{ marginTop: 4 }}>
@@ -94,13 +95,13 @@ export default function Tab7RatesCredit({ indicators }) {
       <div className="grid-5">
         {us10y.error ? <ErrorCard title="US 10Y" error="Unavailable" /> : (
           <div>
-            <MetricCard label="US 10Y" value={us10y['10y_yield']} suffix="%" caption={`As of: ${us10y.latest_date || 'N/A'}`} />
+            <MetricCard label="US 10Y" value={us10y['10y_yield']} suffix="%" caption={`As of: ${toGMT8(us10y.latest_date)}`} />
             <HistoryChart data={us10y.historical} label="US 10Y Yield (%)" color="#1565c0" suffix="%" />
           </div>
         )}
         {us5y.error ? <ErrorCard title="US 5Y" error="Unavailable" /> : (
           <div>
-            <MetricCard label="US 5Y" value={us5y['5y_yield']} suffix="%" delta={us5y.change_1d} caption={`As of: ${us5y.latest_date || 'N/A'}`} />
+            <MetricCard label="US 5Y" value={us5y['5y_yield']} suffix="%" delta={us5y.change_1d} caption={`As of: ${toGMT8(us5y.latest_date)}`} />
             <HistoryChart data={us5y.historical} label="US 5Y Yield (%)" color="#0d47a1" suffix="%" />
           </div>
         )}
@@ -127,21 +128,21 @@ export default function Tab7RatesCredit({ indicators }) {
         {realYield.error ? <ErrorCard title="Real Yield" error={realYield.error} /> : (
           <div>
             <MetricCard label="10Y Real Yield (TIPS)" value={realYield.real_yield_10y} suffix="%" delta={realYield.change_1d}
-              caption={`As of: ${realYield.latest_date || 'N/A'}${realYield.interpretation ? ' | ' + realYield.interpretation : ''}`} />
+              caption={`As of: ${toGMT8(realYield.latest_date)}${realYield.interpretation ? ' | ' + realYield.interpretation : ''}`} />
             <HistoryChart data={realYield.historical} label="Real Yield (%)" color="#6a1b9a" suffix="%" />
           </div>
         )}
         {breakeven.error ? <ErrorCard title="Breakeven" error={breakeven.error} /> : (
           <div>
             <MetricCard label="5Y Breakeven Inflation" value={breakeven.breakeven_5y} suffix="%" delta={breakeven.change_5y_1d}
-              caption={`As of: ${breakeven.latest_date || 'N/A'}`} />
+              caption={`As of: ${toGMT8(breakeven.latest_date)}`} />
             <HistoryChart data={breakeven.historical_5y} label="5Y Breakeven (%)" color="#e65100" suffix="%" />
           </div>
         )}
         {!breakeven.error && (
           <div>
             <MetricCard label="10Y Breakeven Inflation" value={breakeven.breakeven_10y} suffix="%" delta={breakeven.change_10y_1d}
-              caption={`As of: ${breakeven.latest_date || 'N/A'}${breakeven.interpretation ? ' | ' + breakeven.interpretation : ''}`} />
+              caption={`As of: ${toGMT8(breakeven.latest_date)}${breakeven.interpretation ? ' | ' + breakeven.interpretation : ''}`} />
             <HistoryChart data={breakeven.historical_10y} label="10Y Breakeven (%)" color="#bf360c" suffix="%" />
           </div>
         )}
@@ -153,28 +154,28 @@ export default function Tab7RatesCredit({ indicators }) {
         {hy.error ? <ErrorCard title="HY OAS" error={hy.error} /> : (
           <div>
             <MetricCard label="HY Credit Spread (OAS)" value={hy.hy_oas} suffix="%" delta={hy.change_1d}
-              caption={`As of: ${hy.latest_date || 'N/A'}${hy.interpretation ? ' | ' + hy.interpretation : ''}`} />
+              caption={`As of: ${toGMT8(hy.latest_date)}${hy.interpretation ? ' | ' + hy.interpretation : ''}`} />
             <HistoryChart data={hy.historical} label="HY OAS (%)" color="#c62828" suffix="%" />
           </div>
         )}
         {nfci.error ? <ErrorCard title="NFCI" error={nfci.error} /> : (
           <div>
             <MetricCard label="NFCI" value={nfci.nfci} delta={nfci.change_1w} deltaLabel=" WoW"
-              caption={`As of: ${nfci.latest_date || 'N/A'}${nfci.interpretation ? ' | ' + nfci.interpretation : ''}`} />
+              caption={`As of: ${toGMT8(nfci.latest_date)}${nfci.interpretation ? ' | ' + nfci.interpretation : ''}`} />
             <HistoryChart data={nfci.historical} label="NFCI" color="#4527a0" />
           </div>
         )}
         {ff.error ? <ErrorCard title="Fed Funds" error={ff.error} /> : (
           <div>
             <MetricCard label="Fed Funds Rate" value={ff.fed_funds_rate} suffix="%" delta={ff.change_1d}
-              caption={`As of: ${ff.latest_date || 'N/A'}`} />
+              caption={`As of: ${toGMT8(ff.latest_date)}`} />
             <HistoryChart data={ff.historical} label="Fed Funds Rate (%)" color="#00695c" suffix="%" />
           </div>
         )}
         {ig.error ? <ErrorCard title="IG OAS" error={ig.error} /> : (
           <div>
             <MetricCard label="IG Credit Spread (OAS)" value={ig.ig_oas} suffix="%" delta={ig.change_1d}
-              caption={`As of: ${ig.latest_date || 'N/A'}${ig.interpretation ? ' | ' + ig.interpretation : ''}`} />
+              caption={`As of: ${toGMT8(ig.latest_date)}${ig.interpretation ? ' | ' + ig.interpretation : ''}`} />
             <HistoryChart data={ig.historical} label="IG OAS (%)" color="#4e342e" suffix="%" />
           </div>
         )}
@@ -185,7 +186,7 @@ export default function Tab7RatesCredit({ indicators }) {
         {reserves.error ? <ErrorCard title="Bank Reserves" error={reserves.error} /> : (
           <div>
             <MetricCard label="Bank Reserves ($T)" value={reserves.reserves_trillions} delta={reserves.change_wow_pct} deltaLabel="% WoW"
-              caption={`As of: ${reserves.latest_date || 'N/A'}${reserves.interpretation ? ' | ' + reserves.interpretation : ''}`} />
+              caption={`As of: ${toGMT8(reserves.latest_date)}${reserves.interpretation ? ' | ' + reserves.interpretation : ''}`} />
             <HistoryChart data={reserves.historical} label="Bank Reserves ($T)" color="#1a237e" />
           </div>
         )}
@@ -194,7 +195,7 @@ export default function Tab7RatesCredit({ indicators }) {
         ) : (
           <div>
             <MetricCard label="SLOOS Lending Standards" value={sloos.sloos_tightening} suffix="%" delta={sloos.change_qoq} deltaLabel=" QoQ"
-              caption={`As of: ${sloos.latest_date || 'N/A'}${sloos.interpretation ? ' | ' + sloos.interpretation : ''}`} />
+              caption={`As of: ${toGMT8(sloos.latest_date)}${sloos.interpretation ? ' | ' + sloos.interpretation : ''}`} />
             <HistoryChart data={sloos.historical} label="SLOOS Net Tightening (%)" color="#3e2723" suffix="%" />
           </div>
         )}
@@ -206,21 +207,21 @@ export default function Tab7RatesCredit({ indicators }) {
         {unemp.error ? <ErrorCard title="Unemployment" error={unemp.error} /> : (
           <div>
             <MetricCard label="Unemployment Rate" value={unemp.unemployment_rate} suffix="%" delta={unemp.change_mom} deltaLabel=" MoM"
-              caption={`As of: ${unemp.latest_date || 'N/A'}`} />
+              caption={`As of: ${toGMT8(unemp.latest_date)}`} />
             <HistoryChart data={unemp.historical} label="Unemployment (%)" color="#283593" suffix="%" />
           </div>
         )}
         {claims.error ? <ErrorCard title="Initial Claims" error={claims.error} /> : (
           <div>
             <MetricCard label="Initial Claims (K)" value={claims.initial_claims_k} delta={claims.change_wow_pct} deltaLabel="% WoW"
-              caption={`As of: ${claims.latest_date || 'N/A'}${claims.interpretation ? ' | ' + claims.interpretation : ''}`} />
+              caption={`As of: ${toGMT8(claims.latest_date)}${claims.interpretation ? ' | ' + claims.interpretation : ''}`} />
             <HistoryChart data={claims.historical} label="Initial Claims" color="#37474f" />
           </div>
         )}
         {coreInfl.error ? <ErrorCard title="Core CPI" error={coreInfl.error} /> : (
           <div>
             <MetricCard label="Core CPI YoY%" value={coreInfl.core_cpi_yoy} suffix="%" delta={coreInfl.core_cpi_change_mom} deltaLabel=" MoM"
-              caption={`As of: ${coreInfl.latest_date || 'N/A'}`} />
+              caption={`As of: ${toGMT8(coreInfl.latest_date)}`} />
             <HistoryChart data={coreInfl.historical_core_cpi} label="Core CPI YoY (%)" color="#e65100" suffix="%" />
           </div>
         )}
@@ -238,21 +239,21 @@ export default function Tab7RatesCredit({ indicators }) {
         {cclaims.error ? <ErrorCard title="Continuing Claims" error={cclaims.error} /> : (
           <div>
             <MetricCard label="Continuing Claims (K)" value={cclaims.continuing_claims_k} delta={cclaims.change_wow_pct} deltaLabel="% WoW"
-              caption={`As of: ${cclaims.latest_date || 'N/A'}${cclaims.interpretation ? ' | ' + cclaims.interpretation : ''}`} />
+              caption={`As of: ${toGMT8(cclaims.latest_date)}${cclaims.interpretation ? ' | ' + cclaims.interpretation : ''}`} />
             <HistoryChart data={cclaims.historical} label="Continuing Claims (K)" color="#455a64" />
           </div>
         )}
         {hcpi.error ? <ErrorCard title="Headline CPI" error={hcpi.error} /> : (
           <div>
             <MetricCard label="Headline CPI YoY%" value={hcpi.headline_cpi_yoy} suffix="%" delta={hcpi.change_mom} deltaLabel=" MoM"
-              caption={`As of: ${hcpi.latest_date || 'N/A'}`} />
+              caption={`As of: ${toGMT8(hcpi.latest_date)}`} />
             <HistoryChart data={hcpi.historical} label="Headline CPI YoY (%)" color="#ff6f00" suffix="%" />
           </div>
         )}
         {ppi.error ? <ErrorCard title="PPI" error={ppi.error} /> : (
           <div>
             <MetricCard label="PPI YoY%" value={ppi.ppi_yoy} suffix="%" delta={ppi.change_mom} deltaLabel=" MoM"
-              caption={`As of: ${ppi.latest_date || 'N/A'}${ppi.interpretation ? ' | ' + ppi.interpretation : ''}`} />
+              caption={`As of: ${toGMT8(ppi.latest_date)}${ppi.interpretation ? ' | ' + ppi.interpretation : ''}`} />
             <HistoryChart data={ppi.historical} label="PPI YoY (%)" color="#ad1457" suffix="%" />
           </div>
         )}
@@ -267,7 +268,7 @@ export default function Tab7RatesCredit({ indicators }) {
             <MetricCard label="Refi Rate" value={ecb.refi_rate} suffix="%" />
             <MetricCard label="Marginal Rate" value={ecb.marginal_rate} suffix="%" />
           </div>
-          <div className="metric-caption">As of: {ecb.latest_date || 'N/A'} | Source: {ecb.source || 'N/A'}</div>
+          <div className="metric-caption">As of: {toGMT8(ecb.latest_date)} | Source: {ecb.source || 'N/A'}</div>
           <HistoryChart data={ecb.historical} label="ECB Deposit Rate" color="#1565c0" />
         </>
       )}
@@ -283,7 +284,7 @@ export default function Tab7RatesCredit({ indicators }) {
             <MetricCard label="Energy CPI YoY%" value={cpiComp.energy_cpi_yoy} suffix="%" />
             <MetricCard label="Shelter CPI YoY%" value={cpiComp.shelter_cpi_yoy} suffix="%" />
           </div>
-          <div className="metric-caption">As of: {cpiComp.latest_date || 'N/A'} | Source: {cpiComp.source || 'N/A'}</div>
+          <div className="metric-caption">As of: {toGMT8(cpiComp.latest_date)} | Source: {cpiComp.source || 'N/A'}</div>
           <HistoryChart data={cpiComp.historical} label="Headline CPI YoY (%)" color="#e65100" suffix="%" />
         </>
       )}
@@ -347,7 +348,7 @@ export default function Tab7RatesCredit({ indicators }) {
               config={{ responsive: true, displayModeBar: false }}
               style={{ width: '100%' }}
             />
-            <div className="metric-caption">As of: {tCurve.latest_date || 'N/A'} | Source: {tCurve.source || 'N/A'}</div>
+            <div className="metric-caption">As of: {toGMT8(tCurve.latest_date)} | Source: {tCurve.source || 'N/A'}</div>
           </div>
         )
       )}
@@ -361,7 +362,7 @@ export default function Tab7RatesCredit({ indicators }) {
             <MetricCard label="BBB OAS" value={corpSpreads.bbb_oas} suffix="%" />
             <MetricCard label="Credit Spread (BBB-AAA)" value={corpSpreads.credit_spread} suffix="%" />
           </div>
-          <div className="metric-caption">As of: {corpSpreads.latest_date || 'N/A'} | Source: {corpSpreads.source || 'N/A'}</div>
+          <div className="metric-caption">As of: {toGMT8(corpSpreads.latest_date)} | Source: {corpSpreads.source || 'N/A'}</div>
         </>
       )}
     </div>

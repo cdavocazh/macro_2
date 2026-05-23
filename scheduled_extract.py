@@ -22,11 +22,30 @@ Schedule with launchd (macOS) - see CLAUDE.md for .plist example.
 """
 
 import argparse
+import signal
 import socket
 import sys
 import os
 import time
 from datetime import datetime
+
+# ── Process-level watchdog timer ─────────────────────────────────────────
+# Kills the process if it runs longer than 15 minutes (900s).
+# Prevents launchd from being blocked by a hung network call.
+_WATCHDOG_TIMEOUT_SECS = 900  # 15 minutes
+
+
+def _watchdog_handler(signum, frame):
+    """SIGALRM handler — force-exit when the watchdog fires."""
+    ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print(f"[{ts}] WATCHDOG: Process exceeded {_WATCHDOG_TIMEOUT_SECS}s timeout, force-exiting.",
+          file=sys.stderr, flush=True)
+    os._exit(1)  # Hard exit — no cleanup, no finally blocks
+
+
+# Arm the watchdog on import (covers both --cron and interactive modes)
+signal.signal(signal.SIGALRM, _watchdog_handler)
+signal.alarm(_WATCHDOG_TIMEOUT_SECS)
 
 # Ensure we can import project modules when run from any directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

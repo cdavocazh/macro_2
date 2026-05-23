@@ -35,7 +35,7 @@ else
 fi
 PYTHON_BIN_DIR="$(dirname "$PYTHON_PATH")"
 
-JOBS=("com.macro2.scheduled-extract" "com.macro2.fast-extract" "com.macro2.hl-extract" "com.macro2.polymarket-extract" "com.macro2.onchain-extract")
+JOBS=("com.macro2.scheduled-extract" "com.macro2.fast-extract" "com.macro2.hl-extract" "com.macro2.polymarket-extract" "com.macro2.onchain-extract" "com.macro2.ibkr-extract")
 
 # ---------- Generate .plist from .plist.example ----------
 generate_plist() {

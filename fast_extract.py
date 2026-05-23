@@ -19,10 +19,28 @@ Schedule: com.macro2.fast-extract.plist (every 300 seconds)
 import argparse
 import json
 import os
+import signal
 import socket
 import sys
 import time
 from datetime import datetime
+
+# ── Process-level watchdog timer ─────────────────────────────────────────
+# Kills the process if it runs longer than 4 minutes (240s).
+# Prevents launchd from being blocked by a hung yfinance call.
+_WATCHDOG_TIMEOUT_SECS = 240  # 4 minutes
+
+
+def _watchdog_handler(signum, frame):
+    """SIGALRM handler — force-exit when the watchdog fires."""
+    ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print(f"[{ts}] WATCHDOG: Process exceeded {_WATCHDOG_TIMEOUT_SECS}s timeout, force-exiting.",
+          file=sys.stderr, flush=True)
+    os._exit(1)
+
+
+signal.signal(signal.SIGALRM, _watchdog_handler)
+signal.alarm(_WATCHDOG_TIMEOUT_SECS)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -72,8 +90,6 @@ FAST_EXTRACTORS = [
     ('brent_crude_ohlcv', 'extract_brent_crude_ohlcv', 'Brent Crude OHLCV'),
     ('sector_etfs', 'extract_sector_etfs', 'Sector ETFs (11 SPDR)'),
     ('vix_term_structure', 'extract_vix_term_structure', 'VIX term structure'),
-    ('put_call_ratio', 'extract_put_call_ratio', 'Put/Call ratio'),
-    ('baltic_dry_index', 'extract_baltic_dry_index', 'Baltic Dry Index'),
 ]
 
 

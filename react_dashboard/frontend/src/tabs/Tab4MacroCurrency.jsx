@@ -4,6 +4,7 @@ import MetricCard from '../components/MetricCard';
 import ErrorCard from '../components/ErrorCard';
 import SectionHeader from '../components/SectionHeader';
 import HistoryChart from '../components/HistoryChart';
+import { toGMT8 } from '../utils/time';
 
 function fmt(v, d = 2) {
   if (v == null || v === 'N/A') return 'N/A';
@@ -78,7 +79,7 @@ export default function Tab4MacroCurrency({ indicators }) {
           <ErrorCard title="DXY" error={dxy.error} />
         ) : (
           <div>
-            <MetricCard label="DXY" value={dxy.dxy} delta={dxy.change_1d} deltaLabel="%" caption={`As of: ${dxy.latest_date || 'N/A'}`} />
+            <MetricCard label="DXY" value={dxy.dxy} delta={dxy.change_1d} deltaLabel="%" caption={`As of: ${toGMT8(dxy.latest_date)}`} />
             <HistoryChart data={dxy.historical} label="DXY" color="#2e7d32" />
           </div>
         )}
@@ -87,7 +88,7 @@ export default function Tab4MacroCurrency({ indicators }) {
           <ErrorCard title="USD/JPY" error={jpy.error} />
         ) : (
           <div>
-            <MetricCard label="USD/JPY" value={jpy.jpy_rate} delta={jpy.change_1d} deltaLabel="%" caption={`As of: ${jpy.latest_date || 'N/A'}`} />
+            <MetricCard label="USD/JPY" value={jpy.jpy_rate} delta={jpy.change_1d} deltaLabel="%" caption={`As of: ${toGMT8(jpy.latest_date)}`} />
             <HistoryChart data={jpy.historical} label="USD/JPY" color="#d84315" />
           </div>
         )}
@@ -128,7 +129,7 @@ export default function Tab4MacroCurrency({ indicators }) {
               value={tga.tga_balance_billions}
               delta={tga.change_wow_pct}
               deltaLabel="% WoW"
-              caption={`As of: ${tga.latest_date || 'N/A'} | High TGA = Treasury draining liquidity`}
+              caption={`As of: ${toGMT8(tga.latest_date)} | High TGA = Treasury draining liquidity`}
             />
             <HistoryChart data={tga.historical} label="TGA Balance ($M)" color="#6a1b9a" />
           </div>
@@ -143,7 +144,7 @@ export default function Tab4MacroCurrency({ indicators }) {
               value={netLiq.net_liquidity_trillions}
               delta={netLiq.change_pct}
               deltaLabel="%"
-              caption={`As of: ${netLiq.latest_date || 'N/A'}${netLiq.interpretation ? ' | ' + netLiq.interpretation : ''}`}
+              caption={`As of: ${toGMT8(netLiq.latest_date)}${netLiq.interpretation ? ' | ' + netLiq.interpretation : ''}`}
             />
             <HistoryChart data={netLiq.historical} label="Net Liquidity ($M)" color="#1565c0" />
           </div>
@@ -161,7 +162,7 @@ export default function Tab4MacroCurrency({ indicators }) {
               value={m2.m2_trillions}
               delta={m2.m2_yoy_growth}
               deltaLabel="% YoY"
-              caption={`As of: ${m2.latest_date || 'N/A'}${m2.interpretation ? ' | ' + m2.interpretation : ''}`}
+              caption={`As of: ${toGMT8(m2.latest_date)}${m2.interpretation ? ' | ' + m2.interpretation : ''}`}
             />
             <HistoryChart data={m2.historical} label="M2 ($T)" color="#00695c" />
           </div>
@@ -180,7 +181,7 @@ export default function Tab4MacroCurrency({ indicators }) {
               value={sofr.sofr}
               delta={sofr.change_1d}
               deltaLabel=" bps"
-              caption={`As of: ${sofr.latest_date || 'N/A'}`}
+              caption={`As of: ${toGMT8(sofr.latest_date)}`}
             />
             <HistoryChart data={sofr.historical} label="SOFR (%)" color="#00838f" suffix="%" />
           </div>
@@ -194,7 +195,7 @@ export default function Tab4MacroCurrency({ indicators }) {
               label="US 2Y Yield (%)"
               value={us2y.us_2y_yield}
               delta={us2y.change_1d}
-              caption={`As of: ${us2y.latest_date || 'N/A'}${us2y.spread_2s10s != null ? ` | 2s10s: ${fmt(us2y.spread_2s10s)}%` : ''}`}
+              caption={`As of: ${toGMT8(us2y.latest_date)}${us2y.spread_2s10s != null ? ` | 2s10s: ${fmt(us2y.spread_2s10s)}%` : ''}`}
             />
             <HistoryChart data={us2y.historical} label="US 2Y Yield (%)" color="#1976d2" suffix="%" />
           </div>
@@ -211,7 +212,7 @@ export default function Tab4MacroCurrency({ indicators }) {
               label="JGB 2Y Yield (%)"
               value={jp2y.japan_2y_yield}
               delta={jp2y.change_1d}
-              caption={`As of: ${jp2y.latest_date || 'N/A'}${jp2y.japan_10y_yield != null ? ` | JGB 10Y: ${jp2y.japan_10y_yield}%` : ''}`}
+              caption={`As of: ${toGMT8(jp2y.latest_date)}${jp2y.japan_10y_yield != null ? ` | JGB 10Y: ${jp2y.japan_10y_yield}%` : ''}`}
             />
             <HistoryChart data={jp2y.historical} label="JGB 2Y Yield (%)" color="#e65100" suffix="%" />
           </div>
@@ -254,7 +255,7 @@ export default function Tab4MacroCurrency({ indicators }) {
           <ErrorCard title="10Y Yield" error={yield10y.error} />
         ) : (
           <div>
-            <MetricCard label="10Y Treasury Yield" value={yield10y['10y_yield']} suffix="%" caption={`As of: ${yield10y.latest_date || 'N/A'}`} />
+            <MetricCard label="10Y Treasury Yield" value={yield10y['10y_yield']} suffix="%" caption={`As of: ${toGMT8(yield10y.latest_date)}`} />
             <HistoryChart data={yield10y.historical} label="10Y Yield (%)" color="#1565c0" suffix="%" />
           </div>
         )}
@@ -262,7 +263,7 @@ export default function Tab4MacroCurrency({ indicators }) {
           <ErrorCard title="ISM PMI" error={ismPmi.error} />
         ) : (
           <div>
-            <MetricCard label="ISM Manufacturing PMI" value={ismPmi.ism_pmi} caption={`As of: ${ismPmi.latest_date || 'N/A'}${ismPmi.note ? ' | ' + ismPmi.note : ''}`} />
+            <MetricCard label="ISM Manufacturing PMI" value={ismPmi.ism_pmi} caption={`As of: ${toGMT8(ismPmi.latest_date)}${ismPmi.note ? ' | ' + ismPmi.note : ''}`} />
             <HistoryChart data={ismPmi.historical} label="ISM PMI" color="#e65100" />
           </div>
         )}
@@ -287,7 +288,7 @@ export default function Tab4MacroCurrency({ indicators }) {
             <MetricCard label="M2 Level (B)" value={money.m2_level} />
             <MetricCard label="M2 YoY%" value={money.m2_yoy} suffix="%" />
           </div>
-          <div className="metric-caption">As of: {money.latest_date || 'N/A'} | Source: {money.source || 'N/A'}</div>
+          <div className="metric-caption">As of: {toGMT8(money.latest_date)} | Source: {money.source || 'N/A'}</div>
           <HistoryChart data={money.historical} label="M2 Money Supply" color="#1565c0" />
         </>
       )}

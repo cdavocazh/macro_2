@@ -4,6 +4,7 @@ import MetricCard from '../components/MetricCard';
 import ErrorCard from '../components/ErrorCard';
 import SectionHeader from '../components/SectionHeader';
 import HistoryChart from '../components/HistoryChart';
+import { toGMT8 } from '../utils/time';
 
 function fmt(v, d = 2) {
   if (v == null || v === 'N/A') return 'N/A';
@@ -41,7 +42,7 @@ export default function Tab8EconomicActivity({ indicators }) {
               value={nfp.nfp_thousands}
               delta={nfp.nfp_change_mom}
               deltaLabel="K MoM"
-              caption={`As of: ${nfp.latest_date || 'N/A'}${nfp.interpretation ? ' | ' + nfp.interpretation : ''}`}
+              caption={`As of: ${toGMT8(nfp.latest_date)}${nfp.interpretation ? ' | ' + nfp.interpretation : ''}`}
             />
             <HistoryChart data={nfp.historical} label="Nonfarm Payrolls (K)" color="#1565c0" />
           </div>
@@ -54,7 +55,7 @@ export default function Tab8EconomicActivity({ indicators }) {
               value={jolts.jolts_openings_m}
               delta={jolts.change_mom_pct}
               deltaLabel="% MoM"
-              caption={`As of: ${jolts.latest_date || 'N/A'}${jolts.interpretation ? ' | ' + jolts.interpretation : ''}`}
+              caption={`As of: ${toGMT8(jolts.latest_date)}${jolts.interpretation ? ' | ' + jolts.interpretation : ''}`}
             />
             <HistoryChart data={jolts.historical} label="JOLTS Openings (M)" color="#0d47a1" />
           </div>
@@ -68,7 +69,7 @@ export default function Tab8EconomicActivity({ indicators }) {
               suffix="%"
               delta={quits.change_mom}
               deltaLabel=" MoM"
-              caption={`As of: ${quits.latest_date || 'N/A'}${quits.interpretation ? ' | ' + quits.interpretation : ''}`}
+              caption={`As of: ${toGMT8(quits.latest_date)}${quits.interpretation ? ' | ' + quits.interpretation : ''}`}
             />
             <HistoryChart data={quits.historical} label="Quits Rate (%)" color="#1a237e" suffix="%" />
           </div>
@@ -81,7 +82,7 @@ export default function Tab8EconomicActivity({ indicators }) {
               value={sahm.sahm_value}
               delta={sahm.change_mom}
               deltaLabel=" MoM"
-              caption={`As of: ${sahm.latest_date || 'N/A'}`}
+              caption={`As of: ${toGMT8(sahm.latest_date)}`}
             />
             {sahm.triggered ? (
               <div className="badge badge-danger" style={{ marginTop: 4 }}>RECESSION SIGNAL TRIGGERED (&ge; 0.50)</div>
@@ -141,7 +142,7 @@ export default function Tab8EconomicActivity({ indicators }) {
               value={sentiment.consumer_sentiment}
               delta={sentiment.change_mom}
               deltaLabel=" MoM"
-              caption={`As of: ${sentiment.latest_date || 'N/A'}${sentiment.interpretation ? ' | ' + sentiment.interpretation : ''}`}
+              caption={`As of: ${toGMT8(sentiment.latest_date)}${sentiment.interpretation ? ' | ' + sentiment.interpretation : ''}`}
             />
             <HistoryChart data={sentiment.historical} label="Consumer Sentiment" color="#00695c" />
           </div>
@@ -154,7 +155,7 @@ export default function Tab8EconomicActivity({ indicators }) {
               value={retail.retail_sales_b}
               delta={retail.retail_sales_mom_pct}
               deltaLabel="% MoM"
-              caption={`As of: ${retail.latest_date || 'N/A'}${retail.interpretation ? ' | ' + retail.interpretation : ''}`}
+              caption={`As of: ${toGMT8(retail.latest_date)}${retail.interpretation ? ' | ' + retail.interpretation : ''}`}
             />
             <HistoryChart data={retail.historical} label="Retail Sales MoM%" color="#2e7d32" suffix="%" />
           </div>
@@ -169,7 +170,7 @@ export default function Tab8EconomicActivity({ indicators }) {
             label="ISM Services PMI"
             value={ismSvc.ism_services_pmi}
             delta={ismSvc.change_1d}
-            caption={`As of: ${ismSvc.latest_date || 'N/A'}${ismSvc.interpretation ? ' | ' + ismSvc.interpretation : ''}`}
+            caption={`As of: ${toGMT8(ismSvc.latest_date)}${ismSvc.interpretation ? ' | ' + ismSvc.interpretation : ''}`}
           />
         )}
 
@@ -180,7 +181,7 @@ export default function Tab8EconomicActivity({ indicators }) {
               value={indProd.indpro_index}
               delta={indProd.indpro_yoy_pct}
               deltaLabel="% YoY"
-              caption={`As of: ${indProd.latest_date || 'N/A'}${indProd.interpretation ? ' | ' + indProd.interpretation : ''}`}
+              caption={`As of: ${toGMT8(indProd.latest_date)}${indProd.interpretation ? ' | ' + indProd.interpretation : ''}`}
             />
             <HistoryChart data={indProd.historical} label="Industrial Production (Index)" color="#4a148c" />
           </div>
@@ -193,7 +194,7 @@ export default function Tab8EconomicActivity({ indicators }) {
               value={housing.housing_starts_k}
               delta={housing.change_mom_pct}
               deltaLabel="% MoM"
-              caption={`As of: ${housing.latest_date || 'N/A'}${housing.interpretation ? ' | ' + housing.interpretation : ''}`}
+              caption={`As of: ${toGMT8(housing.latest_date)}${housing.interpretation ? ' | ' + housing.interpretation : ''}`}
             />
             <HistoryChart data={housing.historical} label="Housing Starts (K)" color="#bf360c" />
           </div>
@@ -211,7 +212,7 @@ export default function Tab8EconomicActivity({ indicators }) {
               caption={cli.above_100 ? 'Above 100 = expansion' : 'Below 100 = contraction'}
             />
             <div className="metric-caption" style={{ alignSelf: 'center' }}>
-              As of: {cli.latest_date || 'N/A'} | OECD CLI leads GDP by 6-9 months.
+              As of: {toGMT8(cli.latest_date)} | OECD CLI leads GDP by 6-9 months.
             </div>
           </div>
           <HistoryChart data={cli.historical} label="OECD CLI" color="#2e7d32" />

@@ -194,6 +194,146 @@ def _serialize_indicator(data):
 
 
 # ---------------------------------------------------------------------------
+# IBKR realtime overlay
+# Reads data_cache/ibkr_realtime.json written by ibkr_fast_extract.py
+# and overlays real-time prices on yfinance-based indicator keys.
+# ---------------------------------------------------------------------------
+
+_IBKR_REALTIME_FILE = os.path.join(PROJECT_ROOT, "data_cache", "ibkr_realtime.json")
+
+# Mapping: IBKR symbol -> (indicator_key, price_field_in_indicator)
+# When an IBKR quote has a valid "last" price, overlay it on the indicator.
+_IBKR_OVERLAY_MAP = {
+    "ES":  ("17_es_futures", "price"),
+    "RTY": ("18_rty_futures", "price"),
+    "GC":  ("13_gold", "price"),
+    "SI":  ("14_silver", "price"),
+    "HG":  ("16_copper", "price"),
+    "CL":  ("15_crude_oil", "price"),
+    "NG":  ("56_natural_gas", "price"),
+    "USDJPY": ("20_jpy", "price"),
+}
+
+
+def _apply_ibkr_overlay(indicators: dict) -> dict:
+    """Overlay IBKR real-time prices on yfinance-based indicators.
+
+    Reads /data_cache/ibkr_realtime.json if available and updates the
+    price/latest_date fields on mapped indicators. Silently no-ops if
+    the file is missing or stale (>10 min old).
+    """
+    try:
+        if not os.path.exists(_IBKR_REALTIME_FILE):
+            return indicators
+
+        # Skip if file is stale
+        mtime = os.path.getmtime(_IBKR_REALTIME_FILE)
+        age_secs = datetime.now().timestamp() - mtime
+        if age_secs > 600:  # 10 min
+            return indicators
+
+        import json as _json
+        with open(_IBKR_REALTIME_FILE) as f:
+            ibkr = _json.load(f)
+
+        if ibkr.get("status") != "streaming":
+            return indicators
+
+        quotes = ibkr.get("quotes", {})
+        snapshot_ts = ibkr.get("timestamp", "")
+
+        for sym, (key, price_field) in _IBKR_OVERLAY_MAP.items():
+            q = quotes.get(sym)
+            if q is None:
+                continue
+            last = q.get("last")
+            if last is None or last <= 0:
+                continue
+
+            # Overlay only if indicator exists and is not in error state
+            if key not in indicators:
+                continue
+            ind = indicators[key]
+            if not isinstance(ind, dict) or "error" in ind:
+                continue
+
+            # Update price + mark data as real-time from IBKR
+            ind[price_field] = last
+            # Use the per-quote tick time, not the snapshot timestamp,
+            # so the dashboard shows when the price actually last changed.
+            ind["latest_date"] = q.get("last_update") or snapshot_ts
+            ind["source"] = "IBKR (real-time)"
+            # Replace yfinance's stale "Last close from..." note with IBKR-aware note
+            ind["note"] = "IBKR live tick"
+            # Expose IBKR contract metadata for the dashboard
+            ind["ibkr_local_symbol"] = q.get("local_symbol")
+            ind["ibkr_expiry"] = q.get("expiry")
+            ind["ibkr_contract_id"] = q.get("contract_id")
+            ind["ibkr_bid"] = q.get("bid")
+            ind["ibkr_ask"] = q.get("ask")
+            ind["ibkr_volume"] = q.get("volume")
+            ind["ibkr_open_interest"] = q.get("futures_open_interest")
+            # Preserve 1d change from yfinance if present
+            prev = q.get("prev_close")
+            if prev and prev > 0:
+                ind["change_1d"] = round((last / prev - 1) * 100, 2)
+    except Exception as e:
+        # Silently fall back to yfinance data on any error
+        pass
+
+    return indicators
+
+
+# ---------------------------------------------------------------------------
+# IBKR subscription manifest IPC
+# Backend writes to ibkr_subscriptions.json; daemon reads it every 5s and
+# applies subscription swaps.  Backend reads ibkr_available_contracts.json
+# (refreshed hourly by daemon) to populate the dropdown.
+# ---------------------------------------------------------------------------
+
+_IBKR_SUBSCRIPTIONS_FILE = os.path.join(PROJECT_ROOT, "data_cache", "ibkr_subscriptions.json")
+_IBKR_AVAILABLE_CONTRACTS_FILE = os.path.join(PROJECT_ROOT, "data_cache", "ibkr_available_contracts.json")
+_IBKR_AVAILABLE_CONTRACTS_MAX_AGE_HOURS = 4
+
+# Symbols that the dashboard tabs actually map to indicator keys
+_VALID_IBKR_SYMBOLS = {
+    "ES", "NQ", "RTY", "GC", "SI", "HG", "CL", "NG",
+    "ZN", "ZB", "ZF", "ZT", "10Y", "2YY", "VIX", "EURUSD", "USDJPY",
+}
+
+
+def _read_subscriptions_manifest() -> dict:
+    """Read manifest, return dict {subscriptions: {sym: {...}}, updated_at: ...}."""
+    import json as _json
+    if not os.path.exists(_IBKR_SUBSCRIPTIONS_FILE):
+        return {"subscriptions": {}, "updated_at": None}
+    try:
+        with open(_IBKR_SUBSCRIPTIONS_FILE) as f:
+            return _json.load(f)
+    except (OSError, _json.JSONDecodeError):
+        return {"subscriptions": {}, "updated_at": None}
+
+
+def _write_subscriptions_manifest(manifest: dict):
+    """Atomic write of subscription manifest."""
+    import json as _json
+    import tempfile
+    dir_path = os.path.dirname(_IBKR_SUBSCRIPTIONS_FILE)
+    os.makedirs(dir_path, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dir_path, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            _json.dump(manifest, f, default=str, indent=2)
+        os.replace(tmp, _IBKR_SUBSCRIPTIONS_FILE)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+# ---------------------------------------------------------------------------
 # Aggregator access
 # ---------------------------------------------------------------------------
 
@@ -228,6 +368,111 @@ def get_status():
     }
 
 
+@app.get("/api/ibkr/contracts/{symbol}")
+def list_ibkr_contracts(symbol: str):
+    """List available expiries for an IBKR future symbol.
+
+    Reads data_cache/ibkr_available_contracts.json (refreshed hourly by daemon).
+    Returns 404 if symbol unknown or file missing/stale.
+    """
+    import json as _json
+    sym = symbol.upper()
+    if sym not in _VALID_IBKR_SYMBOLS:
+        raise HTTPException(status_code=404, detail=f"Unknown IBKR symbol: {symbol}")
+
+    if not os.path.exists(_IBKR_AVAILABLE_CONTRACTS_FILE):
+        raise HTTPException(
+            status_code=503,
+            detail="Available contracts file not found — daemon hasn't refreshed yet.",
+        )
+
+    # Staleness check
+    age_hours = (datetime.now().timestamp() - os.path.getmtime(_IBKR_AVAILABLE_CONTRACTS_FILE)) / 3600
+    if age_hours > _IBKR_AVAILABLE_CONTRACTS_MAX_AGE_HOURS:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Available contracts file stale ({age_hours:.1f}h > {_IBKR_AVAILABLE_CONTRACTS_MAX_AGE_HOURS}h)",
+        )
+
+    try:
+        with open(_IBKR_AVAILABLE_CONTRACTS_FILE) as f:
+            data = _json.load(f)
+    except (_json.JSONDecodeError, OSError) as e:
+        raise HTTPException(status_code=500, detail=f"Could not parse contracts file: {e}")
+
+    contracts = data.get("contracts", {}).get(sym, [])
+    if not contracts:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No contracts available for {sym} (not a future or daemon hasn't queried it).",
+        )
+
+    # Find the currently active subscription (from manifest or front-month default)
+    manifest = _read_subscriptions_manifest().get("subscriptions", {})
+    pinned = manifest.get(sym, {})
+    current_expiry = pinned.get("expiry") if not pinned.get("reset_to_front_month") else None
+
+    return {
+        "symbol": sym,
+        "updated_at": data.get("updated_at"),
+        "current_expiry": current_expiry,
+        "current_is_front_month": not bool(current_expiry),
+        "contracts": contracts,
+    }
+
+
+@app.post("/api/ibkr/subscribe")
+async def subscribe_ibkr_expiry(req: dict):
+    """Pin (or reset) the active IBKR expiry for a symbol.
+
+    Body: {"symbol": "GC", "expiry": "20261229"}
+    Or:   {"symbol": "GC", "expiry": ""}  -> reset to front month
+
+    Writes to data_cache/ibkr_subscriptions.json. The daemon picks up
+    the change within ~5 seconds and swaps the IBKR subscription.
+    """
+    sym = (req.get("symbol") or "").upper()
+    expiry = (req.get("expiry") or "").strip()
+
+    if sym not in _VALID_IBKR_SYMBOLS:
+        raise HTTPException(status_code=400, detail=f"Unknown symbol: {sym}")
+
+    # Validate expiry format if provided (YYYYMMDD or YYYYMM)
+    if expiry and not (expiry.isdigit() and len(expiry) in (6, 8)):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid expiry format: {expiry} (expected YYYYMMDD or YYYYMM)",
+        )
+
+    manifest = _read_subscriptions_manifest()
+    subs = manifest.get("subscriptions", {})
+
+    if expiry:
+        subs[sym] = {"expiry": expiry}
+        action = f"pin to {expiry}"
+    else:
+        subs[sym] = {"reset_to_front_month": True}
+        action = "reset to front month"
+
+    manifest["subscriptions"] = subs
+    manifest["updated_at"] = datetime.now().isoformat()
+    _write_subscriptions_manifest(manifest)
+
+    return {
+        "status": "queued",
+        "symbol": sym,
+        "expiry": expiry or None,
+        "action": action,
+        "message": "Daemon will apply within ~5 seconds.",
+    }
+
+
+@app.get("/api/ibkr/subscriptions")
+def get_ibkr_subscriptions():
+    """Return current subscription manifest (what's pinned vs front-month)."""
+    return _read_subscriptions_manifest()
+
+
 @app.get("/api/indicators")
 def get_all_indicators():
     """Return all cached indicators, JSON-serialized."""
@@ -244,6 +489,9 @@ def get_all_indicators():
             serialized[key] = _serialize_indicator(val)
         except Exception as e:
             serialized[key] = {"error": f"Serialization failed: {str(e)}"}
+
+    # Overlay IBKR real-time prices where available
+    serialized = _apply_ibkr_overlay(serialized)
 
     return {
         "last_update": agg.last_update.isoformat() if agg.last_update else None,

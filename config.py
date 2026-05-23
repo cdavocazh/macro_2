@@ -22,5 +22,13 @@ except (ImportError, FileNotFoundError, KeyError):
 CACHE_DIR = 'data_cache'
 CACHE_EXPIRY_HOURS = 24
 
+# IBKR Streaming Configuration
+IBKR_HOST = os.getenv('IBKR_HOST', '127.0.0.1')
+IBKR_PORT = os.getenv('IBKR_PORT', '')  # empty = auto-detect
+IBKR_CLIENT_ID = int(os.getenv('IBKR_CLIENT_ID', '31'))
+IBKR_JSON_INTERVAL = 3       # seconds between realtime JSON writes
+IBKR_CSV_INTERVAL = 300      # seconds between CSV summary writes (5 min)
+IBKR_RECONNECT_DELAY = 3600  # seconds between connection retries (1 hour)
+
 # Data sources
 SHILLER_DATA_URL = 'http://www.econ.yale.edu/~shiller/data/ie_data.xls'

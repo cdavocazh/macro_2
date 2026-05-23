@@ -1,0 +1,12 @@
+[Unit]
+Description=Macro_2 Data QA Agent — runs every 12h (00:00 + 12:00 UTC = 08:00 + 20:00 GMT+8)
+
+[Timer]
+# 00:00 UTC and 12:00 UTC daily
+OnCalendar=*-*-* 00:00:00
+OnCalendar=*-*-* 12:00:00
+RandomizedDelaySec=120
+Persistent=true
+
+[Install]
+WantedBy=timers.target
