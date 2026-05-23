@@ -34,6 +34,8 @@ python extract_sp500_financials.py                              # full S&P 500, 
 python extract_sp500_financials.py --source both                # Yahoo + SEC
 python extract_sp500_financials.py --resume --exclude-top20     # skip existing + Top 20
 python extract_sp500_financials.py --tickers CRM,AMD,NFLX      # specific tickers
+python extract_sp500_financials.py --index midcap400            # S&P MidCap 400 (~400 tickers)
+python extract_sp500_financials.py --index russell1000 --resume # Russell 1000 (~1000 tickers), incremental
 
 # Monitor earnings dates and flag stale data
 python monitor_earnings.py                          # scan all companies in database
