@@ -29,6 +29,7 @@ Operator briefing for this repository. Read FIRST when opening this repo in a ne
 - **Housing starts HIGH alert** — FRED `HOUST` update lag (Census Mar data published but FRED hasn't propagated); not a code bug, monitor `data_extractors/fred_extractors.py`. QA score: 1 remaining HIGH, 54/100.
 - **Stale VPS cron entries** — `/etc/cron.d` has legacy `fast_extract.py` / `scheduled_extract.py` entries using `/usr/bin/python3` (causes `ModuleNotFoundError: fredapi`); systemd timers are the authoritative schedulers. Chip spawned for cleanup; pending user action on VPS.
 - **VPS unreachable** — 187.77.136.160 timed out during this session; changes pushed to GitHub main, VPS needs `git pull` in `/root/macro_2` (or wherever repo lives) once connectivity restores.
+- **MCP server conversion** — plan drafted at `~/.claude/plans/how-would-you-convert-jaunty-quasar.md`, not started. Proposed 5th frontend wrapping `data_aggregator` via Model Context Protocol (stdio + VPS HTTP).
 
 ## Known infrastructure quirks
 
