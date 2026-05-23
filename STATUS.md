@@ -1,6 +1,6 @@
 # STATUS — macro_2
 
-_Auto-maintained by `/update-session-status`. Last updated: 2026-04-24 — fixed OECD CLI staleness (CFNAI Tier 3 fallback) and suppressed yfinance 404 noise for delisted symbols; extended SP500 coverage to MidCap 400 + Russell 1000._
+_Auto-maintained by `/update-session-status`. Last updated: 2026-05-23 — committed OECD CLI CFNAI fallback, yfinance 404 suppression, and MidCap400/Russell1000 index coverage to main; pushed macro_2 + IBKR to GitHub. VPS sync pending (host unreachable). Note: substantial 2026-05-17 infra (IBKR streaming, Data QA agent, Polymarket tab, deploy/systemd) remains UNCOMMITTED — see Open threads._
 
 Operator briefing for this repository. Read FIRST when opening this repo in a new session — it reflects what's deployed, what's in flight, and what gotchas exist. For deeper context: see "What to read first" below.
 
@@ -16,9 +16,16 @@ Operator briefing for this repository. Read FIRST when opening this repo in a ne
 | launchd: fast-extract | macOS launchd, 5-min (24/7) | 2026-03-30 | 31 yfinance extractors, ~5s, 3-min freshness guard |
 | launchd: scheduled-extract | macOS launchd, 5x/day Mon-Sat | 2026-03-30 | Full FRED/SEC/web scrapers, 15-min freshness guard |
 | VPS systemd timers | Hostinger VPS 187.77.136.160 | 2026-04-24 | 7 timers; fast_extract confirmed 404-clean (06:42 run) |
+| VPS: IBKR stream | systemd macro2-ibkr-stream.service | 2026-05-17 | Long-running daemon, ib_async, 3s JSON snapshots |
+| VPS: Data QA agent | systemd macro-data-qa.timer (12h) | 2026-05-17 | 11 checks → LLM triage → Telegram alerts |
+| VPS: Cache repair | systemd macro-cache-repair.timer | 2026-05-17 | Periodic cache error detection + auto-repair |
 
 ## Open threads
 
+- **Macro catalyst calendar** — `data_extractors/macro_calendar_extractor.py` landed (commit 2026-05-10). Builds forward-looking US macro release schedule from FRED release/dates API + FOMC scraping. Output: `historical_data/macro_catalyst_calendar.csv`. Consumed by `Finl_Agent_CC/tools/option_strategy.py`.
+- **IBKR streaming infrastructure** — `ibkr_fast_extract.py` + `data_extractors/ibkr_streaming.py` ready for VPS deployment with IB Gateway. Writes `data_cache/ibkr_realtime.json` (3s atomic snapshots). Systemd unit: `deploy/systemd/macro2-ibkr-stream.service`.
+- **Dashboard Data QA agent** — `agent/openai_agents/qa_agent.py` with 11 health checks, Minimax LLM triage, Telegram CRITICAL alerts. See `agent/SOP_DATA_QA.md` for operator workflow.
+- **Polymarket tab (React)** — Tab 9 added to React dashboard showing prediction market events with price charts, volumes, and multi-outcome markets.
 - **Housing starts HIGH alert** — FRED `HOUST` update lag (Census Mar data published but FRED hasn't propagated); not a code bug, monitor `data_extractors/fred_extractors.py`. QA score: 1 remaining HIGH, 54/100.
 - **Stale VPS cron entries** — `/etc/cron.d` has legacy `fast_extract.py` / `scheduled_extract.py` entries using `/usr/bin/python3` (causes `ModuleNotFoundError: fredapi`); systemd timers are the authoritative schedulers. Chip spawned for cleanup; pending user action on VPS.
 - **VPS unreachable** — 187.77.136.160 timed out during this session; changes pushed to GitHub main, VPS needs `git pull` in `/root/macro_2` (or wherever repo lives) once connectivity restores.
@@ -35,7 +42,8 @@ Operator briefing for this repository. Read FIRST when opening this repo in a ne
 1. `CLAUDE.md` — session anchor, full architecture, all design decisions, known-broken indicators table
 2. `QA_SOP.md` — mandatory testing checklist before every commit
 3. `agent/QA_learnings.md` — accumulated fix history (root causes + solutions for all past bugs)
-4. `data_aggregator.py` — orchestrator; understand the fetch-all → cache → CSV flow here first
+4. `agent/SOP_DATA_QA.md` — operator SOP for the Dashboard Data QA agent (severity levels, triage workflow)
+5. `data_aggregator.py` — orchestrator; understand the fetch-all → cache → CSV flow here first
 
 ---
 
@@ -44,7 +52,7 @@ Operator briefing for this repository. Read FIRST when opening this repo in a ne
 _(Content below is preserved from prior hand-edited STATUS.md — auto-maintained sections above take precedence.)_
 
 ### Project: Macroeconomic Indicators Dashboard
-**Version:** 2.7.0 | **Repository:** https://github.com/cdavocazh/macro_2
+**Version:** 2.8.0 | **Repository:** https://github.com/cdavocazh/macro_2
 
 ### Dashboard Frontends (4 implementations)
 
