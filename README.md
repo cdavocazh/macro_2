@@ -78,6 +78,7 @@ bash setup_launchd.sh
 | OpenBB/Finviz | S&P multiples, sector P/E, VIX futures, ECB rates, Fama-French, ERP | No (optional) |
 | Hyperliquid | DeFi perpetual futures (BTC, ETH, SOL, PAXG, HYPE, OIL + spot stocks) | No |
 | AAII | Investor sentiment survey (web scrape) | No |
+| CheckOnChain | BTC on-chain metrics (MVRV, NUPL, SOPR, NVT, realised price) | No |
 
 ## Project Structure
 
@@ -111,6 +112,7 @@ macro_2/
 ├── utils/helpers.py                # Cache serialization, CSV export, formatting
 ├── fast_extract.py                 # 5-minute real-time yfinance extraction (~5s)
 ├── hl_extract.py                   # 1-minute Hyperliquid extraction (~0.5s)
+├── onchain_extract.py              # Daily CheckOnChain BTC on-chain data (8 charts)
 ├── ibkr_fast_extract.py            # IBKR real-time streaming daemon (VPS, ib_async)
 ├── extract_13f_holdings.py         # 13F institutional fund holdings extraction
 ├── dash_dashboard/                 # Plotly Dash frontend (standalone, production-ready)
@@ -119,7 +121,7 @@ macro_2/
 ├── agent/                          # Data QA agents (equity cross-source + dashboard health)
 ├── deploy/systemd/                 # VPS systemd units (IBKR stream, data QA, cache repair)
 ├── scripts/                        # Utility scripts (cache repair, etc.)
-├── setup_launchd.sh                # One-command launchd installer (3 jobs)
+├── setup_launchd.sh                # One-command launchd installer (5 jobs)
 └── data_cache/                     # Local JSON cache (gitignored)
 ```
 
@@ -154,13 +156,15 @@ python review_data_freshness.py --report      # save CSV to data_export/
 
 ## Scheduling
 
-Three launchd jobs at different frequencies:
+Five launchd jobs at different frequencies:
 
 | Job | Schedule | What |
 |-----|----------|------|
 | **hl-extract** | Every 1 minute (24/7) | Hyperliquid perps + HIP-3 spot stocks |
 | **fast-extract** | Every 5 minutes (24/7) | Real-time yfinance (31 extractors, ~5s) |
+| **polymarket-extract** | Every 5 minutes (24/7) | Polymarket prediction markets |
 | **scheduled-extract** | 5x/day Mon-Sat | Full extraction: FRED, SEC, web scrapers, all CSVs |
+| **onchain-extract** | Daily at 14:00 GMT+8 | CheckOnChain BTC on-chain data (8 charts) |
 
 All catch up missed runs after sleep (unlike cron). Freshness guards prevent redundant fetches.
 
@@ -181,6 +185,9 @@ historical_data/
 ├── equity_financials/
 │   ├── yahoo_finance/{TICKER}_quarterly.csv
 │   └── sec_edgar/{TICKER}_quarterly.csv
+├── onchain/
+│   ├── mvrv_zscore.csv, nupl.csv, sth_sopr.csv, ...
+│   └── realised_price.csv
 └── _summary_latest.csv
 ```
 
@@ -216,6 +223,7 @@ python -m agent.langchain_agents.agent "Compare Yahoo vs SEC for AAPL"
 - [`todo/menu_bar_btc_app_plan.md`](todo/menu_bar_btc_app_plan.md) — macOS menu bar BTC price app (draft)
 - [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) — Dashboard enhancement plan (historical)
 - [`data_sources_todo.md`](data_sources_todo.md) — Fidenza Macro data source gap analysis
+- [`MCP_CONVERSION_PLAN.md`](MCP_CONVERSION_PLAN.md) — MCP server as a 5th frontend (proposed, not started): design, tool catalog, RAM + shared-process performance analysis
 
 ### Historical Fix Logs
 - [`FIXES_SUMMARY.md`](FIXES_SUMMARY.md) — Data source issues and fixes
