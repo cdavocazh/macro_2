@@ -266,12 +266,5 @@ Data sources: FRED, Yahoo Finance, SEC EDGAR, Trading Economics, CFTC, Robert Sh
 
 ## Downstream consumer: Opportunity_scanner
 
-[`Opportunity_scanner/`](../Opportunity_scanner/) consumes outputs of this repo read-only under a **parallel-pipeline contract** — no edits to scripts, schemas, or timers. The scanner sidesteps any per-ticker JSON schema mutation by writing its own sibling files. It either reads `data_cache/all_indicators.json` and `historical_data/equity_financials/<TICKER>_quarterly.csv`, or runs its own scripts against shared upstream APIs (FRED, yfinance, EDGAR, CFTC) with independent budgets. See [`Opportunity_scanner/CLAUDE.md`](../Opportunity_scanner/CLAUDE.md) for the design rule.
+[`Opportunity_scanner/`](../Opportunity_scanner/) consumes outputs of this repo read-only under a **parallel-pipeline contract**.
 
-Scanner strategies that depend on this repo:
-- [strategy 01 — news-event equity overlay](../Opportunity_scanner/strategies/01_news_event_equity_overlay/README.md) (read-only fundamentals)
-- [strategy 02 — crypto funding carry](../Opportunity_scanner/strategies/02_crypto_funding_carry/README.md) (read-only HL fields)
-- [strategy 03 — HIP-3 ↔ IBKR basis](../Opportunity_scanner/strategies/03_hip3_ibkr_basis/README.md) (read-only HIP-3 listings)
-- [strategy 05 — Treasury curve / COT extremes](../Opportunity_scanner/strategies/05_treasury_curve_cot/README.md) (read-only yield curve; own CFTC pull)
-- [strategy 06 — Earnings drift](../Opportunity_scanner/strategies/06_earnings_drift/README.md) (read-only actuals; own consensus-EPS sibling files)
-- [strategy 09 — Sector rotation](../Opportunity_scanner/strategies/09_sector_rotation/README.md) (read-only sector ETF prices; own shares-out fetch)
