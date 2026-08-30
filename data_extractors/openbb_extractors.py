@@ -53,6 +53,20 @@ def _openbb_available():
     return _obb() is not None
 
 
+def _as_percent(value, threshold=1.0):
+    """Normalise a rate that may arrive as a decimal fraction into percent.
+
+    OECD and Federal-Reserve responses via OpenBB return rates as fractions
+    (0.04 = 4%), while every FRED fallback in this module returns percent — so
+    enabling OpenBB silently rendered "0.04%" unemployment and a 0.038 treasury
+    curve.  Unemployment rates and treasury yields are never below 1% *and*
+    meaningful as fractions at the same time, so a sub-1.0 reading is a fraction.
+    """
+    if value is None:
+        return None
+    return round(value * 100, 3) if abs(value) < threshold else round(value, 3)
+
+
 def _degraded_note(capability, package):
     """Explain why an OpenBB-backed path degraded, without guessing the cause.
 
@@ -886,21 +900,10 @@ def get_cpi_components():
     Returns: dict with component YoY% changes.
     Fallback: FRED series for each CPI component.
     """
-    if _openbb_available():
-        try:
-            data = _obb().economy.cpi(country="united_states", provider="fred")
-            if data and hasattr(data, 'results') and data.results:
-                df = data.to_df() if hasattr(data, 'to_df') else pd.DataFrame([vars(r) for r in data.results])
-                if not df.empty:
-                    latest = df.iloc[-1]
-                    return {
-                        'headline_cpi': float(latest.get('value', 0)),
-                        'latest_date': str(latest.name)[:10] if hasattr(latest, 'name') else datetime.now().strftime('%Y-%m-%d'),
-                        'source': 'OpenBB/FRED'
-                    }
-        except Exception:
-            pass
-
+    # No OpenBB tier here: obb.economy.cpi returns only a headline series, as a
+    # decimal fraction, and lagged ~16 months (0.0231 dated 2025-04 when the FRED
+    # path had 3.3% dated 2026-07).  The card needs food/energy/shelter/core, so
+    # the "fallback" is strictly the better source.
     return _cpi_components_fallback()
 
 
@@ -1464,7 +1467,9 @@ def get_full_treasury_curve():
                         mat = str(row.get('maturity', ''))
                         rate = row.get('rate')
                         if mat and rate is not None:
-                            curve[mat] = round(float(rate), 3)
+                            # federal_reserve returns fractions (0.038); the FRED
+                            # fallback and the chart axis are in percent.
+                            curve[mat] = _as_percent(float(rate))
                     if curve:
                         return {
                             'curve': curve,
@@ -1564,19 +1569,24 @@ def get_international_unemployment():
     """
     if _openbb_available():
         try:
+            countries = [('united_states', 'us'), ('euro_area', 'eu'),
+                         ('japan', 'jp'), ('united_kingdom', 'uk')]
             result = {'source': 'OpenBB/OECD', 'latest_date': None}
-            for country, key in [('united_states', 'us'), ('euro_area', 'eu'), ('japan', 'jp'), ('united_kingdom', 'uk')]:
+            for country, key in countries:
                 try:
                     data = _obb().economy.unemployment(country=country, provider="oecd")
                     if data and hasattr(data, 'results') and data.results:
                         df = data.to_df() if hasattr(data, 'to_df') else pd.DataFrame([vars(r) for r in data.results])
                         if not df.empty:
-                            result[f'{key}_unemployment'] = round(float(df.iloc[-1].iloc[-1]), 2)
+                            result[f'{key}_unemployment'] = _as_percent(float(df.iloc[-1].iloc[-1]))
                             if result['latest_date'] is None:
                                 result['latest_date'] = str(df.index[-1])[:10]
                 except Exception:
                     continue
-            if any(k.endswith('_unemployment') for k in result):
+            # Require every country: OECD drops euro_area intermittently, and a
+            # partial result used to be returned anyway, leaving Eurozone as N/A
+            # while the FRED fallback has all four.
+            if all(f'{key}_unemployment' in result for _, key in countries):
                 return result
         except Exception:
             pass
