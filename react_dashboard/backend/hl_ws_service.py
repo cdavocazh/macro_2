@@ -230,8 +230,11 @@ class HyperliquidWSRelay:
 
             ctx = self._contexts.get(hl_ticker, {})
             funding_raw = float(ctx.get('funding', '0'))
-            funding_ann = funding_raw * 3 * 365 * 100
-            oi = float(ctx.get('open_interest', '0'))
+            # Hyperliquid funds HOURLY (24 events/day), not the 8h Binance convention.
+            funding_ann = funding_raw * 24 * 365 * 100
+            # openInterest is denominated in base coin units (dayNtlVlm is already
+            # notional USD), so convert before publishing — the UI renders it as "$M".
+            oi = float(ctx.get('open_interest', '0')) * price
             vol = float(ctx.get('volume_24h', '0'))
             mark = float(ctx.get('mark_price', '0'))
             oracle = float(ctx.get('oracle_price', '0'))
@@ -246,7 +249,7 @@ class HyperliquidWSRelay:
                 'mark_price': mark,
                 'oracle_price': oracle,
                 'funding_rate': round(funding_ann, 2),
-                'funding_rate_8h': round(funding_raw * 100, 6),
+                'funding_rate_1h': round(funding_raw * 100, 6),
                 'open_interest': round(oi, 2),
                 'volume_24h': round(vol, 2),
                 'premium': round(premium, 4),
@@ -263,7 +266,7 @@ class HyperliquidWSRelay:
                     'mark_price': price,
                     'oracle_price': 0.0,
                     'funding_rate': 0.0,
-                    'funding_rate_8h': 0.0,
+                    'funding_rate_1h': 0.0,
                     'open_interest': 0.0,
                     'volume_24h': self._builder_volumes.get(api_coin, 0.0),
                     'premium': 0.0,

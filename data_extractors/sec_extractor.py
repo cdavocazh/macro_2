@@ -20,6 +20,7 @@ Limitations:
 import requests
 import json
 import os
+from . import yf_safe
 import re
 from datetime import datetime, timedelta
 import time
@@ -530,7 +531,7 @@ def _supplement_with_yahoo(result):
 
     try:
         import yfinance as yf
-        t = yf.Ticker(ticker)
+        t = yf_safe.Ticker(ticker)
         info = t.info or {}
 
         # Metadata

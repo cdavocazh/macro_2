@@ -1218,7 +1218,7 @@ with tab5:
                 st.metric("Mid Price", price_str, f"{coin.get('change_1d', 0):+.2f}%")
             with c2:
                 st.metric("Funding (ann.)", f"{coin.get('funding_rate', 0):.2f}%")
-                st.caption(f"8h: {coin.get('funding_rate_8h', 0)}%")
+                st.caption(f"1h: {coin.get('funding_rate_1h', 0)}%")
             with c3:
                 oi = coin.get('open_interest', 0)
                 st.metric("Open Interest", f"${oi / 1e6:.1f}M" if oi else "N/A")

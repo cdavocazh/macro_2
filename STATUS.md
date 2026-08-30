@@ -1,6 +1,6 @@
 # STATUS — macro_2
 
-_Auto-maintained by `/update-session-status`. Last updated: 2026-05-23 — committed OECD CLI CFNAI fallback, yfinance 404 suppression, MidCap400/Russell1000 index coverage, AND the full 2026-05-17 infra body (IBKR streaming, Data QA agent, Polymarket tab, Shiller multpl.com fix, deploy/systemd) to main; pushed macro_2 + IBKR to GitHub — working tree clean. VPS sync still pending (host unreachable)._
+_Auto-maintained by `/update-session-status`. Last updated: 2026-08-30 — fixed the yfinance trailing-NaN family (4 Market Indices cards + fabricated breadth signal), Hyperliquid OI denomination + HIP-3 builder-dex resolution, the `5_spx_call_skew` two-writer key clash, and installed OpenBB providers on the VPS in an isolated `venv-openbb`. Deployed to <VPS_HOST> and verified live on awehawk.cloud._
 
 Operator briefing for this repository. Read FIRST when opening this repo in a new session — it reflects what's deployed, what's in flight, and what gotchas exist. For deeper context: see "What to read first" below.
 
@@ -15,7 +15,8 @@ Operator briefing for this repository. Read FIRST when opening this repo in a ne
 | launchd: hl-extract | macOS launchd, 1-min (24/7) | 2026-03-30 | HL perps + HIP-3 spot, partial cache merge (keys 84/85) |
 | launchd: fast-extract | macOS launchd, 5-min (24/7) | 2026-03-30 | 31 yfinance extractors, ~5s, 3-min freshness guard |
 | launchd: scheduled-extract | macOS launchd, 5x/day Mon-Sat | 2026-03-30 | Full FRED/SEC/web scrapers, 15-min freshness guard |
-| VPS systemd timers | Hostinger VPS <VPS_HOST> | 2026-04-24 | 7 timers; fast_extract confirmed 404-clean (06:42 run) |
+| VPS systemd timers | Hostinger VPS <VPS_HOST> | 2026-08-30 | 7 timers; fast-extract 146 MB peak, hl-extract 6 MB, both exit 0 post-deploy |
+| VPS: `venv-openbb` | `/root/macro_2/venv-openbb` (676 MB) | 2026-08-30 | OpenBB + cboe/ecb providers; used ONLY by `macro-extract.service`. Daily peak 1.1 GB (was ~400 MB), capped `MemoryMax=2G` |
 | VPS: IBKR stream | systemd macro2-ibkr-stream.service | 2026-05-17 | Long-running daemon, ib_async, 3s JSON snapshots |
 | VPS: Data QA agent | systemd macro-data-qa.timer (12h) | 2026-05-17 | 11 checks → LLM triage → Telegram alerts |
 | VPS: Cache repair | systemd macro-cache-repair.timer | 2026-05-17 | Periodic cache error detection + auto-repair |
@@ -31,8 +32,13 @@ Operator briefing for this repository. Read FIRST when opening this repo in a ne
 - **VPS unreachable** — <VPS_HOST> timed out during this session; changes pushed to GitHub main, VPS needs `git pull` in `/root/macro_2` (or wherever repo lives) once connectivity restores.
 - **MCP server conversion** — design + RAM/performance analysis in [`MCP_CONVERSION_PLAN.md`](MCP_CONVERSION_PLAN.md) (proposed, not started). 5th frontend wrapping `data_aggregator` via MCP (stdio + VPS HTTP); ~485 MB standalone RAM or share the React process. External mirror: `~/.claude/plans/how-would-you-convert-jaunty-quasar.md`.
 
+- **International PMI has no free source** — EU/JP/CN/UK manufacturing PMI remain `None` in `81_global_pmi`. EconDB carries no manufacturing PMI series (`obb.economy.pmi` was removed from the OpenBB router) and Trading Economics now renders the value client-side, breaking the `"last":` JSON regex. Needs a paid feed or a headless-browser scrape. The same TE change also costs `43_ism_services` its `change_1d`/`interpretation`.
+- **`openbb-yfinance` is unsatisfied in `venv-openbb`** — deliberately: `yfinance` is pinned to 1.2.0 there to match the shared venv so every extractor behaves identically across jobs, while `openbb-yfinance 1.6.3` wants >=1.4.0. No indicator uses the OpenBB yfinance provider as its serving path, so this is inert — but a future `pip install` in that venv may try to "fix" it.
+
 ## Known infrastructure quirks
 
+- **Yahoo serves price-less trailing bars** — Yahoo intermittently returns the most recent daily bar with OHLC all `NaN` and only Volume populated, across every US cash equity/ETF/index at once (futures and FX unaffected). Observed 2026-08-28. All `yf.Ticker` access now goes through `data_extractors/yf_safe.py`, which trims those rows at the fetch boundary. **Never add a raw `yf.Ticker(...)` call** — use `yf_safe.Ticker(...)` or the null resurfaces.
+- **Two venvs on the VPS, on purpose** — `openbb-core` hard-pins `uvicorn<0.41`; installing OpenBB into `/root/macro_2/venv` would downgrade the uvicorn running `macro-react.service` (0.42.0 → 0.40.0). Hence `venv-openbb`, wired in via `/etc/systemd/system/macro-extract.service.d/openbb-venv.conf`. Do not `pip install openbb` into the shared venv.
 - **OECD SDMX 3.0 migration** — Old `DSD_CLI@DF_CLI,1.0` endpoint 404s; new URL requires 9 key dimensions; VPS datacenter IPs get throttled. `_oecd_cli_fallback()` in `openbb_extractors.py` uses CFNAI (FRED:CFNAI) as Tier 3, normalised to `100 + (cfnai × 10)`. Staleness guard skips FRED Tier 2 if data is >400 days old.
 - **yfinance delisted symbols emit 404 WARNING noise** — `VX=F`, `^PCPUT`, `^BDI`, `BDIY` are all delisted from Yahoo Finance. Suppressed in `yfinance_extractors.py` via `_suppress_yf_warnings()` context manager; these symbols return `{'error': ...}` gracefully; logs are now clean.
 - **SEC EDGAR rate limit** — 10 req/sec max; `sec_extractor.py` uses `_rate_limit()` helper. Don't run parallel SEC extraction without delay.
@@ -53,7 +59,7 @@ Operator briefing for this repository. Read FIRST when opening this repo in a ne
 _(Content below is preserved from prior hand-edited STATUS.md — auto-maintained sections above take precedence.)_
 
 ### Project: Macroeconomic Indicators Dashboard
-**Version:** 2.8.0 | **Repository:** https://github.com/cdavocazh/macro_2
+**Version:** 2.9.0 | **Repository:** https://github.com/cdavocazh/macro_2
 
 ### Dashboard Frontends (4 implementations)
 

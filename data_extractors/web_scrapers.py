@@ -5,6 +5,18 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import re
+from . import yf_safe
+
+# Representative sample of S&P 500 stocks (top 50 by market cap), shared by the
+# breadth indicator and the 200-day-MA breadth computation in openbb_extractors.
+SP500_SAMPLE = [
+    'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'BRK-B', 'TSLA', 'LLY', 'V',
+    'UNH', 'XOM', 'JPM', 'JNJ', 'WMT', 'MA', 'PG', 'AVGO', 'HD', 'CVX',
+    'MRK', 'ABBV', 'COST', 'KO', 'PEP', 'ADBE', 'NFLX', 'CRM', 'TMO', 'MCD',
+    'ABT', 'CSCO', 'ACN', 'LIN', 'ORCL', 'NKE', 'DHR', 'WFC', 'TXN', 'DIS',
+    'PM', 'VZ', 'INTU', 'CMCSA', 'AMD', 'QCOM', 'IBM', 'AMGN', 'HON', 'UNP'
+]
+
 
 
 def get_sp500_forward_pe_macromicro():
@@ -67,7 +79,7 @@ def get_sp500_forward_pe_fallback():
         import yfinance as yf
 
         # Try SPY ETF first (more reliable for fundamentals)
-        spy = yf.Ticker("SPY")
+        spy = yf_safe.Ticker("SPY")
         info = spy.info
 
         # Try to get trailing P/E
@@ -81,7 +93,7 @@ def get_sp500_forward_pe_fallback():
             }
 
         # Fallback to S&P 500 index
-        gspc = yf.Ticker("^GSPC")
+        gspc = yf_safe.Ticker("^GSPC")
         info = gspc.info
 
         trailing_pe = info.get('trailingPE')
@@ -217,7 +229,7 @@ def get_put_call_ratio_fallback():
     try:
         import yfinance as yf
 
-        spy = yf.Ticker("SPY")
+        spy = yf_safe.Ticker("SPY")
 
         # Get options expirations
         expirations = spy.options
@@ -262,7 +274,7 @@ def get_spx_call_skew():
         import yfinance as yf
 
         # CBOE SKEW Index
-        skew = yf.Ticker("^SKEW")
+        skew = yf_safe.Ticker("^SKEW")
         hist = skew.history(period="5d")
 
         if not hist.empty:
@@ -296,7 +308,7 @@ def get_cboe_skew_index():
         import yfinance as yf
         from datetime import datetime, timedelta
 
-        skew = yf.Ticker("^SKEW")
+        skew = yf_safe.Ticker("^SKEW")
 
         # Fetch 2 years of history for deeper analysis
         hist = skew.history(period='2y')
@@ -312,9 +324,21 @@ def get_cboe_skew_index():
         latest_skew = hist['Close'].iloc[-1]
 
         return {
+            # `spx_call_skew` is the canonical field for cache key 5_spx_call_skew.
+            # Both this function (via fast_extract.py, every 5 min) and
+            # get_spx_call_skew() (via data_aggregator.py) write that key, so they
+            # must agree — emitting only `cboe_skew` here meant the 5-minute job
+            # overwrote the aggregator's shape and every dashboard rendered N/A.
+            # `cboe_skew` is kept as an alias for any direct caller.
+            'spx_call_skew': latest_skew,
             'cboe_skew': latest_skew,
             'latest_date': hist.index[-1].strftime('%Y-%m-%d'),
             'source': 'CBOE',
+            'interpretation': {
+                'normal': '100-115 (Normal tail risk)',
+                'elevated': '115-135 (Elevated tail risk)',
+                'high': '> 135 (High tail risk - potential for sharp moves)'
+            },
             'historical': hist['Close']
         }
     except Exception as e:
@@ -332,14 +356,7 @@ def get_sp500_breadth_indicator():
         import yfinance as yf
         from datetime import datetime, timedelta
 
-        # Representative sample of S&P 500 stocks (top 50 by market cap)
-        sp500_sample = [
-            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'BRK-B', 'TSLA', 'LLY', 'V',
-            'UNH', 'XOM', 'JPM', 'JNJ', 'WMT', 'MA', 'PG', 'AVGO', 'HD', 'CVX',
-            'MRK', 'ABBV', 'COST', 'KO', 'PEP', 'ADBE', 'NFLX', 'CRM', 'TMO', 'MCD',
-            'ABT', 'CSCO', 'ACN', 'LIN', 'ORCL', 'NKE', 'DHR', 'WFC', 'TXN', 'DIS',
-            'PM', 'VZ', 'INTU', 'CMCSA', 'AMD', 'QCOM', 'IBM', 'AMGN', 'HON', 'UNP'
-        ]
+        sp500_sample = SP500_SAMPLE
 
         end_date = datetime.now()
         start_date = end_date - timedelta(days=5)
@@ -351,12 +368,13 @@ def get_sp500_breadth_indicator():
 
         for symbol in sp500_sample:
             try:
-                ticker = yf.Ticker(symbol)
+                ticker = yf_safe.Ticker(symbol)
                 hist = ticker.history(start=start_date, end=end_date)
 
-                if len(hist) >= 2:
-                    last_close = hist['Close'].iloc[-1]
-                    prev_close = hist['Close'].iloc[-2]
+                closes = hist['Close'].dropna() if len(hist) else hist
+                if len(closes) >= 2:
+                    last_close = closes.iloc[-1]
+                    prev_close = closes.iloc[-2]
 
                     if last_close > prev_close:
                         advancing += 1
@@ -371,9 +389,21 @@ def get_sp500_breadth_indicator():
         if total_checked == 0:
             return {'error': 'Unable to calculate market breadth - no stock data available'}
 
+        # A/D counts of zero mean no stock produced a usable comparison (e.g. Yahoo
+        # served price-less bars).  Reporting that as 0% breadth previously rendered
+        # a fabricated "broad market weakness" signal, so fail loudly instead.
+        if advancing == 0 and declining == 0:
+            return {
+                'error': f'Unable to calculate market breadth - no valid price comparisons '
+                         f'across {total_checked} sampled stocks',
+                'note': 'Upstream returned bars without usable closes',
+            }
+
         # Calculate metrics
         net_advances = advancing - declining
-        ad_ratio = advancing / declining if declining > 0 else float('inf')
+        # None rather than inf — json.dumps emits a bare `Infinity`, which is invalid
+        # JSON and reaches the dashboards as null anyway.
+        ad_ratio = advancing / declining if declining > 0 else None
         breadth_pct = (advancing / total_checked * 100) if total_checked > 0 else 0
 
         # Interpretation

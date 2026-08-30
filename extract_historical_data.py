@@ -81,10 +81,22 @@ def append_to_csv(filename, new_data, timestamp_col='timestamp'):
     """
     filepath = os.path.join(OUTPUT_DIR, filename)
 
+    existing_data = None
     if os.path.exists(filepath):
-        # Load existing data
-        existing_data = pd.read_csv(filepath)
+        # Load existing data. A previously-truncated (0-byte) or otherwise
+        # corrupt CSV would raise EmptyDataError/ParserError here and wedge the
+        # indicator permanently — every subsequent run would fail to read and
+        # therefore never rewrite. Guard against it so the next run self-heals
+        # by writing fresh data instead of staying empty forever.
+        try:
+            existing_data = pd.read_csv(filepath)
+            if existing_data.shape[1] == 0:  # no columns parsed
+                existing_data = None
+        except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
+            print(f"  ⚠️  Existing {filename} unreadable ({type(e).__name__}); rewriting fresh")
+            existing_data = None
 
+    if existing_data is not None:
         # Combine and remove duplicates based on timestamp
         if timestamp_col in new_data.columns and timestamp_col in existing_data.columns:
             # Normalize timestamp types to avoid comparison errors

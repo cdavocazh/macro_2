@@ -17,6 +17,7 @@ Covers:
 """
 
 import yfinance as yf
+from . import yf_safe
 from .fred_extractors import get_fred_client
 
 # Maps logical key → (FRED series ID, CSV column name)
@@ -133,7 +134,7 @@ def get_gold_price_yfinance():
         OR dict with 'error' key on failure.
     """
     try:
-        ticker = yf.Ticker('GC=F')
+        ticker = yf_safe.Ticker('GC=F')
         hist = ticker.history(period='max')['Close']
         hist = hist.dropna()
         if len(hist) == 0:

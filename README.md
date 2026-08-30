@@ -8,6 +8,11 @@ A multi-frontend dashboard tracking **88+ macroeconomic indicators** and **quart
 # Install dependencies
 pip install -r requirements.txt
 
+# Optional — only on the host that runs the full extraction (scheduled_extract.py).
+# Enables the OpenBB-backed indicators (VIX futures curve, SPY put/call OI, SPX IV
+# skew). Kept out of requirements.txt because Streamlit Cloud installs that file.
+pip install -r requirements-openbb.txt
+
 # Run dashboards (all read from same cache)
 streamlit run app.py                          # Streamlit  → http://localhost:8501
 python dash_dashboard/app.py                  # Plotly Dash → http://localhost:8050
@@ -243,7 +248,8 @@ python -m agent.langchain_agents.agent "Compare Yahoo vs SEC for AAPL"
 | Shiller CAPE | ~~Yale Excel stuck at Sep 2023~~ **FIXED** — now scrapes multpl.com |
 | Global CPI (US) | ~~FRED OECD series discontinued~~ **FIXED** — uses `CPIAUCSL` + YoY computation |
 | TSM (IFRS) no SEC EDGAR data | Yahoo Finance only |
-| VIX Futures (VX=F) | Not on yfinance; OpenBB/CBOE fallback |
+| VIX Futures (VX=F) | Not on yfinance; served by OpenBB/CBOE (needs `requirements-openbb.txt`), forward derived via put-call parity |
+| Global PMI (EU/JP/CN/UK) | No free source — EconDB has no PMI series, Trading Economics renders client-side. US uses an Industrial-Production proxy |
 
 ## Pending TODO
 

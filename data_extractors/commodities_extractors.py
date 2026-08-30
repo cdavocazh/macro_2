@@ -2,6 +2,7 @@
 Data extractors for commodities (futures contracts) using yfinance.
 """
 import yfinance as yf
+from . import yf_safe
 from datetime import datetime, timedelta
 
 
@@ -17,7 +18,7 @@ def get_commodity_data(symbol, name):
     Returns: dict with latest price, historical Close series, and historical_ohlcv DataFrame
     """
     try:
-        ticker = yf.Ticker(symbol)
+        ticker = yf_safe.Ticker(symbol)
 
         # Get 5 years of historical data for full OHLCV
         hist_data = ticker.history(period='5y')

@@ -4,6 +4,7 @@ Data extractors using yfinance for various market indices and indicators.
 import logging
 import contextlib
 import yfinance as yf
+from . import yf_safe
 import pandas as pd
 from datetime import datetime, timedelta
 
@@ -34,8 +35,8 @@ def get_russell_2000_indices():
     try:
         # Russell 2000 Value Index (IWN ETF as proxy)
         # Russell 2000 Growth Index (IWO ETF as proxy)
-        value_ticker = yf.Ticker("IWN")
-        growth_ticker = yf.Ticker("IWO")
+        value_ticker = yf_safe.Ticker("IWN")
+        growth_ticker = yf_safe.Ticker("IWO")
 
         # Get historical data (last 5 years)
         value_data = value_ticker.history(period='5y')
@@ -71,7 +72,7 @@ def get_sp500_data():
     Returns: dict with price, 200MA, and ratio
     """
     try:
-        sp500 = yf.Ticker("^GSPC")
+        sp500 = yf_safe.Ticker("^GSPC")
 
         # Get 5 years of data (200-day MA needs ~200 trading days)
         hist_data = sp500.history(period='5y')
@@ -103,7 +104,7 @@ def get_vix():
     Returns: dict with latest VIX value
     """
     try:
-        vix = yf.Ticker("^VIX")
+        vix = yf_safe.Ticker("^VIX")
 
         hist_data = vix.history(period='5y')
 
@@ -128,7 +129,7 @@ def get_move_index():
     Returns: dict with latest MOVE value
     """
     try:
-        move = yf.Ticker("^MOVE")
+        move = yf_safe.Ticker("^MOVE")
 
         hist_data = move.history(period='5y')
 
@@ -153,7 +154,7 @@ def get_dxy():
     Returns: dict with latest DXY value
     """
     try:
-        dxy = yf.Ticker("DX-Y.NYB")
+        dxy = yf_safe.Ticker("DX-Y.NYB")
 
         hist_data = dxy.history(period='5y')
 
@@ -204,7 +205,7 @@ def get_es_futures():
     Returns: dict with latest price, historical Close series, and historical_ohlcv DataFrame
     """
     try:
-        es = yf.Ticker("ES=F")
+        es = yf_safe.Ticker("ES=F")
 
         hist_data = es.history(period='5y')
 
@@ -263,7 +264,7 @@ def get_rty_futures():
     Returns: dict with latest price, historical Close series, and historical_ohlcv DataFrame
     """
     try:
-        rty = yf.Ticker("RTY=F")
+        rty = yf_safe.Ticker("RTY=F")
 
         hist_data = rty.history(period='5y')
 
@@ -322,7 +323,7 @@ def get_jpy_exchange_rate():
     Returns: dict with latest exchange rate
     """
     try:
-        jpy = yf.Ticker("JPY=X")
+        jpy = yf_safe.Ticker("JPY=X")
 
         hist_data = jpy.history(period='5y')
 
@@ -370,7 +371,7 @@ def get_major_fx_pairs():
 
         for ticker_symbol, (key, label) in pairs.items():
             try:
-                ticker = yf.Ticker(ticker_symbol)
+                ticker = yf_safe.Ticker(ticker_symbol)
                 hist = ticker.history(period='5y')
                 if hist.empty:
                     hist = ticker.history(period='2y')
@@ -406,8 +407,8 @@ def get_market_concentration():
     Falling ratio = market broadening.
     """
     try:
-        spy = yf.Ticker("SPY")
-        rsp = yf.Ticker("RSP")
+        spy = yf_safe.Ticker("SPY")
+        rsp = yf_safe.Ticker("RSP")
 
         spy_hist = spy.history(period='5y')
         rsp_hist = rsp.history(period='5y')
@@ -481,7 +482,7 @@ def get_sector_etfs():
         result = {'source': 'yfinance (SPDR Sector ETFs)'}
         for ticker, sector_name in SECTOR_ETFS.items():
             try:
-                t = yf.Ticker(ticker)
+                t = yf_safe.Ticker(ticker)
                 hist = t.history(period='5y')
                 if not hist.empty:
                     close = hist['Close']
@@ -516,13 +517,13 @@ def get_vix_term_structure():
     """
     try:
         # VIX Spot
-        vix = yf.Ticker('^VIX')
+        vix = yf_safe.Ticker('^VIX')
         vix_hist = vix.history(period='5y')
 
         # VIX front-month futures (generic — VX=F is delisted on yfinance as of 2024;
         # suppress 404 warning, fallback gracefully to VIX spot only)
         with _suppress_yf_warnings():
-            vx1 = yf.Ticker('VX=F')
+            vx1 = yf_safe.Ticker('VX=F')
             vx1_hist = vx1.history(period='5y')
 
         if vix_hist.empty:
@@ -588,7 +589,7 @@ def get_put_call_ratio():
     import pandas as pd
     try:
         import yfinance as yf
-        spy = yf.Ticker('SPY')
+        spy = yf_safe.Ticker('SPY')
         expirations = spy.options
         if not expirations:
             return {'error': 'SPY options chain unavailable'}
@@ -627,7 +628,7 @@ def get_baltic_dry_index():
     import pandas as pd
     try:
         import yfinance as yf
-        bdry = yf.Ticker('BDRY')
+        bdry = yf_safe.Ticker('BDRY')
         hist = bdry.history(period='5y')
         if hist.empty:
             return {'error': 'BDRY ETF history unavailable from yfinance'}

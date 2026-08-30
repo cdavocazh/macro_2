@@ -14,6 +14,7 @@ Groups:
 import os
 import re
 import yfinance as yf
+from . import yf_safe
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
@@ -43,7 +44,7 @@ def _yf_price(symbol, name, key=None, period_days=1825, include_ohlcv=False):
         key = name.lower().replace(' ', '_').replace('-', '_')
 
     try:
-        ticker = yf.Ticker(symbol)
+        ticker = yf_safe.Ticker(symbol)
 
         # Use period string for 2y+ requests, else explicit date range
         if period_days >= 1800:
@@ -129,7 +130,7 @@ def get_em_indices():
 
     for symbol, (key, label) in indices.items():
         try:
-            ticker = yf.Ticker(symbol)
+            ticker = yf_safe.Ticker(symbol)
             hist = ticker.history(period='5y')
             if hist.empty:
                 hist = ticker.history(period='2y')
@@ -199,7 +200,7 @@ def get_sofr_futures_term_structure():
         contracts = []
         for symbol in candidates:
             try:
-                ticker = yf.Ticker(symbol)
+                ticker = yf_safe.Ticker(symbol)
                 hist = ticker.history(period='5y')
                 if hist.empty:
                     continue
@@ -257,8 +258,8 @@ def get_xau_jpy():
     Uses aligned daily close prices for the product.
     """
     try:
-        gold = yf.Ticker('GC=F').history(period='5y')['Close']
-        jpy = yf.Ticker('JPY=X').history(period='5y')['Close']
+        gold = yf_safe.Ticker('GC=F').history(period='5y')['Close']
+        jpy = yf_safe.Ticker('JPY=X').history(period='5y')['Close']
 
         if gold.empty or jpy.empty:
             return {'error': 'No data for GC=F or JPY=X'}
@@ -299,8 +300,8 @@ def get_gold_silver_ratio():
     Falling = silver outperformance (risk-on).
     """
     try:
-        gold = yf.Ticker('GC=F').history(period='5y')['Close']
-        silver = yf.Ticker('SI=F').history(period='5y')['Close']
+        gold = yf_safe.Ticker('GC=F').history(period='5y')['Close']
+        silver = yf_safe.Ticker('SI=F').history(period='5y')['Close']
 
         if gold.empty or silver.empty:
             return {'error': 'No data for GC=F or SI=F'}

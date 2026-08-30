@@ -115,3 +115,36 @@ When the QA agent reports HIGH stale indicators:
 5. Check the **FRED series search** for replacement series: `fred.search('indicator_name country monthly 2025')`
 6. After any fix, run `python3 scheduled_extract.py --force` on VPS to update cache
 7. Re-run QA agent: `python3 -m agent.openai_agents.qa_agent --no-llm --no-telegram`
+
+### 2026-08-30
+
+#### `2_russell_2000`, `6a_sp500_to_ma200`, `55_market_concentration`, `19_sp500_breadth` — Market Indices tab
+- **Symptom:** User reported N/A across the Market Indices tab. Breadth showed 0 advancing / 0 declining / 50 unchanged and printed "Weak bearish breadth — broad market weakness".
+- **Root cause:** Yahoo served the 2026-08-28 daily bar with Open/High/Low/Close all `NaN` and only Volume populated — simultaneously for every US cash equity, ETF and index (`^GSPC`, `SPY`, `RSP`, `IWN`, `IWO`, `XLK`, `AAPL`, `MSFT`), while futures (`ES=F`, `GC=F`) and FX (`JPY=X`) were fine. Extractors took `.iloc[-1]` on the raw frame. In breadth, NaN comparisons are always False, so `NaN > prev` and `NaN < prev` both failed and every stock fell into the `else: unchanged` branch — turning missing data into a confident bearish signal.
+- **Fix:** Added `data_extractors/yf_safe.py`, a `yf.Ticker` proxy whose `.history()` trims trailing rows with no price; routed all 45 `yf.Ticker(` sites across 9 modules through it. Breadth now returns an error dict when no stock yields a valid comparison, and `ad_ratio` returns `None` instead of `float('inf')`.
+- **Verified:** Live on awehawk.cloud — breadth 14/36 (28%), Russell V/G 224.74/386.90 (0.5809), S&P/MA200 7730.99/7114.32 (1.0867), SPY/RSP 3.4821 (+0.96% 1d, +2.98% 30d).
+- **Files changed:** `data_extractors/yf_safe.py` (new), `yfinance_extractors.py`, `web_scrapers.py`, `commodities_extractors.py`, `openbb_extractors.py`, `fred_extractors.py`, `fidenza_extractors.py`, `equity_financials_extractor.py`, `financial_agent_extractors.py`, `sec_extractor.py`
+- **QA agent implication:** A null `latest` value and a *plausible but fabricated* reading look identical to a freshness check. Consider a check that flags any breadth/ratio indicator whose component counts are all-zero or whose denominator is zero.
+
+#### `5_spx_call_skew` — CBOE SKEW
+- **Symptom:** Rendered N/A on Streamlit, Dash and React simultaneously, while the cache held a valid 144.05.
+- **Root cause:** Two writers owned the same cache key with different field names. `data_aggregator.py` wrote `spx_call_skew` via `get_spx_call_skew()`; `fast_extract.py` wrote `cboe_skew` via `get_cboe_skew_index()` and, running every 5 minutes, always won. All three frontends read `spx_call_skew`.
+- **Fix:** `get_cboe_skew_index()` now emits the canonical `spx_call_skew` (plus `cboe_skew` as an alias) and the same `interpretation` block.
+- **Verified:** CBOE SKEW 144.05 with interpretation rendering on awehawk.cloud.
+- **Files changed:** `data_extractors/web_scrapers.py`
+- **QA agent implication:** Worth a check that asserts every cache key written by more than one script has a stable field shape between runs.
+
+#### `63_vix_futures_curve`, `64_spy_put_call_oi`, `70_iv_skew`, `66_ecb_rates`, `71_eu_yields`, `79_equity_screener` — OpenBB family
+- **Symptom:** Six indicators degraded, all with notes reading "install openbb …". OpenBB *was* installed locally and the notes were misleading; on the VPS it genuinely was not installed at all (0 packages).
+- **Root cause:** Four distinct causes hidden behind one note and a bare `except Exception: pass` — (1) missing provider extensions `openbb-cboe` / `openbb-ecb`; (2) `get_vix_futures_curve()` called `vars(r)` on pydantic models *before* `to_df()`, raising `TypeError` that killed the path even with the provider present; (3) upstream schema drift — the Finviz screener lost its `sma200` column; (4) `obb.fixedincome.rate.ecb` is served by FRED (not `openbb-ecb`) and the EU-yield SDW keys `...FR_10Y`/`IT_10Y` never existed in that dataset.
+- **Fix:** Installed `openbb`/`openbb-cboe`/`openbb-ecb` into a dedicated VPS `venv-openbb`; fixed the `vars()` ordering; derived the VIX forward via put-call parity instead of reading the ATM option premium; read `ECBDFR`/`ECBMRRFR`/`ECBMLFR` directly from FRED; replaced the EU-yield source with FRED OECD per-country series; replaced the screener stub with a batched yfinance 200-day-MA computation. Notes now route through `_degraded_note()`, which reports the actual import error or names the missing provider.
+- **Verified:** VIX curve contango +6.65% (13 expirations, OpenBB/CBOE); ECB 2.25/2.40/2.65; EU yields DE 2.97 / FR 3.68 / IT 3.734, IT-DE 0.764; 25d skew 4.21%; screener 68.0% above 200MA.
+- **Files changed:** `data_extractors/openbb_extractors.py`, `data_extractors/web_scrapers.py`, `requirements-openbb.txt` (new)
+- **QA agent implication:** A fallback note is evidence, not truth. When an indicator reports "install X", verify X's actual import status before acting on the note.
+
+#### `84_hl_perps` — Hyperliquid perps
+- **Symptom:** BTC open interest displayed "$0.0M" alongside $1,177M of 24h volume; 6 of 11 instruments returned "not found on Hyperliquid".
+- **Root cause:** (1) HL's `openInterest` is denominated in base coin units while the sibling `dayNtlVlm` is notional USD; the code named it `oi_usd` and the UI divided by 1e6 as dollars. (2) HIP-3 builder perps are absent from the unqualified `metaAndAssetCtxs` response and only appear when the request carries their `dex`; several registry `api_coin` values (`xyz:SP500`, `xyz:NATGAS`, `xyz:COPPER`, `xyz:BRENTOIL`) never existed.
+- **Fix:** Multiply OI by mid price in both the extractor and the WS relay; query each builder dex in `get_hl_meta_and_contexts()`; corrected names against the live per-dex universes and dropped `BRENTOIL`. Added an `illiquid` flag for builder listings with zero OI and zero volume.
+- **Verified:** BTC OI $2,914.2M (matches API: 37,037 BTC × $78,768), funding 10.95% ann. / 1h 0.00125%, `xyz:XYZ100` live at $195.4M OI, four `flx:*` listings labelled "inactive market".
+- **Files changed:** `data_extractors/hyperliquid_extractor.py`, `react_dashboard/backend/hl_ws_service.py`, `react_dashboard/frontend/src/tabs/Tab5Commodities.jsx`

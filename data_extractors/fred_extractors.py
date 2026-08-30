@@ -4,6 +4,7 @@ Data extractors using FRED (Federal Reserve Economic Data) API.
 from fredapi import Fred
 import pandas as pd
 import config
+from . import yf_safe
 
 
 def get_fred_client():
@@ -207,7 +208,7 @@ def get_10y_treasury_yield_fallback():
         from datetime import datetime, timedelta
 
         # Use Yahoo Finance ticker ^TNX (10-Year Treasury Yield)
-        tnx = yf.Ticker("^TNX")
+        tnx = yf_safe.Ticker("^TNX")
 
         # Get recent historical data
         end_date = datetime.now()
@@ -505,7 +506,7 @@ def _get_us_2y_yield_fallback():
         import yfinance as yf
         from datetime import datetime, timedelta
 
-        ticker = yf.Ticker("2YY=F")
+        ticker = yf_safe.Ticker("2YY=F")
         hist = ticker.history(
             start=datetime.now() - timedelta(days=365 * 5),
             end=datetime.now()
@@ -1026,6 +1027,9 @@ def get_jolts_openings():
             'jolts_openings_k': latest,
             'jolts_openings_m': latest_millions,
             'change_mom': change_mom,
+            # Dashboards render the JOLTS delta as "% MoM"; without this they read a
+            # missing key and the badge silently disappeared.
+            'change_mom_pct': round((latest / prev - 1) * 100, 2) if prev else None,
             'latest_date': latest_date.strftime('%Y-%m-%d'),
             'source': 'FRED (JTSJOL)',
             'units': 'Thousands',

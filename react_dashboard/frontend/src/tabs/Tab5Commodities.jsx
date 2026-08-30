@@ -223,7 +223,12 @@ function PerpCoinRow({ coinKey, label, color, cacheData, wsData }) {
 
   return (
     <div style={{ marginBottom: 12 }}>
-      <SectionHeader title={label} sub />
+      <SectionHeader title={data.illiquid ? `${label} — inactive market` : label} sub />
+      {data.illiquid && (
+        <div className="metric-caption" style={{ color: '#b26a00' }}>
+          No open interest or 24h volume on this builder listing — quote may be stale.
+        </div>
+      )}
       <div className="grid-4">
         <MetricCard
           label={isLive ? 'Mid Price (LIVE)' : 'Mid Price'}
@@ -237,7 +242,7 @@ function PerpCoinRow({ coinKey, label, color, cacheData, wsData }) {
         <MetricCard
           label="Funding (ann.)"
           value={data.funding_rate != null ? `${fmt(data.funding_rate)}%` : 'N/A'}
-          caption={data.funding_rate_8h != null ? `8h: ${data.funding_rate_8h}%` : ''}
+          caption={data.funding_rate_1h != null ? `1h: ${data.funding_rate_1h}%` : ''}
         />
         <MetricCard
           label="Open Interest"

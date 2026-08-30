@@ -25,16 +25,19 @@ HL_PERPS = {
     'SOL': {'key': 'sol', 'name': 'Solana', 'category': 'crypto'},
     'PAXG': {'key': 'paxg', 'name': 'PAX Gold', 'category': 'commodity'},
     'HYPE': {'key': 'hype', 'name': 'Hyperliquid', 'category': 'crypto'},
+    # HIP-3 builder perps.  api_coin values verified against the per-dex
+    # metaAndAssetCtxs universes on 2026-08-30; xyz:SP500, xyz:NATGAS, xyz:COPPER
+    # and xyz:BRENTOIL never existed under those names, so the S&P/gas/copper
+    # entries now point at their real flx listings and Brent is dropped (no
+    # builder lists it).
     'OIL': {'key': 'oil', 'name': 'WTI Crude Oil', 'category': 'commodity',
             'api_coin': 'flx:OIL'},
     'SP500': {'key': 'sp500', 'name': 'S&P 500', 'category': 'index',
-              'api_coin': 'xyz:SP500'},
+              'api_coin': 'flx:USA500'},
     'NATGAS': {'key': 'natgas', 'name': 'Natural Gas', 'category': 'commodity',
-               'api_coin': 'xyz:NATGAS'},
+               'api_coin': 'flx:GAS'},
     'COPPER': {'key': 'copper_hl', 'name': 'Copper', 'category': 'commodity',
-               'api_coin': 'xyz:COPPER'},
-    'BRENTOIL': {'key': 'brentoil', 'name': 'Brent Crude', 'category': 'commodity',
-                 'api_coin': 'xyz:BRENTOIL'},
+               'api_coin': 'flx:COPPER'},
     'XYZ100': {'key': 'xyz100', 'name': 'Nasdaq 100', 'category': 'index',
                'api_coin': 'xyz:XYZ100'},
 }
@@ -83,16 +86,29 @@ def get_hl_meta_and_contexts():
     """
     Fetch perp metadata + per-asset contexts (funding, OI, volume, mark price).
     Returns dict keyed by coin name.
-    """
-    raw = _hl_post({"type": "metaAndAssetCtxs"})
-    meta = raw[0]
-    ctxs = raw[1]
-    universe = meta.get('universe', [])
 
+    Covers the main perp universe plus every builder dex referenced by HL_PERPS.
+    HIP-3 builder perps (flx:OIL, xyz:XYZ100, ...) are absent from the unqualified
+    metaAndAssetCtxs response and only appear when the request carries their `dex`,
+    which is why they previously resolved to "not found on Hyperliquid".
+    """
     result = {}
-    for i, asset_meta in enumerate(universe):
-        coin = asset_meta.get('name', '')
-        if i < len(ctxs):
+
+    payloads = [{"type": "metaAndAssetCtxs"}]
+    for dex in _builder_dexes():
+        payloads.append({"type": "metaAndAssetCtxs", "dex": dex})
+
+    for payload in payloads:
+        try:
+            raw = _hl_post(payload)
+        except Exception:
+            continue  # one dead builder dex must not sink the main universe
+
+        meta, ctxs = raw[0], raw[1]
+        for i, asset_meta in enumerate(meta.get('universe', [])):
+            coin = asset_meta.get('name', '')
+            if i >= len(ctxs):
+                continue
             ctx = ctxs[i]
             result[coin] = {
                 'funding': ctx.get('funding', '0'),
@@ -103,8 +119,18 @@ def get_hl_meta_and_contexts():
                 'prev_day_px': ctx.get('prevDayPx', '0'),
                 'premium': ctx.get('premium', '0'),
                 'max_leverage': asset_meta.get('maxLeverage', 0),
+                'mid_px': ctx.get('midPx') or ctx.get('markPx') or '0',
             }
     return result
+
+
+def _builder_dexes():
+    """Distinct builder-dex prefixes referenced by HL_PERPS (e.g. {'flx', 'xyz'})."""
+    return sorted({
+        info['api_coin'].split(':', 1)[0]
+        for info in HL_PERPS.values()
+        if ':' in info.get('api_coin', '')
+    })
 
 
 def get_hl_spot_meta():
@@ -190,26 +216,37 @@ def _build_perp_data(coin, mids, contexts, fetch_candles=True, lookback_days=90,
     api_coin = info.get('api_coin', coin)  # Qualified name for builder perps
     is_builder = 'api_coin' in info
 
+    # Builder perps are keyed by their qualified name everywhere except allMids,
+    # where they are absent entirely.
+    ctx = contexts.get(api_coin if is_builder else coin, {})
+
     mid_str = mids.get(coin)
 
-    # Builder-deployed perps are not in allMids — use pre-fetched OHLCV or fetch 1d candle
+    # Builder-deployed perps are not in allMids — take the dex-scoped context mid,
+    # then fall back to pre-fetched OHLCV.
     if mid_str is None and is_builder:
-        ohlcv = (builder_ohlcv_cache or {}).get(api_coin, pd.DataFrame())
-        if not ohlcv.empty:
-            mid_str = str(ohlcv['Close'].iloc[-1])
+        mid_str = ctx.get('mid_px') if float(ctx.get('mid_px', '0') or 0) > 0 else None
         if mid_str is None:
-            return {'error': f'{coin} not found on Hyperliquid'}
+            ohlcv = (builder_ohlcv_cache or {}).get(api_coin, pd.DataFrame())
+            if not ohlcv.empty:
+                mid_str = str(ohlcv['Close'].iloc[-1])
 
     if mid_str is None:
         return {'error': f'{coin} not found on Hyperliquid'}
 
     price = float(mid_str)
-    ctx = contexts.get(coin, {})
 
     funding_raw = float(ctx.get('funding', '0'))
-    funding_annualized = funding_raw * 3 * 365 * 100
+    # Hyperliquid funds HOURLY (24 events/day), not on the 8h Binance convention.
+    # ctx['funding'] is the per-hour rate, so annualize with 24 * 365.
+    funding_annualized = funding_raw * 24 * 365 * 100
 
-    oi_usd = float(ctx.get('open_interest', '0'))
+    # Hyperliquid reports openInterest in BASE COIN units, unlike dayNtlVlm which is
+    # already notional USD.  The dashboards render open_interest as "$X.XM", so it has
+    # to be converted here — otherwise BTC's 37,037 BTC of OI displays as "$0.0M"
+    # instead of ~$2,917M.
+    oi_coins = float(ctx.get('open_interest', '0'))
+    oi_usd = oi_coins * price
     volume_24h = float(ctx.get('volume_24h', '0'))
     mark_price = float(ctx.get('mark_price', '0'))
     oracle_price = float(ctx.get('oracle_price', '0'))
@@ -230,6 +267,11 @@ def _build_perp_data(coin, mids, contexts, fetch_candles=True, lookback_days=90,
     if prev_day_px > 0:
         change_24h = (price - prev_day_px) / prev_day_px * 100
 
+    # Several builder listings are deployed but abandoned — zero OI, zero 24h volume,
+    # and a mid that has drifted far from the underlying (flx:OIL sat ~8% below WTI
+    # spot on 2026-08-30).  Publish them flagged rather than as live quotes.
+    illiquid = is_builder and oi_coins == 0 and volume_24h == 0
+
     result = {
         'price': price,
         'change_24h': round(change_24h, 2),
@@ -237,14 +279,17 @@ def _build_perp_data(coin, mids, contexts, fetch_candles=True, lookback_days=90,
         'mark_price': mark_price if mark_price > 0 else price,
         'oracle_price': oracle_price,
         'funding_rate': round(funding_annualized, 2),
-        'funding_rate_8h': round(funding_raw * 100, 6),
+        'funding_rate_1h': round(funding_raw * 100, 6),
         'open_interest': round(oi_usd, 2),
         'volume_24h': round(volume_24h, 2),
         'premium': round(premium, 4),
         'max_leverage': ctx.get('max_leverage', 0),
         'latest_date': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'),
         'source': 'Hyperliquid',
-        'note': f'{display_name} perp | Funding: {funding_annualized:+.1f}% ann.',
+        'illiquid': illiquid,
+        'note': (f'{display_name} perp | No open interest or 24h volume — quote may be stale'
+                 if illiquid else
+                 f'{display_name} perp | Funding: {funding_annualized:+.1f}% ann.'),
         'api_coin': api_coin,
     }
 

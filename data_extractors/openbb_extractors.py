@@ -19,14 +19,52 @@ Medium-value extractors (#11-#20):
 
 import pandas as pd
 from datetime import datetime, timedelta
+from . import yf_safe
 
-try:
-    from openbb import obb
-    OPENBB_AVAILABLE = True
-except ImportError:
-    OPENBB_AVAILABLE = False
-    # OpenBB is optional - fallback methods will be used automatically
+# OpenBB is optional — fallback methods are used automatically when it is absent.
+#
+# The import is DEFERRED, not done at module scope.  `data_extractors/__init__.py`
+# imports this module, so an eager `from openbb import obb` is paid by every script
+# that touches the package — including hl_extract.py, which runs once a minute.
+# Measured on the 2-vCPU VPS-class box: eager import took that job from
+# 1.1s / 140 MB to 6.4s / 415 MB.  Deferring keeps the minutely and 5-minutely jobs
+# clean; only scheduled_extract.py (5x/day) pays the ~7s / ~270 MB.
+_OBB = None
+_OBB_PROBED = False
+_OBB_IMPORT_ERROR = None
 
+
+def _obb():
+    """Return the OpenBB app, importing it on first use. None when unavailable."""
+    global _OBB, _OBB_PROBED, _OBB_IMPORT_ERROR
+    if not _OBB_PROBED:
+        _OBB_PROBED = True
+        try:
+            from openbb import obb
+            _OBB = obb
+        except Exception as e:  # ImportError, or a broken provider install
+            _OBB = None
+            _OBB_IMPORT_ERROR = f'{type(e).__name__}: {e}'
+    return _OBB
+
+
+def _openbb_available():
+    """True when the OpenBB platform can be imported."""
+    return _obb() is not None
+
+
+def _degraded_note(capability, package):
+    """Explain why an OpenBB-backed path degraded, without guessing the cause.
+
+    These notes previously all read "install openbb", which misled whenever OpenBB
+    *was* installed and something else had failed — a missing provider extension, a
+    changed upstream schema, or a network error.
+    """
+    if not _openbb_available():
+        reason = f'OpenBB not installed ({_OBB_IMPORT_ERROR or "import failed"})'
+    else:
+        reason = f'{capability} unavailable — check that `{package}` is installed and the provider responded'
+    return f'Using fallback: {reason}'
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Existing functions (kept for backward compatibility)
@@ -38,11 +76,11 @@ def get_sp500_fundamentals():
     Falls back to yfinance if OpenBB is not available.
     Returns: dict with P/E and P/B ratios
     """
-    if not OPENBB_AVAILABLE:
+    if not _openbb_available():
         return get_sp500_fundamentals_fallback()
 
     try:
-        data = obb.equity.fundamental.metrics(symbol="SPY", provider="yfinance")
+        data = _obb().equity.fundamental.metrics(symbol="SPY", provider="yfinance")
 
         if data and hasattr(data, 'results'):
             results = data.results[0] if isinstance(data.results, list) else data.results
@@ -68,7 +106,7 @@ def get_sp500_fundamentals_fallback():
     try:
         import yfinance as yf
 
-        spy = yf.Ticker("SPY")
+        spy = yf_safe.Ticker("SPY")
         info = spy.info
 
         pe_ratio = info.get('trailingPE')
@@ -96,7 +134,7 @@ def get_sp500_fundamentals_historical():
     try:
         import yfinance as yf
 
-        spy = yf.Ticker("SPY")
+        spy = yf_safe.Ticker("SPY")
         info = spy.info
 
         trailing_pe = info.get('trailingPE')
@@ -148,12 +186,12 @@ def get_russell_2000_via_openbb():
     Alternative method to get Russell 2000 indices via OpenBB.
     Returns: dict with Russell 2000 Value and Growth data
     """
-    if not OPENBB_AVAILABLE:
+    if not _openbb_available():
         return {'error': 'OpenBB not available'}
 
     try:
-        value_data = obb.equity.price.historical(symbol="IWN", provider="yfinance", start_date="2023-01-01")
-        growth_data = obb.equity.price.historical(symbol="IWO", provider="yfinance", start_date="2023-01-01")
+        value_data = _obb().equity.price.historical(symbol="IWN", provider="yfinance", start_date="2023-01-01")
+        growth_data = _obb().equity.price.historical(symbol="IWO", provider="yfinance", start_date="2023-01-01")
 
         result = {}
         if value_data and hasattr(value_data, 'results') and value_data.results:
@@ -182,33 +220,43 @@ def get_vix_futures_curve():
     Returns: dict with front/back month prices, contango ratio, historical VIX spot.
     Fallback: uses ^VIX spot only (no futures curve).
     """
-    if OPENBB_AVAILABLE:
+    if _openbb_available():
         try:
-            data = obb.derivatives.options.chains(symbol="VIX", provider="cboe")
+            data = _obb().derivatives.options.chains(symbol="VIX", provider="cboe")
             if data and hasattr(data, 'results') and data.results:
-                df = pd.DataFrame([vars(r) for r in data.results]) if not isinstance(data.results, pd.DataFrame) else data.results
-                if hasattr(data, 'to_df'):
-                    df = data.to_df()
+                # to_df() first: data.results holds pydantic models, and vars() on
+                # those raises TypeError, which the outer `except Exception` swallowed
+                # — killing this whole OpenBB path even with openbb-cboe installed.
+                df = data.to_df() if hasattr(data, 'to_df') else pd.DataFrame([vars(r) for r in data.results])
 
                 # Extract VIX futures from options chain expirations
                 if 'expiration' in df.columns and 'underlying_price' in df.columns:
                     vix_spot = float(df['underlying_price'].iloc[0])
                     expirations = sorted(df['expiration'].unique())
 
-                    # Build term structure from implied forward prices
+                    # Build the term structure via put-call parity: at the strike where
+                    # call and put are closest in value, forward = K + (call - put).
+                    # (Reading the ATM option's own bid/ask mid instead returns the
+                    # option premium — ~0.07 — not the ~15 VIX futures level.)
                     futures_curve = {}
-                    for i, exp in enumerate(expirations[:6]):
-                        exp_df = df[df['expiration'] == exp]
-                        # ATM implied vol as proxy for futures level
-                        atm = exp_df.iloc[(exp_df['strike'] - vix_spot).abs().argsort()[:1]]
-                        if not atm.empty:
-                            mid = None
-                            if 'bid' in atm.columns and 'ask' in atm.columns:
-                                bid = float(atm['bid'].iloc[0] or 0)
-                                ask = float(atm['ask'].iloc[0] or 0)
-                                if bid > 0 and ask > 0:
-                                    mid = (bid + ask) / 2
-                            futures_curve[str(exp)] = mid
+                    for exp in expirations[:6]:
+                        exp_df = df[df['expiration'] == exp].copy()
+                        if exp_df.empty or 'option_type' not in exp_df.columns:
+                            continue
+
+                        exp_df['mid'] = (exp_df['bid'].astype(float) + exp_df['ask'].astype(float)) / 2
+                        exp_df = exp_df[exp_df['mid'] > 0]
+
+                        calls = exp_df[exp_df['option_type'] == 'call'].set_index('strike')['mid']
+                        puts = exp_df[exp_df['option_type'] == 'put'].set_index('strike')['mid']
+                        common = calls.index.intersection(puts.index)
+                        if common.empty:
+                            futures_curve[str(exp)] = None
+                            continue
+
+                        diff = (calls[common] - puts[common]).astype(float)
+                        k_atm = diff.abs().idxmin()
+                        futures_curve[str(exp)] = round(float(k_atm) + float(diff.loc[k_atm]), 3)
 
                     contango = None
                     curve_vals = [v for v in futures_curve.values() if v is not None]
@@ -234,7 +282,7 @@ def _vix_futures_curve_fallback():
     try:
         import yfinance as yf
 
-        vix = yf.Ticker("^VIX")
+        vix = yf_safe.Ticker("^VIX")
         hist = vix.history(period='5y')
         if hist.empty:
             return {'error': 'No VIX data available'}
@@ -256,7 +304,7 @@ def _vix_futures_curve_fallback():
             'latest_date': close.index[-1].strftime('%Y-%m-%d'),
             'historical': close,
             'source': 'yfinance (^VIX spot only, no futures)',
-            'note': 'VIX futures unavailable — install openbb for CBOE futures curve'
+            'note': _degraded_note('CBOE options chains', 'openbb-cboe')
         }
     except Exception as e:
         return {'error': f'Error fetching VIX fallback: {str(e)}'}
@@ -272,9 +320,9 @@ def get_spy_put_call_oi():
     Returns: dict with put/call volume ratio, OI ratio, total volume.
     Fallback: FRED PCERTOT series or SPY options via yfinance.
     """
-    if OPENBB_AVAILABLE:
+    if _openbb_available():
         try:
-            data = obb.derivatives.options.chains(symbol="SPY", provider="cboe")
+            data = _obb().derivatives.options.chains(symbol="SPY", provider="cboe")
             if data and hasattr(data, 'results') and data.results:
                 df = data.to_df() if hasattr(data, 'to_df') else pd.DataFrame([vars(r) for r in data.results])
 
@@ -331,7 +379,7 @@ def _spy_put_call_fallback():
                 'latest_date': series.index[-1].strftime('%Y-%m-%d'),
                 'historical': series,
                 'source': 'FRED (PCERTOT equity put/call)',
-                'note': 'OI breakdown unavailable — install openbb for CBOE chains'
+                'note': _degraded_note('CBOE options chains', 'openbb-cboe')
             }
     except Exception:
         pass
@@ -339,7 +387,7 @@ def _spy_put_call_fallback():
     # yfinance SPY options fallback
     try:
         import yfinance as yf
-        spy = yf.Ticker("SPY")
+        spy = yf_safe.Ticker("SPY")
         expirations = spy.options
         if not expirations:
             return {'error': 'No SPY options data available from any source'}
@@ -363,7 +411,7 @@ def _spy_put_call_fallback():
             'total_put_oi': int(put_oi),
             'latest_date': datetime.now().strftime('%Y-%m-%d'),
             'source': f'yfinance SPY options ({expirations[0]})',
-            'note': 'Single expiry only — install openbb for full CBOE chains'
+            'note': 'Single expiry only — ' + _degraded_note('CBOE options chains', 'openbb-cboe')
         }
     except Exception as e:
         return {'error': f'Put/call ratio unavailable from all sources: {str(e)}'}
@@ -379,7 +427,7 @@ def get_sp500_historical_multiples():
     Source cascade: OpenBB/Finviz (per-stock) → multpl.com (index) → yfinance (SPY ETF).
     Returns: forward P/E, PEG, price/sales, price/cash, price/book, EPS growth.
     """
-    if OPENBB_AVAILABLE:
+    if _openbb_available():
         try:
             return _sp500_multiples_openbb()
         except Exception:
@@ -443,7 +491,7 @@ def _sp500_multiples_openbb():
     stocks = {}
     for ticker in TOP_20:
         try:
-            data = obb.equity.fundamental.metrics(symbol=ticker, provider="finviz")
+            data = _obb().equity.fundamental.metrics(symbol=ticker, provider="finviz")
             if data and hasattr(data, 'results') and data.results:
                 r = data.results[0] if isinstance(data.results, list) else data.results
                 mcap = getattr(r, 'market_cap', None)
@@ -554,7 +602,7 @@ def _sp500_multiples_fallback():
     # Final fallback: yfinance SPY ETF
     try:
         import yfinance as yf
-        spy = yf.Ticker("SPY")
+        spy = yf_safe.Ticker("SPY")
         info = spy.info
         return {
             'forward_pe': info.get('forwardPE'),
@@ -580,9 +628,9 @@ def get_ecb_policy_rates():
     Returns: dict with current rates + historical series.
     Fallback: direct ECB SDW API.
     """
-    if OPENBB_AVAILABLE:
+    if _openbb_available():
         try:
-            data = obb.fixedincome.rate.ecb(provider="ecb")
+            data = _obb().fixedincome.rate.ecb(provider="ecb")
             if data and hasattr(data, 'results') and data.results:
                 df = data.to_df() if hasattr(data, 'to_df') else pd.DataFrame([vars(r) for r in data.results])
                 if not df.empty:
@@ -604,7 +652,47 @@ def get_ecb_policy_rates():
 
 
 def _ecb_rates_fallback():
-    """Fallback: ECB Statistical Data Warehouse API."""
+    """Fallback: the three ECB policy rates from FRED, then ECB SDW for deposit only.
+
+    OpenBB's own `fixedincome.rate.ecb` is served by the FRED provider (openbb-ecb
+    only ships BalanceOfPayments/CurrencyReferenceRates/YieldCurve), and it just maps
+    rate names onto three FRED series.  Reading those series directly gives all three
+    rates without the OpenBB dependency — the previous SDW path could only ever
+    return the deposit rate, which is why refi/marginal rendered as N/A.
+    """
+    try:
+        from fredapi import Fred
+        import config
+
+        fred = Fred(api_key=config.FRED_API_KEY)
+        series_map = {
+            'deposit_rate': 'ECBDFR',      # deposit facility
+            'refi_rate': 'ECBMRRFR',       # main refinancing operations
+            'marginal_rate': 'ECBMLFR',    # marginal lending facility
+        }
+
+        result = {'source': 'FRED (ECB policy rates)'}
+        deposit_series = None
+        for field, series_id in series_map.items():
+            try:
+                s = fred.get_series(series_id).dropna()
+                if s.empty:
+                    result[field] = None
+                    continue
+                result[field] = round(float(s.iloc[-1]), 4)
+                result['latest_date'] = s.index[-1].strftime('%Y-%m-%d')
+                if field == 'deposit_rate':
+                    deposit_series = s
+            except Exception:
+                result[field] = None
+
+        if result.get('deposit_rate') is not None:
+            if deposit_series is not None:
+                result['historical'] = deposit_series
+            return result
+    except Exception:
+        pass  # fall through to the SDW deposit-only path
+
     try:
         import requests
         # ECB SDW REST API for deposit facility rate
@@ -634,7 +722,7 @@ def _ecb_rates_fallback():
                         'latest_date': dates[-1],
                         'historical': series,
                         'source': 'ECB SDW API (deposit rate only)',
-                        'note': 'Refi/marginal rates unavailable — install openbb for full ECB data'
+                        'note': 'Refi/marginal rates unavailable — FRED ECBMRRFR/ECBMLFR lookup failed'
                     }
 
         return {'error': 'ECB rates unavailable from all sources'}
@@ -651,9 +739,9 @@ def get_oecd_leading_indicator():
     Returns: dict with latest CLI value + historical.
     Fallback: FRED USALOLITONOSTSAM series.
     """
-    if OPENBB_AVAILABLE:
+    if _openbb_available():
         try:
-            data = obb.economy.composite_leading_indicator(country="united_states", provider="oecd")
+            data = _obb().economy.composite_leading_indicator(country="united_states", provider="oecd")
             if data and hasattr(data, 'results') and data.results:
                 df = data.to_df() if hasattr(data, 'to_df') else pd.DataFrame([vars(r) for r in data.results])
                 if not df.empty:
@@ -798,9 +886,9 @@ def get_cpi_components():
     Returns: dict with component YoY% changes.
     Fallback: FRED series for each CPI component.
     """
-    if OPENBB_AVAILABLE:
+    if _openbb_available():
         try:
-            data = obb.economy.cpi(country="united_states", provider="fred")
+            data = _obb().economy.cpi(country="united_states", provider="fred")
             if data and hasattr(data, 'results') and data.results:
                 df = data.to_df() if hasattr(data, 'to_df') else pd.DataFrame([vars(r) for r in data.results])
                 if not df.empty:
@@ -869,9 +957,9 @@ def get_fama_french_factors():
     Returns: dict with latest monthly returns + historical DataFrame.
     Fallback: download directly from Ken French's data library.
     """
-    if OPENBB_AVAILABLE:
+    if _openbb_available():
         try:
-            data = obb.equity.discovery.fama_french()
+            data = _obb().equity.discovery.fama_french()
             if data and hasattr(data, 'results') and data.results:
                 df = data.to_df() if hasattr(data, 'to_df') else pd.DataFrame([vars(r) for r in data.results])
                 if not df.empty:
@@ -973,9 +1061,9 @@ def get_spx_iv_skew():
     Returns: dict with IV skew metrics.
     Fallback: CBOE SKEW index via yfinance (^SKEW).
     """
-    if OPENBB_AVAILABLE:
+    if _openbb_available():
         try:
-            data = obb.derivatives.options.chains(symbol="SPX", provider="cboe")
+            data = _obb().derivatives.options.chains(symbol="SPX", provider="cboe")
             if data and hasattr(data, 'results') and data.results:
                 df = data.to_df() if hasattr(data, 'to_df') else pd.DataFrame([vars(r) for r in data.results])
 
@@ -1025,7 +1113,7 @@ def _spx_iv_skew_fallback():
     """Fallback: CBOE SKEW index from yfinance."""
     try:
         import yfinance as yf
-        skew = yf.Ticker("^SKEW")
+        skew = yf_safe.Ticker("^SKEW")
         hist = skew.history(period='2y')
         if hist.empty:
             return {'error': 'SKEW index data unavailable'}
@@ -1047,7 +1135,7 @@ def _spx_iv_skew_fallback():
             'latest_date': close.index[-1].strftime('%Y-%m-%d'),
             'historical': close,
             'source': 'yfinance (^SKEW index)',
-            'note': 'SKEW index only — install openbb for strike-level IV data'
+            'note': 'SKEW index only — ' + _degraded_note('CBOE options chains', 'openbb-cboe')
         }
     except Exception as e:
         return {'error': f'IV skew fetch error: {str(e)}'}
@@ -1061,9 +1149,9 @@ def get_european_yields():
     Returns: dict with yields + spread vs Bund.
     Fallback: yfinance ETF proxies.
     """
-    if OPENBB_AVAILABLE:
+    if _openbb_available():
         try:
-            data = obb.fixedincome.government.yield_curve(country="germany", provider="ecb")
+            data = _obb().fixedincome.government.yield_curve(country="germany", provider="ecb")
             # Additional countries would need separate calls
             if data and hasattr(data, 'results') and data.results:
                 df = data.to_df() if hasattr(data, 'to_df') else pd.DataFrame([vars(r) for r in data.results])
@@ -1089,49 +1177,61 @@ def get_european_yields():
 
 
 def _european_yields_fallback():
-    """Fallback: direct ECB SDW API for major eurozone 10Y yields."""
-    try:
-        import requests
+    """Fallback: per-country 10Y government yields from FRED (OECD long-term rates).
 
-        # ECB SDW series for 10Y government bonds
+    The previous ECB SDW path requested YC dataset keys of the form
+    ``...SV_C_YM.FR_10Y`` / ``IT_10Y``, which do not exist — that dataset holds the
+    euro-area AAA curve only.  So France and Italy always came back None and the
+    IT-DE spread could never be computed.
+
+    These FRED series are monthly rather than daily, but they are consistently
+    dated across countries, which is what makes the IT-DE spread meaningful.
+    """
+    try:
+        from fredapi import Fred
+        import config
+
+        fred = Fred(api_key=config.FRED_API_KEY)
         bonds = {
-            'de_10y': 'YC.B.U2.EUR.4F.G_N_A.SV_C_YM.SR_10Y',
-            'fr_10y': 'YC.B.U2.EUR.4F.G_N_A.SV_C_YM.FR_10Y',
-            'it_10y': 'YC.B.U2.EUR.4F.G_N_A.SV_C_YM.IT_10Y',
+            'de_10y': 'IRLTLT01DEM156N',
+            'fr_10y': 'IRLTLT01FRM156N',
+            'it_10y': 'IRLTLT01ITM156N',
+            'es_10y': 'IRLTLT01ESM156N',
         }
 
-        result = {'source': 'ECB SDW API', 'latest_date': None}
+        result = {
+            'source': 'FRED (OECD long-term government bond yields)',
+            'latest_date': None,
+            'note': 'Monthly series — all countries share the same reference month',
+        }
+        de_series = None
 
-        for key, series_key in bonds.items():
+        for key, series_id in bonds.items():
             try:
-                # Use the ECB SDMX REST API
-                url = f"https://data-api.ecb.europa.eu/service/data/YC/{series_key.split('YC.')[1] if 'YC.' in series_key else series_key}"
-                headers = {'Accept': 'application/json'}
-                resp = requests.get(url, headers=headers, timeout=10)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    obs = list(data.get('dataSets', [{}])[0].get('series', {}).values())
-                    if obs:
-                        observations = obs[0].get('observations', {})
-                        if observations:
-                            last_key = max(observations.keys(), key=int)
-                            result[key] = round(float(observations[last_key][0]), 3)
-                            if result['latest_date'] is None:
-                                time_vals = data.get('structure', {}).get('dimensions', {}).get('observation', [{}])[0].get('values', [])
-                                if time_vals and int(last_key) < len(time_vals):
-                                    result['latest_date'] = time_vals[int(last_key)].get('id')
+                s = fred.get_series(series_id).dropna()
+                if s.empty:
+                    result[key] = None
+                    continue
+                result[key] = round(float(s.iloc[-1]), 3)
+                obs_date = s.index[-1].strftime('%Y-%m-%d')
+                if result['latest_date'] is None or obs_date < result['latest_date']:
+                    result['latest_date'] = obs_date
+                if key == 'de_10y':
+                    de_series = s
             except Exception:
                 result[key] = None
 
-        # Compute IT-DE spread
-        if result.get('it_10y') and result.get('de_10y'):
+        if result.get('it_10y') is not None and result.get('de_10y') is not None:
             result['it_de_spread'] = round(result['it_10y'] - result['de_10y'], 3)
+
+        if de_series is not None:
+            result['historical'] = de_series
 
         if result['latest_date'] is None:
             result['latest_date'] = datetime.now().strftime('%Y-%m-%d')
 
-        if not any(result.get(k) for k in ['de_10y', 'fr_10y', 'it_10y']):
-            return {'error': 'European yields unavailable from ECB API'}
+        if not any(result.get(k) is not None for k in ('de_10y', 'fr_10y', 'it_10y')):
+            return {'error': 'European yields unavailable from FRED'}
 
         return result
     except Exception as e:
@@ -1146,12 +1246,12 @@ def get_global_cpi_comparison():
     Returns: dict with latest CPI for each region.
     Fallback: FRED series for each.
     """
-    if OPENBB_AVAILABLE:
+    if _openbb_available():
         try:
             result = {'source': 'OpenBB/OECD', 'latest_date': datetime.now().strftime('%Y-%m-%d')}
             for country in ['united_states', 'euro_area', 'japan', 'united_kingdom']:
                 try:
-                    data = obb.economy.cpi(country=country, provider="oecd")
+                    data = _obb().economy.cpi(country=country, provider="oecd")
                     if data and hasattr(data, 'results') and data.results:
                         df = data.to_df() if hasattr(data, 'to_df') else pd.DataFrame([vars(r) for r in data.results])
                         if not df.empty:
@@ -1240,11 +1340,11 @@ def get_upcoming_earnings():
     Returns: dict with list of upcoming earnings dates.
     Fallback: yfinance calendar for Top 20 tickers.
     """
-    if OPENBB_AVAILABLE:
+    if _openbb_available():
         try:
             today = datetime.now().strftime('%Y-%m-%d')
             next_week = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
-            data = obb.equity.calendar.earnings(start_date=today, end_date=next_week, provider="finviz")
+            data = _obb().equity.calendar.earnings(start_date=today, end_date=next_week, provider="finviz")
             if data and hasattr(data, 'results') and data.results:
                 df = data.to_df() if hasattr(data, 'to_df') else pd.DataFrame([vars(r) for r in data.results])
                 if not df.empty:
@@ -1274,7 +1374,7 @@ def _upcoming_earnings_fallback():
 
         for symbol in top_tickers:
             try:
-                t = yf.Ticker(symbol)
+                t = yf_safe.Ticker(symbol)
                 cal = t.calendar
                 if cal is not None and isinstance(cal, dict):
                     earn_date = cal.get('Earnings Date')
@@ -1296,7 +1396,7 @@ def _upcoming_earnings_fallback():
             'period': f"next 30 days from {today.strftime('%Y-%m-%d')}",
             'latest_date': today.strftime('%Y-%m-%d'),
             'source': 'yfinance (Top 10 tickers)',
-            'note': 'Limited to top tickers — install openbb for full calendar'
+            'note': 'Limited to top tickers — ' + _degraded_note('Finviz earnings calendar', 'openbb-finviz')
         }
     except Exception as e:
         return {'error': f'Earnings calendar fetch error: {str(e)}'}
@@ -1330,7 +1430,7 @@ def get_sector_pe_ratios():
 
         for sector, etf in sector_etfs.items():
             try:
-                t = yf.Ticker(etf)
+                t = yf_safe.Ticker(etf)
                 info = t.info
                 pe = info.get('trailingPE') or info.get('forwardPE')
                 if pe:
@@ -1353,9 +1453,9 @@ def get_full_treasury_curve():
     Returns: dict with maturity → yield mapping.
     Fallback: FRED series for each maturity.
     """
-    if OPENBB_AVAILABLE:
+    if _openbb_available():
         try:
-            data = obb.fixedincome.government.yield_curve(country="united_states", provider="federal_reserve")
+            data = _obb().fixedincome.government.yield_curve(country="united_states", provider="federal_reserve")
             if data and hasattr(data, 'results') and data.results:
                 df = data.to_df() if hasattr(data, 'to_df') else pd.DataFrame([vars(r) for r in data.results])
                 if not df.empty:
@@ -1462,12 +1562,12 @@ def get_international_unemployment():
     Returns: dict with rates by country.
     Fallback: FRED series.
     """
-    if OPENBB_AVAILABLE:
+    if _openbb_available():
         try:
             result = {'source': 'OpenBB/OECD', 'latest_date': None}
             for country, key in [('united_states', 'us'), ('euro_area', 'eu'), ('japan', 'jp'), ('united_kingdom', 'uk')]:
                 try:
-                    data = obb.economy.unemployment(country=country, provider="oecd")
+                    data = _obb().economy.unemployment(country=country, provider="oecd")
                     if data and hasattr(data, 'results') and data.results:
                         df = data.to_df() if hasattr(data, 'to_df') else pd.DataFrame([vars(r) for r in data.results])
                         if not df.empty:
@@ -1586,9 +1686,9 @@ def get_equity_screener():
     Returns: dict with breadth indicators.
     Fallback: yfinance calculations on SPY components.
     """
-    if OPENBB_AVAILABLE:
+    if _openbb_available():
         try:
-            data = obb.equity.screener(provider="finviz")
+            data = _obb().equity.screener(provider="finviz")
             if data and hasattr(data, 'results') and data.results:
                 df = data.to_df() if hasattr(data, 'to_df') else pd.DataFrame([vars(r) for r in data.results])
                 if not df.empty and 'sma200' in df.columns:
@@ -1604,15 +1704,50 @@ def get_equity_screener():
         except Exception:
             pass
 
-    # Simple fallback — return note that this needs OpenBB
-    return {
-        'pct_above_200ma': None,
-        'total_stocks': None,
-        'new_highs': None,
-        'latest_date': datetime.now().strftime('%Y-%m-%d'),
-        'source': 'unavailable',
-        'note': 'Equity screener requires openbb with Finviz provider'
-    }
+    return _equity_screener_fallback()
+
+
+def _equity_screener_fallback():
+    """Fallback: compute % above 200-day MA from the S&P 500 large-cap sample.
+
+    The OpenBB/Finviz screener is no longer usable for this — it returns ~85 rows
+    with no `sma200` column, so the guard above always fell through to a stub that
+    claimed "requires openbb with Finviz provider" even where OpenBB was working.
+    One batched yfinance download over the shared 50-name sample gives a real
+    breadth reading instead.
+    """
+    try:
+        import yfinance as yf
+        from .web_scrapers import SP500_SAMPLE
+
+        df = yf.download(SP500_SAMPLE, period='1y', progress=False,
+                         auto_adjust=True)['Close']
+        if df is None or df.empty:
+            return {'error': 'No price data available for 200-day MA breadth'}
+
+        ma200 = df.rolling(window=200).mean()
+        last = df.dropna(how='all').iloc[-1]
+        last_ma = ma200.dropna(how='all').iloc[-1]
+
+        usable = last.notna() & last_ma.notna()
+        total = int(usable.sum())
+        if total == 0:
+            return {'error': 'No stock had both a close and a 200-day MA'}
+
+        above = int((last[usable] > last_ma[usable]).sum())
+        # 52-week high within 2% counts as "near new high"
+        near_high = int((last[usable] >= df[usable.index[usable]].max() * 0.98).sum())
+
+        return {
+            'pct_above_200ma': round(above / total * 100, 1),
+            'total_stocks': total,
+            'new_highs': near_high,
+            'latest_date': df.dropna(how='all').index[-1].strftime('%Y-%m-%d'),
+            'source': 'yfinance (S&P 500 top-50 sample)',
+            'note': f'{above}/{total} of the large-cap sample above its 200-day MA',
+        }
+    except Exception as e:
+        return {'error': f'Equity screener fetch error: {str(e)}'}
 
 
 # ── #18: Money Supply Measures (M1/M2/MZM) ──────────────────────────────────
@@ -1671,12 +1806,12 @@ def get_global_pmi():
     Returns: dict with PMI values by country.
     Fallback: FRED ISM Manufacturing PMI + any available international PMIs.
     """
-    if OPENBB_AVAILABLE:
+    if _openbb_available():
         try:
             result = {'source': 'OpenBB/EconDB', 'latest_date': None}
             for country, key in [('united_states', 'us'), ('euro_area', 'eu'), ('japan', 'jp'), ('china', 'cn'), ('united_kingdom', 'uk')]:
                 try:
-                    data = obb.economy.pmi(country=country, provider="econdb")
+                    data = _obb().economy.pmi(country=country, provider="econdb")
                     if data and hasattr(data, 'results') and data.results:
                         df = data.to_df() if hasattr(data, 'to_df') else pd.DataFrame([vars(r) for r in data.results])
                         if not df.empty:
@@ -1723,7 +1858,7 @@ def _global_pmi_fallback():
         result['jp_mfg_pmi'] = None
         result['cn_mfg_pmi'] = None
         result['uk_mfg_pmi'] = None
-        result['note'] = 'US PMI estimated from Industrial Production. International PMIs unavailable — install openbb for EconDB global PMI'
+        result['note'] = 'US PMI estimated from Industrial Production. EU/JP/CN/UK PMI have no free source: EconDB carries no manufacturing PMI series and Trading Economics now renders the value client-side.'
 
         if result['latest_date'] is None:
             return {'error': 'Global PMI data unavailable from FRED'}
@@ -1746,7 +1881,7 @@ def get_equity_risk_premium():
         import config
 
         # Get earnings yield (1/PE)
-        spy = yf.Ticker("SPY")
+        spy = yf_safe.Ticker("SPY")
         info = spy.info
         trailing_pe = info.get('trailingPE')
         forward_pe = info.get('forwardPE')

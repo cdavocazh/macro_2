@@ -9,6 +9,7 @@ for the top 20 companies by market cap. Data is JSON-serializable for caching.
 """
 
 import yfinance as yf
+from . import yf_safe
 import pandas as pd
 from datetime import datetime
 import traceback
@@ -107,7 +108,7 @@ def get_company_financials_yahoo(ticker_symbol):
     - financial_analysis (profitability, turnover, growth, returns)
     """
     try:
-        ticker = yf.Ticker(ticker_symbol)
+        ticker = yf_safe.Ticker(ticker_symbol)
         info = ticker.info or {}
 
         # Get quarterly financial statements

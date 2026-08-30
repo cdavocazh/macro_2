@@ -1,0 +1,19 @@
+# OpenBB Platform — extraction-host only.
+#
+# Deliberately NOT in requirements.txt: Streamlit Cloud installs that file, and the
+# OpenBB dependency tree is far larger than the dashboard needs.  Only the host that
+# runs scheduled_extract.py (the VPS) needs these.
+#
+#   /root/macro_2/venv/bin/pip install -r requirements-openbb.txt
+#
+# Without them every OpenBB-backed extractor silently degrades to a fallback:
+#   openbb-cboe  → 63 VIX futures curve, 64 SPY put/call OI, 70 SPX IV skew
+#   openbb       → 67 OECD CLI, 73 earnings calendar, 75 treasury curve, and the
+#                  provider-backed tiers of 65 / 68 / 69 / 72 / 74 / 77 / 78 / 80
+#
+# The import is lazy (see data_extractors/openbb_extractors.py), so the 5-minute
+# fast/hl extract jobs do not pay OpenBB's ~7s / ~270 MB startup cost — only
+# scheduled_extract.py does.
+openbb>=4.7.1
+openbb-cboe>=1.6.1
+openbb-ecb>=1.6.1

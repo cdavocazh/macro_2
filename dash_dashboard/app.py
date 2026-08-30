@@ -1285,7 +1285,7 @@ def build_tab5(loader):
                             caption=f"As of: {coin.get('latest_date', 'N/A')}",
                             border_color=color),
                 metric_card("Funding (ann.)", f"{coin.get('funding_rate', 0):.2f}%",
-                            caption=f"8h: {coin.get('funding_rate_8h', 0)}%"),
+                            caption=f"1h: {coin.get('funding_rate_1h', 0)}%"),
                 metric_card("Open Interest",
                             f"${coin.get('open_interest', 0) / 1e6:.1f}M" if coin.get('open_interest') else 'N/A'),
                 metric_card("24h Volume",

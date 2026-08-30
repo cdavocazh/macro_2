@@ -2,7 +2,7 @@
 
 ## What is this project?
 
-Macroeconomic indicators dashboard with large-cap equity financials. Fetches 88+ indicators from financial APIs (yfinance, FRED, SEC EDGAR, OpenBB/Finviz, web scrapers, MOF Japan, AAII, Hyperliquid), displays them across **4 dashboard frontends** (Streamlit, Plotly Dash, Grafana, React), caches locally for fast startup, and exports to CSV. Includes 5-year OHLCV history for commodities and futures (back to 2021), sector ETF tracking, high-frequency macro proxies, and Hyperliquid DeFi perpetual futures with 1-minute refresh and multi-interval OHLCV candlestick charts.
+Macroeconomic indicators dashboard with large-cap equity financials. Fetches 88+ indicators from financial APIs (yfinance, FRED, SEC EDGAR, OpenBB/Finviz, web scrapers, MOF Japan, AAII, Hyperliquid, CheckOnChain), displays them across **4 dashboard frontends** (Streamlit, Plotly Dash, Grafana, React), caches locally for fast startup, and exports to CSV. Includes 5-year OHLCV history for commodities and futures (back to 2021), sector ETF tracking, high-frequency macro proxies, Hyperliquid DeFi perpetual futures with 1-minute refresh and multi-interval OHLCV candlestick charts, and BTC on-chain metrics (MVRV, NUPL, SOPR, NVT, realised price).
 
 **Repo:** https://github.com/cdavocazh/macro_2
 **Branch:** main
@@ -76,8 +76,16 @@ python hl_extract.py                  # run once
 python hl_extract.py --dry-run        # show what would be extracted
 python hl_extract.py --force          # ignore freshness guard
 
-# Install macOS launchd auto-scheduler (all 3 jobs)
-bash setup_launchd.sh                 # install scheduled-extract + fast-extract + hl-extract
+# CheckOnChain BTC on-chain data extraction (daily)
+python onchain_extract.py                     # extract all 8 priority charts
+python onchain_extract.py --chart mvrv_zscore # single chart
+python onchain_extract.py --list              # list available charts
+python onchain_extract.py --force             # ignore freshness guard
+python onchain_extract.py --verify            # check data freshness
+python onchain_extract.py --dry-run           # show what would be extracted
+
+# Install macOS launchd auto-scheduler (5 jobs)
+bash setup_launchd.sh                 # install all jobs
 bash setup_launchd.sh --status        # check all jobs
 bash setup_launchd.sh --uninstall     # remove all jobs
 
@@ -104,6 +112,7 @@ python -m agent.openai_agents.qa_agent --check C3   # single check
 app.py                        Streamlit dashboard (9 tabs, compact layout, ~2,300 lines)
 data_aggregator.py            Orchestrator — fetches all 88+ indicators, saves/loads cache, auto-reload
   ├── data_extractors/
+  │   ├── yf_safe.py                   yfinance wrapper — trims trailing bars with no price (Yahoo serves OHLC=NaN/Volume-only bars); all yf.Ticker calls route through it
   │   ├── yfinance_extractors.py       18+ indicators (VIX, DXY, Russell, ES/RTY futures w/ OHLCV, JPY, EUR/USD, GBP/USD, EUR/JPY, SPY/RSP, sector ETFs, VIX term structure, put/call ratio, BDI)
   │   ├── fred_extractors.py           38 indicators (GDP, yields, ISM PMI, TGA, liquidity, SOFR, spreads, inflation, labor, M2, JOLTS, Sahm, SLOOS, ADP, WALCL, term premia, home sales, GDPNow, WEI)
   │   ├── web_scrapers.py               4 indicators (Forward P/E, Put/Call, SKEW, breadth)
@@ -145,6 +154,7 @@ react_dashboard/              React + Vite dashboard with FastAPI backend
 
 fast_extract.py               5-minute real-time yfinance extraction (31 extractors, ~5s) + cache merge into all_indicators.json
 hl_extract.py                 1-minute Hyperliquid extraction (perps + spot, ~0.5s) + partial cache merge
+onchain_extract.py            Daily CheckOnChain BTC on-chain data (8 charts: MVRV, NUPL, SOPR, NVT, realised price)
 ibkr_fast_extract.py          IBKR real-time streaming daemon (VPS, ib_async, 3s snapshot writes)
 scheduled_extract.py          Full catch-up script — FRED, SEC, web scrapers (does NOT touch app.py)
 extract_historical_data.py    Append-only historical CSV builder (dual-source equity)
@@ -266,6 +276,20 @@ historical_data/13F/
       └── changes.csv            QoQ position changes (NEW/INCREASED/DECREASED/EXITED)
 ```
 
+### On-chain BTC data (CheckOnChain)
+
+```
+historical_data/onchain/
+  ├── mvrv_zscore.csv        MVRV Z-Score (regime detection)
+  ├── sth_sopr.csv           Short-Term Holder SOPR (profit/loss indicator)
+  ├── nupl.csv               Net Unrealized Profit/Loss (mood bands)
+  ├── nvt_premium.csv        Coinblock NVT Premium (network value vs throughput)
+  ├── lth_mvrv.csv           Long-Term Holder MVRV
+  ├── lth_sopr.csv           Long-Term Holder SOPR
+  ├── lth_aviv.csv           Long-Term Holder AVIV ratio
+  └── realised_price.csv     BTC Realised Price
+```
+
 ## Top 20 tickers
 
 ```python
@@ -307,6 +331,7 @@ TOP_20_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM
 - **S&P 500 Multiples 3-tier cascade:** `_sp500_multiples_openbb()` (OpenBB/Finviz per-stock, market-cap weighted for Top 20) → `_sp500_multiples_fallback()` (multpl.com scraping for index-level ratios) → yfinance SPY ETF (last resort). The OpenBB path also scrapes Finviz quote pages for PEG ratio and EPS growth rates not available via the API.
 - **ERP forward PE sourcing:** `get_equity_risk_premium()` checks if indicator `65_sp500_multiples` has a valid `forward_pe` from OpenBB/Finviz before computing forward ERP. Falls back to yfinance SPY `forwardPE` (usually None).
 
+- **CheckOnChain on-chain BTC extraction:** `onchain_extract.py` scrapes Plotly-based charts from `charts.checkonchain.com` (static HTML, no auth). Data is base64-encoded float64 arrays embedded in Plotly trace objects; decoded via `np.frombuffer()`. Standalone script — not coupled to `data_aggregator.py` or the dashboard cache. Output: `historical_data/onchain/*.csv`. 8 charts: MVRV Z-Score, STH/LTH SOPR, NUPL (mood-band concat merge), NVT Premium, LTH MVRV/AVIV, Realised Price. Merge modes handle split traces (SOPR >1/<1 → single series) and mood-band concatenation (NUPL). 20-hour freshness guard. 2-second delay between distinct URLs. Constant-value traces (threshold lines) auto-filtered.
 - **OpenBB-based extractors (20 functions):** All live in `openbb_extractors.py` behind `OPENBB_AVAILABLE` guard. Every function has a fallback path (FRED, yfinance, direct API, or computation) so the dashboard works without OpenBB installed. Free providers used: CBOE, Finviz, EconDB, ECB SDW, OECD, Fama-French, Federal Reserve. Fixes 3 known-broken indicators (VIX futures, Put/Call ratio, Forward P/E) and adds 17 new indicators across tabs 1-4, 7-8. Not included in `fast_extract.py` (too slow for 5-min polling). ECB rates fallback uses direct ECB SDW REST API. Fama-French fallback downloads ZIP from Ken French's data library. Indicator keys: 63-82.
 
 ## SEC EDGAR XBRL specifics
@@ -320,23 +345,38 @@ TOP_20_TICKERS = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM
 
 ## Scheduling (launchd)
 
-Three launchd jobs run at different frequencies:
+Five launchd jobs run at different frequencies:
 
 | Job | Plist | Schedule | What it extracts | Timeout |
 |-----|-------|----------|-----------------|---------|
 | **hl-extract** | `com.macro2.hl-extract.plist` | Every 1 minute (24/7) | Hyperliquid perps (BTC, ETH, SOL, PAXG, HYPE, OIL) + HIP-3 spot stocks. Partial cache merge (keys 84/85 only). | 50s |
 | **fast-extract** | `com.macro2.fast-extract.plist` | Every 5 minutes (24/7) | Real-time yfinance only: futures, FX, commodities, indices, credit ETFs, sector ETFs, OHLCV, VIX term structure (31 extractors). Also merges ~18 indicators into `all_indicators.json` cache so dashboards stay fresh. | 4 min |
+| **polymarket-extract** | `com.macro2.polymarket-extract.plist` | Every 5 minutes (24/7) | Polymarket prediction markets (politics, crypto, macro events). | 4 min |
 | **scheduled-extract** | `com.macro2.scheduled-extract.plist` | 5x/day Mon-Sat (1am, 8:30am, 1pm, 5pm, 10pm GMT+8) | Full extraction: FRED, SEC, web scrapers, yfinance, all CSVs | 20 min |
+| **onchain-extract** | `com.macro2.onchain-extract.plist` | Daily at 14:00 GMT+8 (06:00 UTC) | CheckOnChain BTC on-chain data (8 charts: MVRV, NUPL, SOPR, NVT, realised price). Output: `historical_data/onchain/*.csv`. | 5 min |
 
 **Python path:** `~/mambaforge/bin/python3`
-**Logs:** `logs/launchd_stdout.log`, `logs/fast_extract_stdout.log`, `logs/hl_extract_stdout.log`
+**Logs:** `logs/launchd_stdout.log`, `logs/fast_extract_stdout.log`, `logs/hl_extract_stdout.log`, `logs/onchain_extract_stdout.log`
 
-launchd catches up missed runs after sleep (unlike cron). `hl_extract.py` has a 45-second freshness guard. `fast_extract.py` has a 3-minute freshness guard. `scheduled_extract.py` has a 15-minute freshness guard. The `TimeOut` in each plist auto-kills hung processes.
+launchd catches up missed runs after sleep (unlike cron). `hl_extract.py` has a 45-second freshness guard. `fast_extract.py` has a 3-minute freshness guard. `scheduled_extract.py` has a 15-minute freshness guard. `onchain_extract.py` has a 20-hour freshness guard. The `TimeOut` in each plist auto-kills hung processes.
 
 **VPS scheduling (systemd):** Three additional services run on the Hostinger VPS (`<VPS_HOST>`) via systemd — see `deploy/systemd/README.md` for unit files and deployment instructions:
 - `macro2-ibkr-stream.service` — always-on IBKR streaming daemon (3s JSON snapshots)
 - `macro-data-qa.timer` — 12h Data QA agent (00:00 + 12:00 UTC)
 - `macro-cache-repair.timer` — periodic cache error auto-repair
+
+### VPS Python environments (two venvs, deliberately)
+
+| venv | Used by | Contents |
+|------|---------|----------|
+| `/root/macro_2/venv` | `macro-fast-extract`, `macro-hl-extract`, `macro-polymarket-extract`, `macro-cache-repair`, `macro-react.service` (uvicorn) | `requirements.txt` only — **no OpenBB** |
+| `/root/macro_2/venv-openbb` | `macro-extract.service` (daily full extraction) only | `requirements.txt` + `requirements-openbb.txt` |
+
+**Why two:** `openbb-core` hard-pins `uvicorn<0.41`, so installing OpenBB into the shared venv would downgrade the uvicorn serving `macro-react.service` (0.42.0 → 0.40.0). `yfinance` is pinned to the same version (1.2.0) in both so every extractor behaves identically across jobs; this leaves `openbb-yfinance` unsatisfied, which is harmless — no indicator uses the OpenBB yfinance provider as its serving path.
+
+The service is switched via a systemd drop-in at `/etc/systemd/system/macro-extract.service.d/openbb-venv.conf`. `ExecStartPost` (cache repair) deliberately stays on the shared venv.
+
+Even with OpenBB present, the import is lazy (`_obb()` in `openbb_extractors.py`), so nothing but the daily extraction loads it. Eagerly importing it cost the minutely/5-minutely job chain 6.4 s / 415 MB versus 1.1 s / 140 MB.
 
 ## API keys
 
@@ -346,6 +386,7 @@ launchd catches up missed runs after sleep (unlike cron). `hl_extract.py` has a 
 - **Hyperliquid:** No key needed (public REST API + WebSocket)
 - **IBKR (VPS streaming):** No API key, but requires IB Gateway (or TWS) running on the same host (default port 4001). `ib_async` connects locally.
 - **Polymarket:** No key needed (public CLOB API at `clob.polymarket.com`)
+- **CheckOnChain:** No key needed (public static HTML charts at `charts.checkonchain.com`)
 - **Minimax (agent only):** `MINIMAX_API_KEY` env var required for agent subfolder
 - **Telegram (agent alerts):** `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` in `.env` (optional, for CRITICAL alert push)
 - **All others:** No key needed (web scraping or public data)
@@ -374,9 +415,12 @@ Equity financials return a nested dict per company with `income_statement`, `bal
 | Gold Reserves Share | World Gold Council scrape | WGC URL returns 404 | Returns error dict gracefully |
 | Put/Call Ratio | yfinance ^PCPUT/^PCALL | Tickers delisted from yfinance | Returns error dict gracefully |
 | Baltic Dry Index | yfinance ^BDI/BDIY | Tickers delisted from yfinance | Returns error dict gracefully |
-| VIX Futures (VX=F) | yfinance VX=F | Ticker not available on yfinance | VIX spot (^VIX) works, front-month futures unavailable. **Also see** `63_vix_futures_curve` (CBOE/yfinance) |
+| VIX Futures (VX=F) | yfinance VX=F | Ticker not available on yfinance | VIX spot (^VIX) works. **FIXED 2026-08-30** for `63_vix_futures_curve`: `openbb-cboe` installed on the VPS and the forward is now derived via put-call parity from the CBOE VIX chain. Requires `venv-openbb`. |
 | Shiller CAPE | Robert Shiller Yale Excel | ~~`ie_data.xls` last updated Oct 2023 — source is dead~~ **FIXED 2026-04-15** | Now scrapes multpl.com as primary source. Yale Excel retained as fallback. |
 | Global CPI (US/EU) | FRED `CPALTT01USM657N` / `CP0000EZ19M086NEST` | ~~US discontinued Mar 2024; EU was returning index level (129) not YoY%~~ **FIXED 2026-04-15** | US: `CPIAUCSL` + compute YoY (3.32%). EU: `CP0000EZ19M086NEST` + compute YoY (1.94%). |
+| Global PMI (EU/JP/CN/UK) | OpenBB EconDB / Trading Economics | EconDB carries no manufacturing PMI series (`obb.economy.pmi` removed from the router); Trading Economics now renders the value client-side, so the `"last":` regex no longer matches | Returns `None` for EU/JP/CN/UK with an accurate note. US keeps the Industrial-Production proxy. Needs a paid PMI feed or a headless-browser scrape. |
+| ISM Services delta | Trading Economics scrape | Same TE client-side rendering change — Method 1 (JSON regex) no longer matches | Value still parsed via the Method 2 table fallback, but `change_1d` / `interpretation` are absent |
+| S&P 500 Multiples PEG / P-to-Cash | OpenBB Finviz + finviz.com scrape | `obb.equity.fundamental.metrics(provider="finviz")` raises `EmptyDataError`; finviz.com's `snapshot-table2` now serves only 14 non-valuation labels (Market Cap, Sales, Income, …) | Falls back to multpl.com, which genuinely has no PEG or P/Cash. Note is accurate. |
 | Global CPI (JP) | FRED `CPALTT01JPM657N` | OECD/FRED Japan CPI series frozen at Jun 2021 | No live FRED Japan CPI series available. Shows stale -0.4%. BOJ API needed. |
 | Global CPI (UK) | FRED `CPALTT01GBM657N` | OECD/FRED UK CPI series frozen at Feb 2024 | Switched to `GBRCPIALLMINMEI` (available Mar 2025). |
 | OECD CLI | FRED `USALOLITONOSTSAM` | ~~FRED series froze at Jan 2024; OECD SDMX API unreachable from VPS~~ **FIXED 2026-04-15** | Now uses CFNAI (Chicago Fed National Activity Index, `FRED:CFNAI`) as Tier 3 fallback. Scale normalised to CLI units (100 + cfnai×10). Shows Feb 2026 data. |
@@ -491,7 +535,8 @@ bash grafana_dashboard/start.sh local   # starts API bridge + Grafana
 ## Tech stack
 
 - Python 3.10 (mambaforge), compatible with 3.8-3.13
-- **Data extraction:** pandas, yfinance, fredapi, beautifulsoup4, requests, OpenBB (optional), ib_async (IBKR streaming)
+- **Data extraction:** pandas, yfinance, fredapi, beautifulsoup4, requests, ib_async (IBKR streaming)
+- **OpenBB (optional, extraction host only):** `requirements-openbb.txt` — `openbb`, `openbb-cboe`, `openbb-ecb`. Deliberately outside `requirements.txt` (Streamlit Cloud installs that). Imported lazily, so only `scheduled_extract.py` pays its ~7 s / ~270 MB startup.
 - **Streamlit dashboard:** streamlit, plotly
 - **Dash dashboard:** dash, plotly, gunicorn
 - **Grafana dashboard:** FastAPI (api_bridge), Grafana + Infinity datasource plugin
@@ -501,6 +546,22 @@ bash grafana_dashboard/start.sh local   # starts API bridge + Grafana
 - Agent: openai-agents, langchain, langgraph, Minimax LLM API
 
 ## Changelog
+
+### 2026-08-30
+- **Fixed: yfinance trailing-NaN bars nulled out 4 Market Indices cards** — Yahoo served the 2026-08-28 daily bar with OHLC all `NaN` and only Volume populated, for every US cash equity/ETF/index (`^GSPC`, `SPY`, `RSP`, `IWN`, `IWO`, `XLK`, `AAPL`, …) while futures and FX were unaffected. Extractors took `.iloc[-1]` on that frame, so `2_russell_2000`, `6a_sp500_to_ma200` and `55_market_concentration` published nulls. `19_sp500_breadth` was worse: NaN comparisons are always False, so all 50 sampled stocks fell into the `unchanged` branch and the dashboard rendered a **fabricated** "Weak bearish breadth — broad market weakness" from zero data. New `data_extractors/yf_safe.py` wraps `yf.Ticker` and trims trailing price-less bars at the fetch boundary; all 45 `yf.Ticker(` call sites across 9 extractor modules now go through it. Breadth additionally returns an error dict when no stock yields a valid comparison, and `ad_ratio` returns `None` instead of `float('inf')` (which `json.dumps` emits as invalid bare `Infinity`).
+- **Fixed: Hyperliquid open interest was off by the coin price** — HL's `openInterest` is denominated in **base coin units** (unlike `dayNtlVlm`, which is already notional USD), but it was stored as `oi_usd` and rendered as `$X.XM`. BTC's 37,037 BTC of OI displayed as **$0.0M** instead of ~$2,917M. Now multiplied by mid price in both `hyperliquid_extractor.py` and `react_dashboard/backend/hl_ws_service.py`.
+- **Fixed: 6 HIP-3 builder perps returned "not found on Hyperliquid"** — builder perps are absent from the unqualified `metaAndAssetCtxs` response and only appear when the request carries their `dex`. `get_hl_meta_and_contexts()` now also queries each builder dex referenced by `HL_PERPS`. Registry names corrected against the live per-dex universes: `xyz:SP500`/`xyz:NATGAS`/`xyz:COPPER` never existed (now `flx:USA500`/`flx:GAS`/`flx:COPPER`), and `BRENTOIL` was dropped (no builder lists it). `xyz:XYZ100` (Nasdaq 100) is genuinely live — $195M OI, $22.6M/day. The four `flx:*` listings are deployed but abandoned (zero OI, zero volume, mid ~8% from spot), so they now carry an `illiquid` flag and the React card labels them "inactive market" rather than presenting a stale quote as live.
+- **Fixed: CBOE SKEW rendered N/A on all 3 dashboards despite valid data** — two writers owned cache key `5_spx_call_skew` with different shapes: `data_aggregator.py` → `get_spx_call_skew()` emitting `spx_call_skew`, and `fast_extract.py` (every 5 min, so it always won) → `get_cboe_skew_index()` emitting only `cboe_skew`. Streamlit, Dash and React all read `spx_call_skew`. `get_cboe_skew_index()` now emits the canonical `spx_call_skew` (plus `cboe_skew` as an alias) and the same `interpretation` block.
+- **Fixed: JOLTS MoM delta never rendered** — extractor emitted absolute `change_mom` (thousands) while the dashboards read `change_mom_pct` and label it "% MoM". Added `change_mom_pct`.
+- **Fixed: `_openbb_available()` gate + OpenBB providers on the VPS** — the VPS had **zero** OpenBB packages, so 6 indicators silently degraded. Installed `openbb`, `openbb-cboe`, `openbb-ecb` into a **separate** `venv-openbb` (see Scheduling). Also fixed a swallowed `TypeError`: `get_vix_futures_curve()` called `vars(r)` on pydantic models *before* `to_df()`, so the OpenBB path died even with the provider installed. The VIX curve now derives each expiry's forward via put-call parity (`K + (call − put)` at the strike where they are closest) — reading the ATM option's own bid/ask mid returned the ~0.07 option premium, not the ~15 futures level.
+- **Fixed: ECB refi/marginal + France/Italy 10Y were structurally unobtainable** — `obb.fixedincome.rate.ecb` is served by FRED, not `openbb-ecb` (which only ships BalanceOfPayments/CurrencyReferenceRates/YieldCurve); it just maps names onto `ECBDFR`/`ECBMRRFR`/`ECBMLFR`, which the fallback now reads directly. The EU-yields fallback requested ECB SDW keys `...SV_C_YM.FR_10Y`/`IT_10Y` that do not exist in that dataset (it holds only the euro-area AAA curve), so FR/IT were always `None` and the IT-DE spread was never computable; replaced with FRED OECD per-country series (`IRLTLT01{DE,FR,IT,ES}M156N`), which are monthly but consistently dated, making the spread meaningful.
+- **Fixed: equity screener claimed "requires openbb with Finviz provider" while Finviz worked** — `obb.equity.screener(provider="finviz")` returns ~85 rows with no `sma200` column, so the guard always fell through to a stub. Replaced with a real computation: one batched yfinance download over the shared `SP500_SAMPLE` gives % above 200-day MA (68.0% at time of fix).
+- **Changed: OpenBB import is now lazy** — `data_extractors/__init__.py` imports `openbb_extractors`, so an eager `from openbb import obb` was paid by every script touching the package, including the 5-minute `hl_extract.py`/`fast_extract.py` jobs. Measured on the VPS-class box: eager import took that chain from **1.1 s / 140 MB to 6.4 s / 415 MB**. Deferred behind `_obb()` / `_openbb_available()`; only `scheduled_extract.py` now pays OpenBB's ~7 s / ~270 MB.
+- **Changed: fallback notes no longer misdiagnose** — every "install openbb …" note now routes through `_degraded_note()`, which distinguishes "OpenBB not installed (<actual ImportError>)" from "provider unavailable — check `openbb-cboe` is installed and the provider responded".
+- **Known limitation (unchanged):** EU/JP/CN/UK manufacturing PMI still have no free source. EconDB carries no manufacturing PMI series (`obb.economy.pmi` no longer exists on the router), and Trading Economics now renders the value client-side, so its `"last":` JSON regex no longer matches. `81_global_pmi` keeps the US Industrial-Production proxy and an accurate note. The same TE change is why `43_ism_services` lost its `change_1d`/`interpretation` — it falls through to the table parser.
+
+### 2026-05-27
+- **Fixed: Hyperliquid funding annualization (8h → hourly convention)** — `hyperliquid_extractor.py` and `react_dashboard/backend/hl_ws_service.py` annualized funding with `* 3 * 365` (Binance 8h convention), but Hyperliquid funds **HOURLY** (verified: `fundingHistory` entries are spaced exactly 1.00h, and `metaAndAssetCtxs['funding']` is the per-hour rate). This understated displayed annualized funding for ALL HL perps by 8x. Corrected to `* 24 * 365`. Renamed the raw-period field `funding_rate_8h` → `funding_rate_1h` (it always held the hourly rate, not 8h) and updated the "8h:" caption → "1h:" across all 3 frontends (Streamlit, Dash, React). After the fix, e.g. BTC displays ~+11% ann instead of ~+1.4%. Downstream `Opportunity_scanner` strategy 02 is unaffected — it runs its own per-venue funding pipeline and already handles HL's hourly cadence. Note: `hl_extract.py` writes annualized `funding_rate` into `historical_data/*.csv` (`hl_*_funding` columns), so those CSVs show a one-time ~8x step-up at this date; pre-fix rows remain 8x understated (not backfilled).
 
 ### 2026-03-30
 - **Extended: All yfinance indicators to 5y history** — Changed `period='2y'` / `timedelta(days=730)` to `period='5y'` across `yfinance_extractors.py`, `commodities_extractors.py`, and `fidenza_extractors.py`. Affects Russell 2000, S&P 500/MA200, ES/RTY futures, DXY, JPY, FX pairs, market concentration, sector ETFs, VIX term structure, commodities (gold/silver/crude/copper), Brent, Nikkei, EM indices, XAU/JPY, gold/silver ratio, credit ETFs. 68 CSVs now have 1,000+ rows (back to March 2021), up from 15 previously.
