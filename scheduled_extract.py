@@ -16,7 +16,7 @@ Usage:
 
 Schedule with cron (macOS/Linux) - runs at 9am, 1pm, 5pm on weekdays:
     crontab -e
-    0 9,13,17 * * 1-5 cd /Users/kriszhang/Github/macro_2 && python scheduled_extract.py --cron >> logs/extract.log 2>&1
+    0 9,13,17 * * 1-5 cd ~/Github/macro_2 && python scheduled_extract.py --cron >> logs/extract.log 2>&1
 
 Schedule with launchd (macOS) - see CLAUDE.md for .plist example.
 """

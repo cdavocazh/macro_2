@@ -1,6 +1,6 @@
 # SOP — Data QA for `macro_2` Dashboard
 
-**Audience:** Operator of the macro_2 dashboard at `http://187.77.136.160/` and the IBKR portfolio dashboard at `http://187.77.136.160/IBKR_KZ/`.
+**Audience:** Operator of the macro_2 dashboard at `http://<VPS_HOST>/` and the IBKR portfolio dashboard at `http://<VPS_HOST>/IBKR_KZ/`.
 
 **Purpose:** This SOP defines the data-quality checks the automated QA agent runs every 12 hours against every data source the dashboard depends on. It also defines the log format and how to triage flagged issues.
 

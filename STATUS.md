@@ -15,7 +15,7 @@ Operator briefing for this repository. Read FIRST when opening this repo in a ne
 | launchd: hl-extract | macOS launchd, 1-min (24/7) | 2026-03-30 | HL perps + HIP-3 spot, partial cache merge (keys 84/85) |
 | launchd: fast-extract | macOS launchd, 5-min (24/7) | 2026-03-30 | 31 yfinance extractors, ~5s, 3-min freshness guard |
 | launchd: scheduled-extract | macOS launchd, 5x/day Mon-Sat | 2026-03-30 | Full FRED/SEC/web scrapers, 15-min freshness guard |
-| VPS systemd timers | Hostinger VPS 187.77.136.160 | 2026-04-24 | 7 timers; fast_extract confirmed 404-clean (06:42 run) |
+| VPS systemd timers | Hostinger VPS <VPS_HOST> | 2026-04-24 | 7 timers; fast_extract confirmed 404-clean (06:42 run) |
 | VPS: IBKR stream | systemd macro2-ibkr-stream.service | 2026-05-17 | Long-running daemon, ib_async, 3s JSON snapshots |
 | VPS: Data QA agent | systemd macro-data-qa.timer (12h) | 2026-05-17 | 11 checks → LLM triage → Telegram alerts |
 | VPS: Cache repair | systemd macro-cache-repair.timer | 2026-05-17 | Periodic cache error detection + auto-repair |
@@ -28,7 +28,7 @@ Operator briefing for this repository. Read FIRST when opening this repo in a ne
 - **Polymarket tab (React)** — Tab 9 added to React dashboard showing prediction market events with price charts, volumes, and multi-outcome markets.
 - **Housing starts HIGH alert** — FRED `HOUST` update lag (Census Mar data published but FRED hasn't propagated); not a code bug, monitor `data_extractors/fred_extractors.py`. QA score: 1 remaining HIGH, 54/100.
 - **Stale VPS cron entries** — `/etc/cron.d` has legacy `fast_extract.py` / `scheduled_extract.py` entries using `/usr/bin/python3` (causes `ModuleNotFoundError: fredapi`); systemd timers are the authoritative schedulers. Chip spawned for cleanup; pending user action on VPS.
-- **VPS unreachable** — 187.77.136.160 timed out during this session; changes pushed to GitHub main, VPS needs `git pull` in `/root/macro_2` (or wherever repo lives) once connectivity restores.
+- **VPS unreachable** — <VPS_HOST> timed out during this session; changes pushed to GitHub main, VPS needs `git pull` in `/root/macro_2` (or wherever repo lives) once connectivity restores.
 - **MCP server conversion** — design + RAM/performance analysis in [`MCP_CONVERSION_PLAN.md`](MCP_CONVERSION_PLAN.md) (proposed, not started). 5th frontend wrapping `data_aggregator` via MCP (stdio + VPS HTTP); ~485 MB standalone RAM or share the React process. External mirror: `~/.claude/plans/how-would-you-convert-jaunty-quasar.md`.
 
 ## Known infrastructure quirks

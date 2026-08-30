@@ -328,12 +328,12 @@ Three launchd jobs run at different frequencies:
 | **fast-extract** | `com.macro2.fast-extract.plist` | Every 5 minutes (24/7) | Real-time yfinance only: futures, FX, commodities, indices, credit ETFs, sector ETFs, OHLCV, VIX term structure (31 extractors). Also merges ~18 indicators into `all_indicators.json` cache so dashboards stay fresh. | 4 min |
 | **scheduled-extract** | `com.macro2.scheduled-extract.plist` | 5x/day Mon-Sat (1am, 8:30am, 1pm, 5pm, 10pm GMT+8) | Full extraction: FRED, SEC, web scrapers, yfinance, all CSVs | 20 min |
 
-**Python path:** `/Users/kriszhang/mambaforge/bin/python3`
+**Python path:** `~/mambaforge/bin/python3`
 **Logs:** `logs/launchd_stdout.log`, `logs/fast_extract_stdout.log`, `logs/hl_extract_stdout.log`
 
 launchd catches up missed runs after sleep (unlike cron). `hl_extract.py` has a 45-second freshness guard. `fast_extract.py` has a 3-minute freshness guard. `scheduled_extract.py` has a 15-minute freshness guard. The `TimeOut` in each plist auto-kills hung processes.
 
-**VPS scheduling (systemd):** Three additional services run on the Hostinger VPS (`187.77.136.160`) via systemd — see `deploy/systemd/README.md` for unit files and deployment instructions:
+**VPS scheduling (systemd):** Three additional services run on the Hostinger VPS (`<VPS_HOST>`) via systemd — see `deploy/systemd/README.md` for unit files and deployment instructions:
 - `macro2-ibkr-stream.service` — always-on IBKR streaming daemon (3s JSON snapshots)
 - `macro-data-qa.timer` — 12h Data QA agent (00:00 + 12:00 UTC)
 - `macro-cache-repair.timer` — periodic cache error auto-repair

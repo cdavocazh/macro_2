@@ -2,7 +2,7 @@
 
 **Date:** 2026-03-30
 **Tool:** [OmniOracle](https://github.com/cesabici-bit/omni-oracle) MI pipeline applied to our 66 monthly-resampled macro indicators
-**Script:** `/Users/kriszhang/Github/macro_2/discover_relationships.py`
+**Script:** `~/Github/macro_2/discover_relationships.py`
 
 ## Method
 
