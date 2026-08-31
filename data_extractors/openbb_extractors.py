@@ -441,13 +441,100 @@ def get_sp500_historical_multiples():
     Source cascade: OpenBB/Finviz (per-stock) → multpl.com (index) → yfinance (SPY ETF).
     Returns: forward P/E, PEG, price/sales, price/cash, price/book, EPS growth.
     """
+    result = None
     if _openbb_available():
         try:
-            return _sp500_multiples_openbb()
+            result = _sp500_multiples_openbb()
         except Exception:
             pass
 
-    return _sp500_multiples_fallback()
+    if result is None:
+        result = _sp500_multiples_fallback()
+
+    # Fill PEG / Price-to-Cash from yfinance when the serving source lacks them
+    # (multpl.com never has them; the Finviz path no longer gets them either).
+    if 'error' not in result and (result.get('peg_ratio') is None
+                                  or result.get('price_to_cash') is None):
+        try:
+            extra = _yf_peg_pcash_supplement()
+        except Exception:
+            extra = {}
+        filled = [k for k in ('peg_ratio', 'price_to_cash')
+                  if result.get(k) is None and k in extra]
+        for k in filled:
+            result[k] = extra[k]
+        if filled:
+            # The frontends caption only `source`, so the blend must live there.
+            result['source'] = 'multpl.com (index) + yfinance Top-20 (PEG, P/Cash)'
+            result['note'] = ('PEG (mcap-weighted) and Price/Cash (aggregate) are '
+                              'Top-20 values from yfinance; other multiples are '
+                              'index-level')
+
+    return result
+
+
+_SP500_TOP20 = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM',
+                'LLY', 'AVGO', 'JPM', 'V', 'WMT', 'MA', 'XOM', 'UNH', 'COST', 'HD', 'PG', 'JNJ']
+
+
+def _yf_peg_pcash_supplement():
+    """PEG and Price/Cash for the Top 20 from yfinance per-stock data.
+
+    No index-level source carries these two: multpl.com has neither, and Finviz
+    (the original per-stock source) stopped serving valuation ratios — its API
+    provider raises EmptyDataError and the quote page's snapshot table now holds
+    only non-valuation labels.  yfinance still has `trailingPegRatio` and
+    `totalCash`/`marketCap` per ticker, so:
+
+    - peg_ratio: market-cap-weighted mean of per-stock PEG (the same convention
+      the Finviz path used), clamped to (0, 20) per stock so a single
+      near-zero-growth outlier cannot distort the mean.
+    - price_to_cash: Σ market cap / Σ total cash — the index-style aggregate.
+      A weighted mean of per-stock P/C would be dominated by cash-light
+      mega-caps (AAPL ~75, NVDA ~84) and land near 40, far from the ~10-15 an
+      index-level P/C reads; treating the basket as one balance sheet matches
+      how the card's other multiples (from multpl.com) are computed.
+
+    Requires at least 10 of 20 tickers per metric, else omits it — a
+    rate-limited two-stock "average" is worse than N/A.
+    """
+    import yfinance as yf
+
+    peg_wsum = peg_w = 0.0
+    mcap_sum = cash_sum = 0.0
+    n_peg = n_cash = 0
+
+    for ticker in _SP500_TOP20:
+        try:
+            info = yf.Ticker(ticker).info
+        except Exception:
+            continue
+        mcap = info.get('marketCap')
+        if not mcap or mcap <= 0:
+            continue
+        peg = info.get('trailingPegRatio') or info.get('pegRatio')
+        if peg and 0 < peg < 20:
+            peg_wsum += peg * mcap
+            peg_w += mcap
+            n_peg += 1
+        # totalCash is reported in financialCurrency while marketCap is in the
+        # listing currency.  For ADRs these differ — TSM's cash arrives in TWD
+        # (NT$3.5T ≈ 57% of the Top-20 cash sum as a pure currency artifact) —
+        # so only same-currency tickers enter the aggregate.
+        cash = info.get('totalCash')
+        if (cash and cash > 0
+                and info.get('financialCurrency')
+                and info.get('financialCurrency') == info.get('currency')):
+            mcap_sum += mcap
+            cash_sum += cash
+            n_cash += 1
+
+    out = {}
+    if n_peg >= 10 and peg_w > 0:
+        out['peg_ratio'] = round(peg_wsum / peg_w, 2)
+    if n_cash >= 10 and cash_sum > 0:
+        out['price_to_cash'] = round(mcap_sum / cash_sum, 2)
+    return out
 
 
 def _sp500_multiples_openbb():
@@ -461,8 +548,7 @@ def _sp500_multiples_openbb():
     from bs4 import BeautifulSoup
     import re
 
-    TOP_20 = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'BRK-B', 'TSM',
-              'LLY', 'AVGO', 'JPM', 'V', 'WMT', 'MA', 'XOM', 'UNH', 'COST', 'HD', 'PG', 'JNJ']
+    TOP_20 = _SP500_TOP20
 
     def _scrape_finviz_extra(ticker):
         """Scrape PEG and EPS growth from Finviz quote page (not in OpenBB API)."""

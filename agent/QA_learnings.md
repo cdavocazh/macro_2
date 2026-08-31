@@ -148,3 +148,13 @@ When the QA agent reports HIGH stale indicators:
 - **Fix:** Multiply OI by mid price in both the extractor and the WS relay; query each builder dex in `get_hl_meta_and_contexts()`; corrected names against the live per-dex universes and dropped `BRENTOIL`. Added an `illiquid` flag for builder listings with zero OI and zero volume.
 - **Verified:** BTC OI $2,914.2M (matches API: 37,037 BTC × $78,768), funding 10.95% ann. / 1h 0.00125%, `xyz:XYZ100` live at $195.4M OI, four `flx:*` listings labelled "inactive market".
 - **Files changed:** `data_extractors/hyperliquid_extractor.py`, `react_dashboard/backend/hl_ws_service.py`, `react_dashboard/frontend/src/tabs/Tab5Commodities.jsx`
+
+### 2026-08-31
+
+#### `65_sp500_multiples` — PEG Ratio and Price/Cash
+- **Symptom:** Both rendered N/A on the Valuation Metrics card of all frontends.
+- **Root cause:** The serving source (multpl.com) has neither metric, and the designed per-stock source (Finviz) is dead in both access paths — the OpenBB provider raises `EmptyDataError` and finviz.com's snapshot table no longer carries valuation ratios. The fallback hardcoded `None` for both.
+- **Fix:** `_yf_peg_pcash_supplement()` fills the two gaps from yfinance Top-20 per-stock data: mcap-weighted `trailingPegRatio` (per-stock clamp (0,20)) and Σmcap/Σcash. During validation the first P/C read 5.48 because TSM's `totalCash` is reported in TWD (`financialCurrency`) against a USD `marketCap` — NT$3.5T was 57% of the cash denominator. ADR-style currency mismatches are excluded from the aggregate. ≥10/20 tickers required per metric, else omitted.
+- **Verified:** Live on awehawk.cloud — PEG 1.79, Price/Cash 11.82, source captioned `multpl.com (index) + yfinance Top-20 (PEG, P/Cash)`.
+- **Files changed:** `data_extractors/openbb_extractors.py`
+- **QA agent implication:** any ratio built from two fields of one API payload needs a unit/currency check — sibling fields are not guaranteed to share denomination (HL `openInterest` vs `dayNtlVlm` was the same class of bug).
