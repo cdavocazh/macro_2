@@ -37,11 +37,27 @@ export default function App() {
   const [error, setError] = useState(null);
   const pollRef = useRef(null);
 
+  // Recursively overlay `next` onto `prev`, keeping keys that exist only in
+  // `prev`. Lets a lite payload (scalars only) refresh metric values without
+  // discarding the historical series a previous full payload delivered.
+  const mergePreserving = (prev, next) => {
+    if (!prev || typeof prev !== 'object' || Array.isArray(prev)
+        || !next || typeof next !== 'object' || Array.isArray(next)) {
+      return next;
+    }
+    const out = { ...prev };
+    for (const [k, v] of Object.entries(next)) out[k] = mergePreserving(prev[k], v);
+    return out;
+  };
+
   const loadData = useCallback(async (showLoading = false, lite = false) => {
     if (showLoading) setLoading(true);
     try {
       const data = await fetchAllIndicators(lite);
-      setIndicators(data.indicators || {});
+      const fresh = data.indicators || {};
+      // Lite responses have the series stripped — merge them over what we
+      // already hold instead of replacing it, so open charts keep their data.
+      setIndicators(prev => (lite && prev ? mergePreserving(prev, fresh) : fresh));
       setLastUpdate(data.last_update);
       setTotalCount(data.total || 0);
       setFromCache(data.loaded_from_cache || false);
@@ -56,7 +72,7 @@ export default function App() {
     }
   }, []);
 
-  // Initial load: lite payload first (no 5y series, ~0.3 MB) so metric cards
+  // Initial load: lite payload first (no 5y series, ~36 KB gz) so metric cards
   // paint immediately, then the full payload in the background so the
   // expandable charts have their history. All charts start collapsed, so the
   // brief window without series data is invisible unless a chart is opened
@@ -68,9 +84,17 @@ export default function App() {
     })();
   }, [loadData]);
 
-  // Auto-refresh polling
+  // Auto-refresh polling. A full payload is ~1.5 MB gz per client per tick;
+  // scalars change every minute but the 5-year series only refresh on the
+  // 5-minute extract jobs. So poll lite (~36 KB, merged over current state)
+  // each tick and take a full payload every 5th — same freshness where it
+  // matters, ~4x less transfer and server CPU.
   useEffect(() => {
-    pollRef.current = setInterval(() => loadData(false), POLL_INTERVAL);
+    let tick = 0;
+    pollRef.current = setInterval(() => {
+      tick += 1;
+      loadData(false, tick % 5 !== 0);
+    }, POLL_INTERVAL);
     return () => clearInterval(pollRef.current);
   }, [loadData]);
 

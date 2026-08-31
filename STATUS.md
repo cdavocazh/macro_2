@@ -37,6 +37,7 @@ Operator briefing for this repository. Read FIRST when opening this repo in a ne
 
 ## Known infrastructure quirks
 
+- **awehawk.cloud is HTTPS since 2026-08-31** — certbot-managed cert (`/etc/nginx/sites-enabled/dashboards` now edited by certbot on renewal; backups in `/root/nginx-backups/`, NOT in sites-enabled — nginx parses everything there). HTTP 301s to HTTPS, `http2 on;`. `server_name` is explicit now, no longer `_`.
 - **Yahoo serves price-less trailing bars** — Yahoo intermittently returns the most recent daily bar with OHLC all `NaN` and only Volume populated, across every US cash equity/ETF/index at once (futures and FX unaffected). Observed 2026-08-28. All `yf.Ticker` access now goes through `data_extractors/yf_safe.py`, which trims those rows at the fetch boundary. **Never add a raw `yf.Ticker(...)` call** — use `yf_safe.Ticker(...)` or the null resurfaces.
 - **Two venvs on the VPS, on purpose** — `openbb-core` hard-pins `uvicorn<0.41`; installing OpenBB into `/root/macro_2/venv` would downgrade the uvicorn running `macro-react.service` (0.42.0 → 0.40.0). Hence `venv-openbb`, wired in via `/etc/systemd/system/macro-extract.service.d/openbb-venv.conf`. Do not `pip install openbb` into the shared venv.
 - **OECD SDMX 3.0 migration** — Old `DSD_CLI@DF_CLI,1.0` endpoint 404s; new URL requires 9 key dimensions; VPS datacenter IPs get throttled. `_oecd_cli_fallback()` in `openbb_extractors.py` uses CFNAI (FRED:CFNAI) as Tier 3, normalised to `100 + (cfnai × 10)`. Staleness guard skips FRED Tier 2 if data is >400 days old.

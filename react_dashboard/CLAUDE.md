@@ -32,6 +32,7 @@ cd frontend && npm run build     # production build to frontend/dist/
 ## First-load performance (2026-08-31)
 
 - `/api/indicators?lite=1` strips all serialized pandas series (any depth) → 36 KB gz vs 1.5 MB; `App.jsx` fetches lite first (instant cards), then full in the background.
+- Polling: every 60 s tick fetches lite and deep-merges over current state (`mergePreserving` — keeps series the lite payload strips); every 5th tick fetches full. Never let a lite response REPLACE state — open charts would lose their data.
 - Backend memoizes the serialized payload on the cache file's mtime (`_serialized_snapshot`); the IBKR overlay copy-on-writes touched indicators so the memo is never mutated.
 - nginx: `/assets/` is `Cache-Control: immutable` + `gzip_static` (deploy step: `gzip -k9f dist/assets/*.js *.css` after `vite build`); `index.html` is `no-cache` so post-deploy HTML always revalidates.
 
