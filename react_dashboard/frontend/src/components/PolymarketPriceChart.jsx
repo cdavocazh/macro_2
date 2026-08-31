@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import Plot from 'react-plotly.js';
+import Plot from './LazyPlot';
 import api from '../api';
 
 const INTERVALS = [

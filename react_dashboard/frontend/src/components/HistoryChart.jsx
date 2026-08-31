@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import Plot from 'react-plotly.js';
+import Plot from './LazyPlot';
 
 /**
  * Collapsible Plotly line chart with 1W/1M/3M range buttons.

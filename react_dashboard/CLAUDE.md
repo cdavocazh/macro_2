@@ -26,7 +26,14 @@ cd frontend && npm run build     # production build to frontend/dist/
 - `frontend/src/components/HLCandlestickChart.jsx` -- OHLCV candlestick chart for HL perps (TradingView lightweight-charts)
 - `frontend/src/components/IntradayCandlestickChart.jsx` -- OHLCV candlestick chart for yfinance instruments (TradingView lightweight-charts)
 - `frontend/src/components/` -- MetricCard, ErrorCard, HistoryChart, etc.
-- `frontend/src/api.js` -- axios client for `/api/*` endpoints
+- `frontend/src/api.js` -- axios client for `/api/*` endpoints (`fetchAllIndicators(lite)`)
+- `frontend/src/components/LazyPlot.jsx` -- React.lazy wrapper for react-plotly.js; keeps plotly's ~1.47 MB gz out of the main bundle (charts load it on first expand). **Never import `react-plotly.js` directly — import LazyPlot.**
+
+## First-load performance (2026-08-31)
+
+- `/api/indicators?lite=1` strips all serialized pandas series (any depth) → 36 KB gz vs 1.5 MB; `App.jsx` fetches lite first (instant cards), then full in the background.
+- Backend memoizes the serialized payload on the cache file's mtime (`_serialized_snapshot`); the IBKR overlay copy-on-writes touched indicators so the memo is never mutated.
+- nginx: `/assets/` is `Cache-Control: immutable` + `gzip_static` (deploy step: `gzip -k9f dist/assets/*.js *.css` after `vite build`); `index.html` is `no-cache` so post-deploy HTML always revalidates.
 
 ## Hyperliquid real-time architecture
 

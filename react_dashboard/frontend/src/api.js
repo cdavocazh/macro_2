@@ -5,8 +5,10 @@ const api = axios.create({
   timeout: 120000,
 });
 
-export async function fetchAllIndicators() {
-  const resp = await api.get('/indicators');
+export async function fetchAllIndicators(lite = false) {
+  // lite=true strips 5-year historical series server-side (~9 MB → ~0.3 MB raw)
+  // for a fast first paint; the full payload is fetched in the background after.
+  const resp = await api.get('/indicators', { params: lite ? { lite: 1 } : {} });
   return resp.data;
 }
 

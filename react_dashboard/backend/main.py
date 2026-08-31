@@ -257,6 +257,11 @@ def _apply_ibkr_overlay(indicators: dict) -> dict:
             if not isinstance(ind, dict) or "error" in ind:
                 continue
 
+            # Copy-on-write: the caller may hand us the shared serialization
+            # memo, which must never be mutated in place.
+            ind = dict(ind)
+            indicators[key] = ind
+
             # Update price + mark data as real-time from IBKR
             ind[price_field] = last
             # Use the per-quote tick time, not the snapshot timestamp,
@@ -473,9 +478,69 @@ def get_ibkr_subscriptions():
     return _read_subscriptions_manifest()
 
 
+# Serialization memo for /api/indicators.  Walking + serializing all 88
+# indicators (~9 MB of JSON) took ~2 s of the response's ttfb and ran on EVERY
+# request; the underlying cache file only changes when an extraction job writes
+# it, so the serialized form is memoized keyed on that file's mtime.  The IBKR
+# overlay stays per-request (its file updates every 3 s) and copy-on-writes the
+# indicators it touches so the memo is never mutated.
+_INDICATORS_CACHE_FILE = os.path.join(PROJECT_ROOT, "data_cache", "all_indicators.json")
+_HEAVY_KEYS = frozenset({"historical", "historical_ohlcv", "candles"})
+_SER_MEMO = {"mtime": None, "full": None, "lite": None}
+
+
+def _strip_heavy(node):
+    """Drop time-series blobs (at any depth) for the lite first-paint payload.
+
+    Removes both well-known key names and ANY serialized pandas object (marked
+    `__type__: series/dataframe`) — several indicators keep their history under
+    other names (33_yield_curve alone carried 833 KB that a key-name filter
+    missed).
+    """
+    if isinstance(node, dict):
+        out = {}
+        for k, v in node.items():
+            if k in _HEAVY_KEYS:
+                continue
+            if isinstance(v, dict) and v.get("__type__") in ("series", "dataframe"):
+                continue
+            out[k] = _strip_heavy(v)
+        return out
+    if isinstance(node, list):
+        return [_strip_heavy(v) for v in node]
+    return node
+
+
+def _serialized_snapshot(agg):
+    """Serialize all indicators, memoized on the cache file's mtime."""
+    try:
+        mtime = os.path.getmtime(_INDICATORS_CACHE_FILE)
+    except OSError:
+        mtime = None
+
+    if _SER_MEMO["mtime"] != mtime or _SER_MEMO["full"] is None:
+        serialized = {}
+        for key, val in agg.indicators.items():
+            try:
+                serialized[key] = _serialize_indicator(val)
+            except Exception as e:
+                serialized[key] = {"error": f"Serialization failed: {str(e)}"}
+        _SER_MEMO["mtime"] = mtime
+        _SER_MEMO["full"] = serialized
+        _SER_MEMO["lite"] = _strip_heavy(serialized)
+
+    return _SER_MEMO
+
+
 @app.get("/api/indicators")
-def get_all_indicators():
-    """Return all cached indicators, JSON-serialized."""
+def get_all_indicators(lite: bool = False):
+    """Return all cached indicators, JSON-serialized.
+
+    `lite=true` strips historical/OHLCV series (~9 MB → ~hundreds of KB raw) so
+    first paint doesn't wait on 5-year time series for charts that are all
+    collapsed by default; the frontend fetches the full payload in the
+    background afterwards.
+    """
     agg = _get_aggregator()
     if not agg.indicators:
         return JSONResponse(
@@ -483,20 +548,17 @@ def get_all_indicators():
             content={"error": "No data available. Run scheduled_extract.py or click Refresh."},
         )
 
-    serialized = {}
-    for key, val in agg.indicators.items():
-        try:
-            serialized[key] = _serialize_indicator(val)
-        except Exception as e:
-            serialized[key] = {"error": f"Serialization failed: {str(e)}"}
+    memo = _serialized_snapshot(agg)
+    serialized = dict(memo["lite"] if lite else memo["full"])
 
-    # Overlay IBKR real-time prices where available
+    # Overlay IBKR real-time prices where available (copy-on-write per indicator)
     serialized = _apply_ibkr_overlay(serialized)
 
     return {
         "last_update": agg.last_update.isoformat() if agg.last_update else None,
         "loaded_from_cache": agg.loaded_from_cache,
         "total": len(serialized),
+        "lite": lite,
         "indicators": serialized,
     }
 

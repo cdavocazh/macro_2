@@ -1,5 +1,5 @@
 import React from 'react';
-import Plot from 'react-plotly.js';
+import Plot from '../components/LazyPlot';
 import MetricCard from '../components/MetricCard';
 import ErrorCard from '../components/ErrorCard';
 import SectionHeader from '../components/SectionHeader';

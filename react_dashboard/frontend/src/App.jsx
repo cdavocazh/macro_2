@@ -37,10 +37,10 @@ export default function App() {
   const [error, setError] = useState(null);
   const pollRef = useRef(null);
 
-  const loadData = useCallback(async (showLoading = false) => {
+  const loadData = useCallback(async (showLoading = false, lite = false) => {
     if (showLoading) setLoading(true);
     try {
-      const data = await fetchAllIndicators();
+      const data = await fetchAllIndicators(lite);
       setIndicators(data.indicators || {});
       setLastUpdate(data.last_update);
       setTotalCount(data.total || 0);
@@ -56,9 +56,16 @@ export default function App() {
     }
   }, []);
 
-  // Initial load
+  // Initial load: lite payload first (no 5y series, ~0.3 MB) so metric cards
+  // paint immediately, then the full payload in the background so the
+  // expandable charts have their history. All charts start collapsed, so the
+  // brief window without series data is invisible unless a chart is opened
+  // within the first seconds.
   useEffect(() => {
-    loadData(true);
+    (async () => {
+      await loadData(true, true);
+      loadData(false, false);
+    })();
   }, [loadData]);
 
   // Auto-refresh polling
