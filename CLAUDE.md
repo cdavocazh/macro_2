@@ -446,6 +446,7 @@ The `QA_SOP.md` file also contains a **Bug Log** documenting every production bu
 
 **Add a new indicator:**
 1. Create a function in the appropriate `data_extractors/*.py` module
+   - **For any yfinance access, use `yf_safe.Ticker(...)`, never a raw `yf.Ticker(...)`.** Yahoo intermittently serves the latest daily bar with OHLC all `NaN`; a raw ticker + `.iloc[-1]` republishes that as a null (or, worse, a fabricated signal — see the breadth case in `QA_SOP.md`). `from . import yf_safe` is already wired into every extractor module.
 2. Add a `_fetch_with_error_handling()` call in `data_aggregator.py` `fetch_all_indicators()`
 3. Add display logic in `app.py` under the appropriate tab
 4. The cache and CSV export will pick it up automatically
