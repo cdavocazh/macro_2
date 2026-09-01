@@ -18,6 +18,7 @@ agent/
 ├── README.md                   This file
 ├── CLAUDE.md                   Development instructions
 ├── STATUS.md                   Initial implementation status
+├── QA_learnings.md             Data-issue fix log (root cause + fix per broken extractor)
 │
 ├── shared/                     Shared tools + config (used by all agents)
 │   ├── config.py               Minimax API config, tickers, project paths
@@ -183,5 +184,6 @@ Derived from real issues discovered during development:
 - **[SOP_DATA_QA.md](./SOP_DATA_QA.md)** — Operator SOP for the Dashboard Data QA Agent (severity, checks, log format, triage)
 - **[CLAUDE.md](./CLAUDE.md)** — Development guide (adding tools, architecture decisions, patterns)
 - **[STATUS.md](./STATUS.md)** — Initial implementation status of the Equity QA Agent
+- **[QA_learnings.md](./QA_learnings.md)** — Data-issue fix log: root cause + fix + verification for every broken extractor or replaced data source, with the QA-agent implication for each
 - **[/QA_SOP.md](../QA_SOP.md)** — Repo-level *code* quality SOP (React patterns, build verification, etc.) — complements this file which is about *data* quality
 - **[/deploy/systemd/README.md](../deploy/systemd/README.md)** — Systemd unit files for VPS deployment

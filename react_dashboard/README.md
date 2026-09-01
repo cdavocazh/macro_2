@@ -98,3 +98,9 @@ gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 - Python 3.10+ (same environment as parent project)
 - Node.js 18+
 - Parent project dependencies installed (pandas, yfinance, fredapi, etc.)
+
+## See also
+
+- **[CLAUDE.md](./CLAUDE.md)** — Development guide: key files, Hyperliquid WebSocket architecture, OHLCV chart components, and the first-load performance contract (lite-payload polling, LazyPlot, nginx caching)
+- **[STATUS.md](./STATUS.md)** — React dashboard implementation status and version tracking
+- **[/CLAUDE.md](../CLAUDE.md)** — Parent project: full indicator list, data flow, and extraction scheduling
