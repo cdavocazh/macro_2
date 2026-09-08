@@ -19,7 +19,7 @@ cd frontend && npm run build     # production build to frontend/dist/
 
 - `backend/main.py` -- FastAPI endpoints + `/api/intraday/{key}` + `/api/hl/ohlcv/{coin}` OHLCV endpoints
 - `backend/hl_ws_service.py` -- Hyperliquid WebSocket relay (singleton, starts/stops with server)
-- `frontend/src/App.jsx` -- 9 tabs, auto-refresh, loading states
+- `frontend/src/App.jsx` -- 11 tabs, auto-refresh, loading states, calendar strip, ⌘K palette
 - `frontend/src/tabs/Tab1-9*.jsx` -- one component per tab (includes Tab9Polymarket)
 - `frontend/src/utils/time.js` -- GMT+8 timezone conversion utility
 - `frontend/src/hooks/useHyperliquidWS.js` -- React hook for WebSocket HL data (toggle-controlled)
@@ -27,6 +27,11 @@ cd frontend && npm run build     # production build to frontend/dist/
 - `frontend/src/components/IntradayCandlestickChart.jsx` -- OHLCV candlestick chart for yfinance instruments (TradingView lightweight-charts)
 - `frontend/src/components/` -- MetricCard, ErrorCard, HistoryChart, etc.
 - `frontend/src/api.js` -- axios client for `/api/*` endpoints (`fetchAllIndicators(lite)`)
+- `backend/analytics.py` -- monitor grid, regime composite, forward-return study, calendar + 13F loaders (all derived from already-extracted data)
+- `frontend/src/components/ChartDrawer.jsx` -- full-width 82vh chart drawer + `useChartDrawer()` + `ExpandChartButton`
+- `frontend/src/components/TradingViewWidget.jsx` -- free Advanced Chart embed, lazy-loaded, attribution retained
+- `frontend/src/config/instruments.js` -- instrument → TradingView symbol map. **Futures are NOT licensed in the free widget** (`COMEX:GC1!` renders an error), so they map to free proxies carrying a `proxyNote` the drawer shows. Verify any new symbol in the actual widget, not just symbol search.
+- `frontend/src/tabs/Tab10Monitor.jsx` / `Tab11Positioning.jsx` -- monitor + consolidated positioning
 - `frontend/src/components/LazyPlot.jsx` -- React.lazy wrapper for react-plotly.js; keeps plotly's ~1.47 MB gz out of the main bundle (charts load it on first expand). **Never import `react-plotly.js` directly — import LazyPlot.**
 
 ## First-load performance (2026-08-31)
