@@ -22,6 +22,10 @@ import asyncio
 import pandas as pd
 import numpy as np
 
+# Derived analytics (monitor grid, regime, forward returns, calendar, 13F)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import analytics
+
 app = FastAPI(title="Macro Indicators API", version="1.0.0")
 
 # CORS for local dev (Vite runs on 5173)
@@ -561,6 +565,94 @@ def get_all_indicators(lite: bool = False):
         "lite": lite,
         "indicators": serialized,
     }
+
+
+# ---------------------------------------------------------------------------
+# Derived analytics — monitor grid, regime composite, forward-return study,
+# macro calendar, 13F positioning. All computed from data already extracted.
+#
+# The monitor grid and regime composite walk every indicator's history, so both
+# are memoized on the cache file's mtime (same contract as _serialized_snapshot)
+# — they only recompute when an extraction job actually rewrites the cache.
+# ---------------------------------------------------------------------------
+_ANALYTICS_MEMO = {"mtime": None, "monitor": None, "regime": None}
+
+
+def _analytics_snapshot(agg):
+    try:
+        mtime = os.path.getmtime(_INDICATORS_CACHE_FILE)
+    except OSError:
+        mtime = None
+
+    if _ANALYTICS_MEMO["mtime"] != mtime or _ANALYTICS_MEMO["monitor"] is None:
+        _ANALYTICS_MEMO["monitor"] = analytics.compute_monitor_rows(agg.indicators)
+        _ANALYTICS_MEMO["regime"] = analytics.compute_regime(agg.indicators)
+        _ANALYTICS_MEMO["mtime"] = mtime
+    return _ANALYTICS_MEMO
+
+
+@app.get("/api/monitor")
+def get_monitor():
+    """One row per indicator with a usable history: latest, 1d/5d/21d change,
+    1-year percentile, and a sparkline. The 'what moved today' view."""
+    agg = _get_aggregator()
+    if not agg.indicators:
+        return JSONResponse(status_code=503, content={"error": "No data available."})
+    rows = _analytics_snapshot(agg)["monitor"]
+    return {
+        "rows": rows,
+        "total": len(rows),
+        "last_update": agg.last_update.isoformat() if agg.last_update else None,
+    }
+
+
+@app.get("/api/analytics/regime")
+def get_regime():
+    """Risk-on/off composite from sign-adjusted 1-year z-scores, with
+    per-component attribution and the largest 1-day movers."""
+    agg = _get_aggregator()
+    if not agg.indicators:
+        return JSONResponse(status_code=503, content={"error": "No data available."})
+    return _analytics_snapshot(agg)["regime"]
+
+
+@app.get("/api/analytics/forward-returns")
+def get_forward_returns(
+    condition_key: str = Query(..., description="Indicator whose history forms the condition"),
+    op: str = Query("lt", description="lt | lte | gt | gte"),
+    threshold: float = Query(...),
+    target_key: str = Query("17_es_futures", description="Instrument whose forward return is measured"),
+    horizons: str = Query("5,20,60", description="Comma-separated forward horizons in trading days"),
+):
+    """Forward returns of the target on days the condition held, against the
+    unconditional baseline over the same sample."""
+    agg = _get_aggregator()
+    if not agg.indicators:
+        return JSONResponse(status_code=503, content={"error": "No data available."})
+    try:
+        hs = [int(h.strip()) for h in horizons.split(",") if h.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="horizons must be comma-separated integers")
+    if not hs:
+        raise HTTPException(status_code=400, detail="at least one horizon required")
+
+    result = analytics.forward_return_study(
+        agg.indicators, condition_key, op, threshold, target_key, hs)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
+@app.get("/api/calendar")
+def get_calendar(days_ahead: int = Query(45), limit: int = Query(20)):
+    """Upcoming macro releases + FOMC dates from the catalyst-calendar CSV."""
+    return analytics.load_calendar(PROJECT_ROOT, days_ahead=days_ahead, limit=limit)
+
+
+@app.get("/api/positioning/13f")
+def get_positioning_13f(top_n: int = Query(8)):
+    """Latest-quarter 13F position changes per tracked institutional fund."""
+    return analytics.load_13f(PROJECT_ROOT, top_n=top_n)
 
 
 @app.get("/api/indicators/{key}")

@@ -195,6 +195,22 @@ def run_extraction(force=False, quiet=False):
         if not quiet:
             print(f"  Warning: CSV export failed: {e}")
 
+    # ── Step 5: Refresh the forward-looking macro catalyst calendar ───
+    # The dashboard's calendar strip reads historical_data/macro_catalyst_calendar.csv.
+    # Nothing rebuilt it before, so it went stale as soon as its events passed.
+    if not quiet:
+        print(f"\n[4/4] Rebuilding macro catalyst calendar...")
+    try:
+        from data_extractors.macro_calendar_extractor import refresh_calendar
+        out_path = refresh_calendar()
+        if not quiet:
+            print(f"  Macro calendar rebuilt → {out_path}")
+    except Exception as e:
+        # Non-fatal: a stale calendar is degraded, not broken, and it must never
+        # take down the indicator extraction that already succeeded above.
+        if not quiet:
+            print(f"  Warning: macro calendar rebuild failed: {e}")
+
     # ── Summary ──────────────────────────────────────────────────────
     elapsed = time.time() - start_time
 

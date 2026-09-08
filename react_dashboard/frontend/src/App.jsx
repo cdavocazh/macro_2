@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { fetchAllIndicators, refreshData } from './api';
 import { toGMT8 } from './utils/time';
 import TabPanel from './components/TabPanel';
+import { ChartDrawerProvider } from './components/ChartDrawer';
 import Tab1Valuation from './tabs/Tab1Valuation';
 import Tab2MarketIndices from './tabs/Tab2MarketIndices';
 import Tab3Volatility from './tabs/Tab3Volatility';
@@ -11,6 +12,10 @@ import Tab6Financials from './tabs/Tab6Financials';
 import Tab7RatesCredit from './tabs/Tab7RatesCredit';
 import Tab8EconomicActivity from './tabs/Tab8EconomicActivity';
 import Tab9Polymarket from './tabs/Tab9Polymarket';
+import Tab10Monitor from './tabs/Tab10Monitor';
+import Tab11Positioning from './tabs/Tab11Positioning';
+import CalendarStrip from './components/CalendarStrip';
+import CommandPalette from './components/CommandPalette';
 
 const TABS = [
   { id: 0, label: 'Valuation Metrics' },
@@ -22,6 +27,8 @@ const TABS = [
   { id: 6, label: 'Rates & Credit' },
   { id: 7, label: 'Economic Activity' },
   { id: 8, label: 'Polymarket' },
+  { id: 9, label: 'Monitor' },
+  { id: 10, label: 'Positioning' },
 ];
 
 const POLL_INTERVAL = 60000; // 60 seconds
@@ -148,6 +155,7 @@ export default function App() {
   }
 
   return (
+    <ChartDrawerProvider>
     <div>
       {/* Header */}
       <header className="app-header">
@@ -181,6 +189,8 @@ export default function App() {
         ))}
       </nav>
 
+      <CalendarStrip />
+
       {/* Tab panels */}
       <TabPanel active={activeTab === 0}>
         <Tab1Valuation indicators={indicators} />
@@ -209,6 +219,15 @@ export default function App() {
       <TabPanel active={activeTab === 8}>
         <Tab9Polymarket indicators={indicators} />
       </TabPanel>
+      <TabPanel active={activeTab === 9}>
+        <Tab10Monitor />
+      </TabPanel>
+      <TabPanel active={activeTab === 10}>
+        <Tab11Positioning indicators={indicators} />
+      </TabPanel>
+
+      <CommandPalette tabs={TABS} onSelectTab={setActiveTab} />
     </div>
+    </ChartDrawerProvider>
   );
 }

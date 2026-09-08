@@ -56,3 +56,38 @@ export async function fetchIbkrSubscriptions() {
 }
 
 export default api;
+
+// ── Derived analytics (monitor grid, regime, forward returns, calendar, 13F) ──
+
+export async function fetchMonitor() {
+  const resp = await api.get('/monitor');
+  return resp.data;
+}
+
+export async function fetchRegime() {
+  const resp = await api.get('/analytics/regime');
+  return resp.data;
+}
+
+export async function fetchForwardReturns({ conditionKey, op, threshold, targetKey, horizons }) {
+  const resp = await api.get('/analytics/forward-returns', {
+    params: {
+      condition_key: conditionKey,
+      op,
+      threshold,
+      target_key: targetKey,
+      horizons: horizons.join(','),
+    },
+  });
+  return resp.data;
+}
+
+export async function fetchCalendar(daysAhead = 45, limit = 20) {
+  const resp = await api.get('/calendar', { params: { days_ahead: daysAhead, limit } });
+  return resp.data;
+}
+
+export async function fetchPositioning13F(topN = 8) {
+  const resp = await api.get('/positioning/13f', { params: { top_n: topN } });
+  return resp.data;
+}

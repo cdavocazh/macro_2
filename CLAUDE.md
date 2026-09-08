@@ -95,7 +95,7 @@ python ibkr_fast_extract.py --port 4001       # specify port
 python ibkr_fast_extract.py --dry-run         # list instruments, no connect
 
 # Macro catalyst calendar (FRED release dates + FOMC)
-python -c "from data_extractors.macro_calendar_extractor import build_macro_calendar; print(build_macro_calendar())"
+python -c "from data_extractors.macro_calendar_extractor import refresh_calendar; print(refresh_calendar())"
 
 # Run data review agent (requires MINIMAX_API_KEY)
 python -m agent.openai_agents.agent "Scan all companies for missing data"

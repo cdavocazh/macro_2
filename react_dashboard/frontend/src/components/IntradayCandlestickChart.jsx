@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createChart, ColorType, CrosshairMode } from 'lightweight-charts';
 import api from '../api';
+import { ExpandChartButton } from './ChartDrawer';
 
 const INTERVALS = [
   { label: '1H', value: '1h' },
@@ -171,6 +172,7 @@ export default function IntradayCandlestickChart({ instrumentKey, label, color =
     <details className="chart-expander" style={{ marginTop: 4, marginBottom: 8 }} open={isOpen} onToggle={handleToggle}>
       <summary style={{ cursor: 'pointer', fontSize: '0.78rem', color: '#666', padding: '2px 0' }}>
         {label} OHLCV Chart
+        <ExpandChartButton source="yf" instrumentKey={instrumentKey} label={label} />
       </summary>
       <div style={{ marginTop: 4 }}>
         <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
