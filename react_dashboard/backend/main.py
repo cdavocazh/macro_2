@@ -672,6 +672,57 @@ def get_correlation(
     return result
 
 
+@app.get("/api/analytics/beta")
+def get_beta(a: str = Query(...), b: str = Query(...), window: int = Query(60)):
+    """β of a on b (and the reverse), R², and rolling β — the hedge-ratio view."""
+    agg = _get_aggregator()
+    if not agg.indicators:
+        return JSONResponse(status_code=503, content={"error": "No data available."})
+    r = analytics.beta_analysis(agg.indicators, a, b, window=window, project_root=PROJECT_ROOT)
+    if "error" in r:
+        raise HTTPException(status_code=400, detail=r["error"])
+    return r
+
+
+@app.get("/api/analytics/lead-lag")
+def get_lead_lag(a: str = Query(...), b: str = Query(...), max_lag: int = Query(10)):
+    """Cross-correlation profile corr(a_t, b_{t+k}) with a ±2/√n noise band."""
+    agg = _get_aggregator()
+    if not agg.indicators:
+        return JSONResponse(status_code=503, content={"error": "No data available."})
+    r = analytics.lead_lag_analysis(agg.indicators, a, b, max_lag=max_lag, project_root=PROJECT_ROOT)
+    if "error" in r:
+        raise HTTPException(status_code=400, detail=r["error"])
+    return r
+
+
+@app.get("/api/analytics/events")
+def get_event_catalog():
+    """Event types with historical coverage, from macro_event_history.json."""
+    h = analytics.load_event_history(PROJECT_ROOT)
+    if "error" in h:
+        raise HTTPException(status_code=404, detail=h["error"])
+    return {"events": sorted(h["events"].keys()), "counts": h["counts"],
+            "since": h["since"], "generated_at": h["generated_at"]}
+
+
+@app.get("/api/analytics/event-study")
+def get_event_study(
+    event: str = Query(..., description="Event name from /api/analytics/events"),
+    target: str = Query("17_es_futures", description="Series id from /api/series/catalog"),
+    window: int = Query(3, ge=1, le=15),
+):
+    """Average path and event-day distribution of `target` around every past
+    `event`, against a normal-day baseline."""
+    agg = _get_aggregator()
+    if not agg.indicators:
+        return JSONResponse(status_code=503, content={"error": "No data available."})
+    r = analytics.event_study(agg.indicators, event, target, window=window, project_root=PROJECT_ROOT)
+    if "error" in r:
+        raise HTTPException(status_code=400, detail=r["error"])
+    return r
+
+
 @app.get("/api/calendar")
 def get_calendar(days_ahead: int = Query(45), limit: int = Query(20)):
     """Upcoming macro releases + FOMC dates from the catalyst-calendar CSV."""

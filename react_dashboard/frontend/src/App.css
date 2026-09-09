@@ -582,3 +582,28 @@ body {
 .corr-matrix thead th { writing-mode: horizontal-tb; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
 .corr-matrix td { padding: 5px 9px; text-align: center; font-variant-numeric: tabular-nums;
   border: 1px solid #fff; min-width: 52px; }
+
+/* ── Pair analytics (beta + lead/lag) ─────────────────────────── */
+.pair-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; margin-top: 10px; }
+.pair-card { border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; background: #fbfdff; }
+.pair-card-title { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: #718096; margin-bottom: 6px; }
+.pair-stats { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-end; }
+.pair-big { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pair-note { font-size: 0.76rem; color: #4a5568; margin-top: 6px; }
+.lag-verdict { font-size: 0.76rem; margin-top: 6px; padding: 4px 8px; border-radius: 4px; background: #f7fafc; border: 1px solid #e2e8f0; }
+.lag-verdict.lead { background: #ebf8ff; border-color: #90cdf4; color: #2a4365; }
+
+/* ── Event study ──────────────────────────────────────────────── */
+.ev-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 0.8rem; margin-bottom: 8px; }
+.ev-controls select { padding: 3px 6px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 0.78rem; }
+.ev-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 8px 0; }
+.ev-stat { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; background: #fff; }
+.ev-stat-label { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.04em; color: #718096; }
+.ev-stat-value { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ev-stat-sub { font-size: 0.7rem; color: #718096; }
+.ev-ratio-hot { color: #c53030; }
+.ev-chart-wrap { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; background: #fbfdff; }
+.ev-legend { display: flex; gap: 14px; font-size: 0.7rem; color: #4a5568; margin-top: 4px; }
+.ev-legend span::before { content: ''; display: inline-block; width: 14px; height: 2px; margin-right: 5px; vertical-align: middle; }
+.ev-legend .mean::before { background: #2b6cb0; }
+.ev-legend .median::before { background: #a0aec0; border-top: 1px dashed #718096; height: 0; }

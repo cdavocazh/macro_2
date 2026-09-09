@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { fetchSeriesCatalog, fetchCorrelation } from '../api';
 import Sparkline from './Sparkline';
+import PairAnalytics from './PairAnalytics';
 
 const WINDOWS = [30, 60, 90, 120];
 
@@ -150,6 +151,10 @@ export default function CorrelationPanel() {
                 </div>
               )}
             </div>
+          )}
+
+          {result.ids.length >= 2 && (
+            <PairAnalytics a={result.ids[0]} b={result.ids[1]} window={window_} />
           )}
 
           <div style={{ overflowX: 'auto', marginTop: 10 }}>

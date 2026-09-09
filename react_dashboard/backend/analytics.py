@@ -691,3 +691,260 @@ def correlation_analysis(indicators: dict, series_ids: list[str], window: int = 
         'window': window,
         'warnings': warnings_out,
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — beta (hedge ratio) and lead/lag (cross-correlation)
+# ---------------------------------------------------------------------------
+
+def _aligned_returns(indicators: dict, a: str, b: str, project_root: str | None):
+    sa = resolve_series(indicators, a, project_root)
+    sb = resolve_series(indicators, b, project_root)
+    if sa is None or sb is None:
+        missing = [x for x, s in ((a, sa), (b, sb)) if s is None]
+        return None, {'error': f'Could not resolve: {", ".join(missing)}'}
+    frame = pd.DataFrame({'a': _returns(sa), 'b': _returns(sb)}).dropna()
+    if len(frame) < _MIN_OVERLAP:
+        return None, {'error': f'Only {len(frame)} overlapping days — need at least {_MIN_OVERLAP}.'}
+    return frame, None
+
+
+def beta_analysis(indicators: dict, a: str, b: str, window: int = 60,
+                  project_root: str | None = None) -> dict:
+    """Return sensitivity of `a` to `b` (and the reverse), full-sample and rolling.
+
+    Correlation says how reliably two things move together; beta says by how
+    much — which is the number a hedge actually needs. β(a on b) = cov/var(b):
+    "a 1% move in b comes with a β% move in a". R² is the share of a's variance
+    that b explains; a high β with a low R² is a loose relationship, not a
+    hedge.
+    """
+    frame, err = _aligned_returns(indicators, a, b, project_root)
+    if err:
+        return err
+    ra, rb = frame['a'], frame['b']
+    n = len(frame)
+
+    cov = float(ra.cov(rb))
+    var_a, var_b = float(ra.var()), float(rb.var())
+    if not var_a or not var_b:
+        return {'error': 'One series has zero variance over the overlap.'}
+    corr = float(ra.corr(rb))
+    beta_ab = cov / var_b            # a on b
+    beta_ba = cov / var_a            # b on a
+    alpha_ab = float(ra.mean() - beta_ab * rb.mean())
+
+    rolling = None
+    if n >= window + 5:
+        rb_var = rb.rolling(window).var()
+        rbeta = (ra.rolling(window).cov(rb) / rb_var).replace([np.inf, -np.inf], np.nan).dropna()
+        if not rbeta.empty:
+            latest, mu, sd = float(rbeta.iloc[-1]), float(rbeta.mean()), float(rbeta.std())
+            rolling = {
+                'window': window,
+                'dates': [str(d)[:10] for d in rbeta.index],
+                'values': [_safe(v) for v in rbeta.values],
+                'latest': _safe(latest), 'mean': _safe(mu), 'stdev': _safe(sd),
+                'z_vs_own_history': _safe((latest - mu) / sd) if sd else None,
+                'min': _safe(rbeta.min()), 'max': _safe(rbeta.max()),
+            }
+
+    return {
+        'a': a, 'b': b, 'a_label': _series_label(a), 'b_label': _series_label(b),
+        'n_overlap': n,
+        'beta_a_on_b': _safe(beta_ab),
+        'beta_b_on_a': _safe(beta_ba),
+        'alpha_daily_pct_a_on_b': _safe(alpha_ab * 100),
+        'r_squared': _safe(corr * corr),
+        'corr': _safe(corr),
+        'hedge_note': (f'A 1% move in {_series_label(b)} has come with a '
+                       f'{beta_ab:+.2f}% move in {_series_label(a)} '
+                       f'(R² {corr*corr:.2f} — {"tight" if corr*corr >= 0.5 else "loose" if corr*corr >= 0.2 else "weak"} relationship).'),
+        'rolling': rolling,
+        'basis': 'log returns (first differences for series that cross zero)',
+    }
+
+
+def lead_lag_analysis(indicators: dict, a: str, b: str, max_lag: int = 10,
+                      project_root: str | None = None) -> dict:
+    """Cross-correlation of `a` with `b` shifted by k days, k in [-max_lag, max_lag].
+
+    corr(a_t, b_{t+k}): a positive peak lag means today's `a` correlates with
+    `b` k days LATER, i.e. a leads b. The noise band is ±2/√n; a peak that does
+    not beat the lag-0 correlation by more than the band is not a lead — it is
+    the same-day relationship plus sampling error, and the verdict says so.
+    """
+    frame, err = _aligned_returns(indicators, a, b, project_root)
+    if err:
+        return err
+    ra, rb = frame['a'], frame['b']
+    n = len(frame)
+    band = 2.0 / math.sqrt(n)
+
+    profile = []
+    for k in range(-max_lag, max_lag + 1):
+        shifted = rb.shift(-k)           # value of b at t+k, aligned to t
+        joint = pd.DataFrame({'a': ra, 'b': shifted}).dropna()
+        c = float(joint['a'].corr(joint['b'])) if len(joint) >= _MIN_OVERLAP else None
+        profile.append({'lag': k, 'corr': _safe(c), 'n': int(len(joint))})
+
+    valid = [p for p in profile if p['corr'] is not None]
+    lag0 = next((p['corr'] for p in valid if p['lag'] == 0), None)
+    peak = max(valid, key=lambda p: abs(p['corr'])) if valid else None
+
+    if peak is None or lag0 is None:
+        verdict, leader = 'insufficient data', None
+    elif peak['lag'] == 0 or abs(peak['corr']) - abs(lag0) <= band:
+        verdict = (f'No lead/lag beyond noise: the strongest relationship is same-day '
+                   f'(lag 0 = {lag0:+.3f}); off-zero peaks fall inside the ±{band:.3f} band.')
+        leader = None
+    else:
+        leader = _series_label(a) if peak['lag'] > 0 else _series_label(b)
+        follower = _series_label(b) if peak['lag'] > 0 else _series_label(a)
+        verdict = (f'{leader} leads {follower} by {abs(peak["lag"])} day(s): '
+                   f'corr {peak["corr"]:+.3f} at lag {peak["lag"]:+d} vs {lag0:+.3f} same-day '
+                   f'(band ±{band:.3f}).')
+
+    return {
+        'a': a, 'b': b, 'a_label': _series_label(a), 'b_label': _series_label(b),
+        'n_overlap': n, 'max_lag': max_lag,
+        'noise_band': _safe(band),
+        'lag0_corr': _safe(lag0),
+        'peak': peak,
+        'leader': leader,
+        'verdict': verdict,
+        'profile': profile,
+        'convention': 'corr(a_t, b_{t+k}); positive lag ⇒ a leads b',
+    }
+
+
+# ---------------------------------------------------------------------------
+# Event study around macro catalysts
+# ---------------------------------------------------------------------------
+
+_EVENT_HISTORY = ('historical_data', 'macro_event_history.json')
+
+
+def load_event_history(project_root: str) -> dict:
+    """{event name: [dates]} written by macro_calendar_extractor.refresh_calendar()."""
+    import json
+    path = os.path.join(project_root, *_EVENT_HISTORY)
+    if not os.path.exists(path):
+        return {'error': 'macro_event_history.json not found — run '
+                         'data_extractors.macro_calendar_extractor.refresh_calendar()'}
+    try:
+        with open(path) as f:
+            doc = json.load(f)
+    except Exception as e:
+        return {'error': f'Failed to read event history: {e}'}
+    events = doc.get('events') or {}
+    return {
+        'events': {k: v for k, v in events.items() if v},
+        'since': doc.get('since'),
+        'generated_at': doc.get('generated_at'),
+        'counts': {k: len(v) for k, v in events.items()},
+    }
+
+
+def event_study(indicators: dict, event_name: str, target_id: str, window: int = 3,
+                project_root: str | None = None) -> dict:
+    """How `target_id` has behaved around every past `event_name` date.
+
+    For each event, take the target's daily returns from t=-window to
+    t=+window (t=0 is the first trading day on or after the event date) and
+    accumulate them. Report the average path, the event-day return
+    distribution, and — the load-bearing comparison — event-day absolute moves
+    against a normal day. Without that baseline, "gold moved 0.6% on CPI days"
+    means nothing; if gold moves 0.6% on every day, CPI is not a catalyst for
+    gold.
+
+    This is UNCONDITIONAL on the surprise: a CPI beat and a CPI miss land in
+    the same bucket, so the mean path is often near zero while the absolute
+    move is large. That asymmetry is the finding, not a flaw.
+    """
+    if not project_root:
+        return {'error': 'project_root required'}
+    hist = load_event_history(project_root)
+    if 'error' in hist:
+        return hist
+    dates = hist['events'].get(event_name)
+    if not dates:
+        return {'error': f"No history for event '{event_name}'. "
+                         f"Available: {', '.join(sorted(hist['events']))}"}
+
+    s = resolve_series(indicators, target_id, project_root)
+    if s is None:
+        return {'error': f'Could not resolve target {target_id}'}
+    r = _returns(s)
+    idx = r.index
+    if len(r) < 2 * window + 30:
+        return {'error': 'Target series too short for this window.'}
+
+    w = int(window)
+    paths, r0s, rows, skipped = [], [], [], 0
+    for d in dates:
+        ts = pd.Timestamp(d)
+        pos = int(idx.searchsorted(ts))
+        if pos >= len(idx) or (idx[pos] - ts).days > 4:
+            skipped += 1
+            continue
+        if pos - w < 0 or pos + w >= len(idx):
+            skipped += 1
+            continue
+        seg = r.iloc[pos - w: pos + w + 1].to_numpy(dtype=float)
+        cum = np.cumsum(seg)
+        paths.append(cum)
+        r0s.append(seg[w])
+        rows.append({
+            'event_date': d,
+            'trading_day': str(idx[pos])[:10],
+            'event_day_pct': _safe((math.exp(seg[w]) - 1) * 100),
+            'window_pct': _safe((math.exp(cum[-1]) - 1) * 100),
+        })
+
+    if len(paths) < 5:
+        return {'error': f'Only {len(paths)} usable events for {event_name} — need at least 5.'}
+
+    P = np.array(paths)
+    r0 = np.array(r0s)
+    to_pct = lambda x: (np.exp(x) - 1.0) * 100.0
+    mean_path = to_pct(P.mean(axis=0))
+    median_path = to_pct(np.median(P, axis=0))
+
+    baseline_abs = float(r.abs().mean())
+    event_abs = float(np.abs(r0).mean())
+    baseline_abs_pct = (math.exp(baseline_abs) - 1) * 100
+    event_abs_pct = (math.exp(event_abs) - 1) * 100
+    ratio = (event_abs / baseline_abs) if baseline_abs else None
+
+    return {
+        'event': event_name,
+        'target': {'id': target_id, 'label': _series_label(target_id)},
+        'window': w,
+        'n_events': int(len(paths)),
+        'n_skipped': int(skipped),
+        'first_event': rows[0]['event_date'],
+        'last_event': rows[-1]['event_date'],
+        'offsets': list(range(-w, w + 1)),
+        'mean_path_pct': [_safe(v) for v in mean_path],
+        'median_path_pct': [_safe(v) for v in median_path],
+        'event_day': {
+            'mean_pct': _safe((math.exp(r0.mean()) - 1) * 100),
+            'median_pct': _safe((math.exp(np.median(r0)) - 1) * 100),
+            'hit_rate_pct': _safe((r0 > 0).mean() * 100),
+            'mean_abs_pct': _safe(event_abs_pct),
+            'baseline_mean_abs_pct': _safe(baseline_abs_pct),
+            'abs_move_ratio': _safe(ratio),
+            'stdev_pct': _safe((math.exp(r0.std()) - 1) * 100),
+        },
+        'window_end': {
+            'mean_pct': _safe(float(mean_path[-1])),
+            'hit_rate_pct': _safe((P[:, -1] > 0).mean() * 100),
+        },
+        'recent_events': rows[-8:][::-1],
+        'caveats': [
+            'Unconditional on the surprise — beats and misses share a bucket, so the mean '
+            'is muted while the absolute move is the informative number.',
+            f'{len(paths)} events is a small sample; treat hit rates as indicative.',
+        ],
+    }

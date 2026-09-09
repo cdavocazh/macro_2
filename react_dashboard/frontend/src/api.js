@@ -103,3 +103,25 @@ export async function fetchCorrelation(ids, window = 60) {
   });
   return resp.data;
 }
+
+// ── Phase 2 + event study ──────────────────────────────────────────────────
+
+export async function fetchBeta(a, b, window = 60) {
+  const resp = await api.get('/analytics/beta', { params: { a, b, window } });
+  return resp.data;
+}
+
+export async function fetchLeadLag(a, b, maxLag = 10) {
+  const resp = await api.get('/analytics/lead-lag', { params: { a, b, max_lag: maxLag } });
+  return resp.data;
+}
+
+export async function fetchEventCatalog() {
+  const resp = await api.get('/analytics/events');
+  return resp.data;
+}
+
+export async function fetchEventStudy({ event, target, window }) {
+  const resp = await api.get('/analytics/event-study', { params: { event, target, window } });
+  return resp.data;
+}
