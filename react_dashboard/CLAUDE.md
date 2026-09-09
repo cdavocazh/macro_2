@@ -30,6 +30,8 @@ cd frontend && npm run build     # production build to frontend/dist/
 - `backend/analytics.py` -- series resolver, correlation, monitor grid, regime composite, forward-return study, calendar + 13F loaders (all derived from already-extracted data). **Correlation runs on log returns, never levels**; `build_series_catalog()` / `resolve_series()` are the shared access layer every relationship analytic should use.
 - `frontend/src/components/CorrelationPanel.jsx` -- pair picker, rolling correlation with z-vs-own-history, heatmap
 - `frontend/src/components/PairAnalytics.jsx` -- beta (hedge ratio, both directions, rolling) + lead/lag profile with noise band, for the first selected pair
+- `frontend/src/components/PairsPanel.jsx` -- hedge-ratio spread, cointegration verdict first, half-life, z chart with ±2σ
+- `frontend/src/components/CorrRegimePanel.jsx` -- 14-pair scan ranked by |z| of rolling ρ vs its own trailing year; break/watch chips
 - `frontend/src/components/EventStudyPanel.jsx` -- behaviour around macro catalysts; reads `/api/analytics/events` (from `historical_data/macro_event_history.json`, written by `refresh_calendar()`)
 - `frontend/src/components/ChartDrawer.jsx` -- full-width 82vh chart drawer + `useChartDrawer()` + `ExpandChartButton`
 - `frontend/src/components/TradingViewWidget.jsx` -- free Advanced Chart embed, lazy-loaded, attribution retained

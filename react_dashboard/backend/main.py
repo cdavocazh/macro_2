@@ -575,7 +575,7 @@ def get_all_indicators(lite: bool = False):
 # are memoized on the cache file's mtime (same contract as _serialized_snapshot)
 # — they only recompute when an extraction job actually rewrites the cache.
 # ---------------------------------------------------------------------------
-_ANALYTICS_MEMO = {"mtime": None, "monitor": None, "regime": None}
+_ANALYTICS_MEMO = {"mtime": None, "monitor": None, "regime": None, "corr_regime": {}}
 
 
 def _analytics_snapshot(agg):
@@ -587,6 +587,7 @@ def _analytics_snapshot(agg):
     if _ANALYTICS_MEMO["mtime"] != mtime or _ANALYTICS_MEMO["monitor"] is None:
         _ANALYTICS_MEMO["monitor"] = analytics.compute_monitor_rows(agg.indicators)
         _ANALYTICS_MEMO["regime"] = analytics.compute_regime(agg.indicators)
+        _ANALYTICS_MEMO["corr_regime"] = {}   # per-window scans, recomputed lazily
         _ANALYTICS_MEMO["mtime"] = mtime
     return _ANALYTICS_MEMO
 
@@ -721,6 +722,34 @@ def get_event_study(
     if "error" in r:
         raise HTTPException(status_code=400, detail=r["error"])
     return r
+
+
+@app.get("/api/analytics/pairs")
+def get_pairs(a: str = Query(...), b: str = Query(...)):
+    """Hedge-ratio spread between a and b: cointegration (Engle-Granger),
+    half-life, and z-score against the trailing year."""
+    agg = _get_aggregator()
+    if not agg.indicators:
+        return JSONResponse(status_code=503, content={"error": "No data available."})
+    r = analytics.pairs_analysis(agg.indicators, a, b, project_root=PROJECT_ROOT)
+    if "error" in r:
+        raise HTTPException(status_code=400, detail=r["error"])
+    return r
+
+
+@app.get("/api/analytics/corr-regime")
+def get_corr_regime(window: int = Query(60, ge=20, le=250)):
+    """Watchlist of cross-asset pairs ranked by how far the current rolling
+    correlation sits from its own trailing-year distribution. Memoized on the
+    cache file's mtime, per window."""
+    agg = _get_aggregator()
+    if not agg.indicators:
+        return JSONResponse(status_code=503, content={"error": "No data available."})
+    memo = _analytics_snapshot(agg)
+    if window not in memo["corr_regime"]:
+        memo["corr_regime"][window] = analytics.correlation_regime_scan(
+            agg.indicators, window=window, project_root=PROJECT_ROOT)
+    return memo["corr_regime"][window]
 
 
 @app.get("/api/calendar")

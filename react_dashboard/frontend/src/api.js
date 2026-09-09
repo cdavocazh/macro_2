@@ -125,3 +125,15 @@ export async function fetchEventStudy({ event, target, window }) {
   const resp = await api.get('/analytics/event-study', { params: { event, target, window } });
   return resp.data;
 }
+
+// ── Phase 3 + 4 ────────────────────────────────────────────────────────────
+
+export async function fetchPairs(a, b) {
+  const resp = await api.get('/analytics/pairs', { params: { a, b } });
+  return resp.data;
+}
+
+export async function fetchCorrRegime(window = 60) {
+  const resp = await api.get('/analytics/corr-regime', { params: { window } });
+  return resp.data;
+}

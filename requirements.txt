@@ -11,3 +11,4 @@ openpyxl>=3.1.2
 xlrd>=2.0.1
 cot-reports>=0.1.0
 ib_async>=2.0.0
+statsmodels>=0.14.0   # Engle-Granger cointegration for the pairs analytic (react_dashboard/backend/analytics.py)

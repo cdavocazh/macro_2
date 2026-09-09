@@ -5,6 +5,8 @@ import Sparkline from '../components/Sparkline';
 import ForwardReturnPanel from '../components/ForwardReturnPanel';
 import CorrelationPanel from '../components/CorrelationPanel';
 import EventStudyPanel from '../components/EventStudyPanel';
+import CorrRegimePanel from '../components/CorrRegimePanel';
+import PairsPanel from '../components/PairsPanel';
 import { toGMT8 } from '../utils/time';
 
 const fmtNum = (v, d = 2) =>
@@ -184,6 +186,12 @@ export default function Tab10Monitor() {
 
       <SectionHeader title="Correlation" />
       <CorrelationPanel />
+
+      <SectionHeader title="Correlation Regime Scan — which relationships have broken" />
+      <CorrRegimePanel />
+
+      <SectionHeader title="Pairs — spread, half-life, cointegration" />
+      <PairsPanel />
 
       <SectionHeader title="Event Study — behaviour around macro catalysts" />
       <EventStudyPanel />

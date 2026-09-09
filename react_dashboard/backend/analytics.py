@@ -948,3 +948,195 @@ def event_study(indicators: dict, event_name: str, target_id: str, window: int =
             f'{len(paths)} events is a small sample; treat hit rates as indicative.',
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — pairs: spread z-score, half-life, cointegration
+# ---------------------------------------------------------------------------
+# The cointegration test uses statsmodels' Engle-Granger implementation. Its
+# critical values are MacKinnon's — the kind of constant that must come from a
+# tested library, not from memory (see the FRED release-id bug log entry).
+try:
+    from statsmodels.tsa.stattools import coint as _sm_coint
+    _HAS_STATSMODELS = True
+except Exception:  # ImportError, or a broken scipy underneath
+    _sm_coint = None
+    _HAS_STATSMODELS = False
+
+_PAIR_MIN_OBS = 120
+
+
+def pairs_analysis(indicators: dict, a: str, b: str,
+                   project_root: str | None = None) -> dict:
+    """Spread between `a` and `b`, and whether it is worth trading.
+
+    Spread = residual of OLS(log a on log b) — the hedge-ratio spread. Three
+    numbers answer the trader's questions in order:
+
+    - cointegration p-value: is the spread STATIONARY? If not, its z-score
+      describes where it sits, not where it is going, and ±2σ is not a
+      reversion signal. Two co-trending prices produce a random-walk spread.
+    - half-life: how long a deviation takes to halve — the holding period.
+    - z-score: how stretched the spread is now, against its trailing year.
+    """
+    sa = resolve_series(indicators, a, project_root)
+    sb = resolve_series(indicators, b, project_root)
+    if sa is None or sb is None:
+        return {'error': f'Could not resolve {"both series" if sa is None and sb is None else (a if sa is None else b)}'}
+
+    j = pd.DataFrame({'a': sa, 'b': sb}).dropna()
+    if len(j) < _PAIR_MIN_OBS:
+        return {'error': f'Only {len(j)} overlapping days — need at least {_PAIR_MIN_OBS}.'}
+
+    use_log = bool((j['a'] > 0).all() and (j['b'] > 0).all())
+    la = np.log(j['a']) if use_log else j['a'].astype(float)
+    lb = np.log(j['b']) if use_log else j['b'].astype(float)
+
+    beta, alpha = np.polyfit(lb.values, la.values, 1)
+    spread = la - (alpha + beta * lb)
+    s = spread.values.astype(float)
+
+    # Engle-Granger cointegration
+    if _HAS_STATSMODELS:
+        try:
+            t_stat, p_value, crit = _sm_coint(la.values, lb.values, trend='c', autolag='aic')
+            if p_value < 0.05:
+                verdict, stationary = 'cointegrated (5%)', True
+            elif p_value < 0.10:
+                verdict, stationary = 'weakly cointegrated (10%)', True
+            else:
+                verdict, stationary = 'not cointegrated', False
+            coint = {
+                't_stat': _safe(t_stat), 'p_value': _safe(p_value),
+                'crit_1pct': _safe(crit[0]), 'crit_5pct': _safe(crit[1]), 'crit_10pct': _safe(crit[2]),
+                'verdict': verdict, 'stationary': stationary, 'method': 'Engle-Granger (statsmodels.coint, AIC lag)',
+            }
+        except Exception as e:
+            coint = {'error': f'cointegration test failed: {e}', 'stationary': None}
+    else:
+        coint = {'error': 'statsmodels not installed — cointegration test unavailable', 'stationary': None}
+
+    # Half-life from Δs_t = c + λ·s_{t-1} + e  →  hl = −ln2 / ln(1+λ)
+    ds, lag = np.diff(s), s[:-1]
+    lam, _c = np.polyfit(lag, ds, 1)
+    half_life = float(-np.log(2) / np.log(1 + lam)) if -1 < lam < 0 else None
+
+    # z-scores: full sample and trailing year
+    full_mu, full_sd = float(s.mean()), float(s.std())
+    tail = s[-252:] if len(s) >= 252 else s
+    t_mu, t_sd = float(tail.mean()), float(tail.std())
+    z_full = (s[-1] - full_mu) / full_sd if full_sd else None
+    z_trail = (s[-1] - t_mu) / t_sd if t_sd else None
+
+    # Plain ratio (β = 1) for people who trade the ratio rather than the hedge
+    ratio = (la - lb).values
+    rt = ratio[-252:] if len(ratio) >= 252 else ratio
+    ratio_z = (ratio[-1] - rt.mean()) / rt.std() if rt.std() else None
+
+    # Chart: last 250 spread values in trailing-year z units
+    roll_mu = spread.rolling(252, min_periods=60).mean()
+    roll_sd = spread.rolling(252, min_periods=60).std()
+    zs = ((spread - roll_mu) / roll_sd).dropna().iloc[-250:]
+
+    stationary = coint.get('stationary')
+    if stationary is False:
+        reading = ('Spread is NOT stationary — treat the z-score as a position on a random walk, '
+                   'not a mean-reversion signal.')
+    elif stationary:
+        rich = _series_label(a) if (z_trail or 0) > 0 else _series_label(b)
+        reading = (f'{rich} is rich versus its partner at {abs(z_trail or 0):.2f}σ; a stationary spread '
+                   f'with ~{half_life:.0f}-day half-life' if half_life else
+                   f'{rich} is rich at {abs(z_trail or 0):.2f}σ on a stationary spread')
+    else:
+        reading = 'Stationarity untested — z-score is descriptive only.'
+
+    return {
+        'a': a, 'b': b, 'a_label': _series_label(a), 'b_label': _series_label(b),
+        'n_overlap': int(len(j)), 'basis': 'log levels' if use_log else 'raw levels (series crosses zero)',
+        'hedge_ratio_beta': _safe(beta), 'alpha': _safe(alpha),
+        'cointegration': coint,
+        'half_life_days': _safe(half_life),
+        'ar1_lambda': _safe(lam),
+        'spread_now': _safe(s[-1]),
+        'z_trailing_1y': _safe(z_trail), 'z_full_sample': _safe(z_full),
+        'ratio_z_trailing_1y': _safe(ratio_z),
+        'chart': {'dates': [str(d)[:10] for d in zs.index], 'z': [_safe(v) for v in zs.values]},
+        'reading': reading,
+        'thresholds_note': '±2σ entry / 0 exit is the textbook convention, meaningful only when the spread is stationary.',
+    }
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — correlation-regime scan
+# ---------------------------------------------------------------------------
+_REGIME_PAIRS = [
+    ('17_es_futures', '8_vix'),
+    ('17_es_futures', '87_crypto_majors/btc'),
+    ('13_gold', '10_dxy'),
+    ('13_gold', '87_crypto_majors/btc'),
+    ('13_gold', '36_real_yield'),
+    ('17_es_futures', '11_10y_yield'),
+    ('16_copper', '17_es_futures'),
+    ('15_crude_oil', '10_dxy'),
+    ('18_rty_futures', '17_es_futures'),
+    ('17_es_futures', '34_hy_oas'),
+    ('13_gold', '14_silver'),
+    ('87_crypto_majors/btc', '87_crypto_majors/eth'),
+    ('10_dxy', '11_10y_yield'),
+    ('17_es_futures', '57_cu_au_ratio'),
+]
+
+
+def correlation_regime_scan(indicators: dict, window: int = 60, pairs=None,
+                            project_root: str | None = None) -> dict:
+    """Rank a watchlist of cross-asset pairs by how far their current rolling
+    correlation sits from its own trailing-year distribution.
+
+    The level of a correlation is rarely the trade; the CHANGE is. Gold/BTC at
+    +0.6 means nothing until you know its norm is +0.1 — then it is a regime
+    break. |z| ≥ 2 flags 'break', 1.5–2 'watch'.
+    """
+    rows, unavailable = [], []
+    for a, b in (pairs or _REGIME_PAIRS):
+        frame, err = _aligned_returns(indicators, a, b, project_root)
+        if err:
+            unavailable.append({'a': a, 'b': b, 'reason': err['error']})
+            continue
+        rc = frame['a'].rolling(window).corr(frame['b']).dropna()
+        if len(rc) < window + 30:
+            unavailable.append({'a': a, 'b': b, 'reason': 'insufficient rolling history'})
+            continue
+        latest = float(rc.iloc[-1])
+        hist = rc.iloc[-252:]
+        mu, sd = float(hist.mean()), float(hist.std())
+        z = (latest - mu) / sd if sd else None
+        long_run = float(frame['a'].corr(frame['b']))
+        if z is None:
+            status = 'flat'
+        elif abs(z) >= 2:
+            status = 'break'
+        elif abs(z) >= 1.5:
+            status = 'watch'
+        else:
+            status = 'normal'
+        direction = None if status in ('normal', 'flat') else ('coupling' if latest > mu else 'decoupling')
+        rows.append({
+            'a': a, 'b': b, 'a_label': _series_label(a), 'b_label': _series_label(b),
+            'corr_now': _safe(latest), 'corr_norm_1y': _safe(mu), 'corr_stdev_1y': _safe(sd),
+            'corr_long_run': _safe(long_run), 'z': _safe(z),
+            'status': status, 'direction': direction,
+            'n_overlap': int(len(frame)),
+            'spark': [_safe(v) for v in rc.iloc[-120:].values],
+        })
+
+    rows.sort(key=lambda r: -abs(r['z'] or 0))
+    return {
+        'window': window,
+        'rows': rows,
+        'unavailable': unavailable,
+        'n_breaks': sum(1 for r in rows if r['status'] == 'break'),
+        'n_watch': sum(1 for r in rows if r['status'] == 'watch'),
+        'method': (f'{window}-day rolling correlation of log returns; z is the latest value against '
+                   f'the trailing 252 rolling values. Sorted by |z|.'),
+        'computed_at': datetime.now(timezone.utc).isoformat(),
+    }

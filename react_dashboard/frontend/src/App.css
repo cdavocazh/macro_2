@@ -607,3 +607,10 @@ body {
 .ev-legend span::before { content: ''; display: inline-block; width: 14px; height: 2px; margin-right: 5px; vertical-align: middle; }
 .ev-legend .mean::before { background: #2b6cb0; }
 .ev-legend .median::before { background: #a0aec0; border-top: 1px dashed #718096; height: 0; }
+
+/* ── Correlation regime scan ──────────────────────────────────── */
+.cr-chip { display: inline-block; padding: 1px 7px; border-radius: 9px; font-size: 0.68rem; font-weight: 600; letter-spacing: 0.03em; white-space: nowrap; }
+.cr-break { background: #fff5f5; color: #c53030; border: 1px solid #feb2b2; }
+.cr-watch { background: #fffaf0; color: #975a16; border: 1px solid #f6e05e; }
+.cr-normal { background: #f7fafc; color: #a0aec0; border: 1px solid #e2e8f0; }
+.cr-row-break td { background: #fffafa; }
