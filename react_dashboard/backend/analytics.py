@@ -60,6 +60,16 @@ def _label_for(key: str) -> str:
     return body.replace('_', ' ').title()
 
 
+def _series_label(series_id: str) -> str:
+    """Display label for a catalog id, keeping the sub-asset when present."""
+    if series_id.startswith('hl/'):
+        return f'{series_id[3:].upper()} (Hyperliquid)'
+    if '/' in series_id:
+        parent, sub = series_id.split('/', 1)
+        return f'{_label_for(parent)} — {sub.upper()}'
+    return _label_for(series_id)
+
+
 def _clean_series(value) -> pd.Series | None:
     """Return a sorted, NaN-free float Series, or None when unusable."""
     if not isinstance(value, pd.Series) or value.empty:
@@ -424,3 +434,260 @@ def load_13f(project_root: str, top_n: int = 8) -> dict:
         })
 
     return {'funds': funds, 'n_funds': len(funds)}
+
+
+# ---------------------------------------------------------------------------
+# Series resolver — the shared access layer for every relationship analytic
+# ---------------------------------------------------------------------------
+# Correlation, beta, lead/lag and pairs all need the same thing: "give me a
+# clean daily series for instrument X". Three shapes exist in the cache:
+#
+#   1. indicators[key]['historical']            → id = key            (58 series)
+#   2. indicators[key]['historical_<sub>']      → id = "key/<sub>"    (sector ETFs, crypto)
+#   3. Hyperliquid CSV columns                  → id = "hl/<coin>"    (fallback only)
+#
+# Shape 3 exists because Hyperliquid history starts 2026-03 and is minutely;
+# it is deliberately LAST, so BTC resolves to the 5-year yfinance series from
+# 87_crypto_majors rather than a 6-month stub.
+
+_HL_PERPS_CSV = ('historical_data', 'hl_perps.csv')
+
+
+def build_series_catalog(indicators: dict, project_root: str | None = None) -> dict:
+    """{series_id: {label, source, n_obs, start, end}} for everything correlatable."""
+    catalog: dict[str, dict] = {}
+
+    for key, val in indicators.items():
+        if not isinstance(val, dict) or 'error' in val:
+            continue
+
+        s = _clean_series(val.get('historical'))
+        if s is not None and len(s) >= 30:
+            catalog[key] = {
+                'label': _label_for(key), 'category': _category_for(key),
+                'source': 'cache', 'n_obs': len(s),
+                'start': str(s.index[0])[:10], 'end': str(s.index[-1])[:10],
+            }
+
+        for field, raw in val.items():
+            if not (isinstance(field, str) and field.startswith('historical_')):
+                continue
+            sub = field[len('historical_'):]
+            sub_s = _clean_series(raw)
+            if sub_s is None or len(sub_s) < 30:
+                continue
+            sid = f'{key}/{sub}'
+            catalog[sid] = {
+                'label': _series_label(sid),
+                'category': _category_for(key),
+                'source': 'cache', 'n_obs': len(sub_s),
+                'start': str(sub_s.index[0])[:10], 'end': str(sub_s.index[-1])[:10],
+            }
+
+    # Hyperliquid CSV fallback for coins with no cached daily series.
+    if project_root:
+        path = os.path.join(project_root, *_HL_PERPS_CSV)
+        if os.path.exists(path):
+            try:
+                cols = pd.read_csv(path, nrows=0).columns.tolist()
+                for c in cols:
+                    if not (c.startswith('hl_') and c.endswith('_price')):
+                        continue
+                    coin = c[len('hl_'):-len('_price')]
+                    sid = f'hl/{coin}'
+                    # Skip when a longer cached series already covers this asset.
+                    if f'87_crypto_majors/{coin}' in catalog:
+                        continue
+                    catalog[sid] = {
+                        'label': f'{coin.upper()} (Hyperliquid)',
+                        'category': 'Commodities', 'source': 'hl_csv',
+                        'n_obs': None, 'start': None, 'end': None,
+                    }
+            except Exception:
+                pass
+
+    return catalog
+
+
+_HL_CSV_MEMO: dict = {'mtime': None, 'frame': None}
+
+
+def _hl_daily_frame(project_root: str) -> pd.DataFrame | None:
+    """Hyperliquid perp CSV resampled to daily last-price, memoized on mtime."""
+    path = os.path.join(project_root, *_HL_PERPS_CSV)
+    if not os.path.exists(path):
+        return None
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return None
+    if _HL_CSV_MEMO['mtime'] == mtime and _HL_CSV_MEMO['frame'] is not None:
+        return _HL_CSV_MEMO['frame']
+
+    try:
+        cols = pd.read_csv(path, nrows=0).columns.tolist()
+        price_cols = [c for c in cols if c.startswith('hl_') and c.endswith('_price')]
+        df = pd.read_csv(path, usecols=['date'] + price_cols)
+        df['date'] = pd.to_datetime(df['date'], errors='coerce')
+        df = df.dropna(subset=['date']).set_index('date')
+        daily = df.resample('D').last().dropna(how='all')
+    except Exception:
+        return None
+
+    _HL_CSV_MEMO['mtime'] = mtime
+    _HL_CSV_MEMO['frame'] = daily
+    return daily
+
+
+def resolve_series(indicators: dict, series_id: str,
+                   project_root: str | None = None) -> pd.Series | None:
+    """Daily, tz-naive, de-duplicated series for a catalog id."""
+    s = None
+
+    if series_id.startswith('hl/'):
+        if not project_root:
+            return None
+        coin = series_id[3:]
+        frame = _hl_daily_frame(project_root)
+        col = f'hl_{coin}_price'
+        if frame is None or col not in frame.columns:
+            return None
+        s = _clean_series(frame[col])
+    elif '/' in series_id:
+        key, sub = series_id.split('/', 1)
+        val = indicators.get(key)
+        if not isinstance(val, dict):
+            return None
+        s = _clean_series(val.get(f'historical_{sub}'))
+    else:
+        val = indicators.get(series_id)
+        if not isinstance(val, dict):
+            return None
+        s = _clean_series(val.get('historical'))
+
+    if s is None:
+        return None
+
+    try:
+        idx = pd.to_datetime(s.index, errors='coerce')
+        try:
+            idx = idx.tz_localize(None)
+        except (TypeError, AttributeError):
+            idx = idx.tz_convert(None) if getattr(idx, 'tz', None) else idx
+        s = pd.Series(s.values, index=idx.normalize()).dropna()
+        s = s[~s.index.duplicated(keep='last')].sort_index()
+    except Exception:
+        return None
+
+    return s if len(s) >= 30 else None
+
+
+# ---------------------------------------------------------------------------
+# Correlation (Phase 1)
+# ---------------------------------------------------------------------------
+
+_MIN_OVERLAP = 30      # refuse to report anything below this
+_WEAK_OVERLAP = 60     # report, but flag as thin
+
+
+def _returns(s: pd.Series) -> pd.Series:
+    """Log returns. Correlating price LEVELS is the classic error — two assets
+    that merely both trend up score near 1.0 with no co-movement at all."""
+    positive = s[s > 0]
+    if len(positive) < len(s) * 0.9:
+        # Series crosses zero or is negative (spreads, real yields, net flows):
+        # log returns are undefined, so use first differences instead.
+        return s.diff().dropna()
+    return np.log(positive / positive.shift(1)).replace([np.inf, -np.inf], np.nan).dropna()
+
+
+def correlation_analysis(indicators: dict, series_ids: list[str], window: int = 60,
+                         project_root: str | None = None) -> dict:
+    """Pairwise correlation matrix + rolling correlation for the first pair.
+
+    Computed on returns, never levels. Every pair reports its own overlap count
+    because two series can share a catalog but barely share a calendar.
+    """
+    if len(series_ids) < 2:
+        return {'error': 'Select at least two series to correlate.'}
+    if len(series_ids) > 12:
+        return {'error': 'Select at most 12 series.'}
+
+    resolved, missing = {}, []
+    for sid in series_ids:
+        s = resolve_series(indicators, sid, project_root)
+        if s is None:
+            missing.append(sid)
+        else:
+            resolved[sid] = _returns(s)
+
+    if len(resolved) < 2:
+        return {'error': f'Could not resolve enough series. Missing: {", ".join(missing)}'}
+
+    ids = list(resolved.keys())
+    frame = pd.DataFrame(resolved).dropna(how='all')
+
+    matrix, pairs = [], []
+    for a in ids:
+        row = []
+        for b in ids:
+            joint = frame[[a, b]].dropna()
+            n = len(joint)
+            if a == b:
+                row.append(1.0)
+                continue
+            if n < _MIN_OVERLAP:
+                row.append(None)
+            else:
+                r = float(joint[a].corr(joint[b]))
+                row.append(_safe(r))
+                if ids.index(b) > ids.index(a):
+                    pairs.append({
+                        'a': a, 'b': b,
+                        'a_label': _series_label(a), 'b_label': _series_label(b),
+                        'corr': _safe(r), 'n_overlap': n,
+                        'quality': 'thin' if n < _WEAK_OVERLAP else 'ok',
+                    })
+        matrix.append(row)
+
+    # Rolling correlation for the first pair, so the UI always has a series to
+    # draw — a static coefficient hides regime changes, which are the signal.
+    rolling = None
+    a, b = ids[0], ids[1]
+    joint = frame[[a, b]].dropna()
+    if len(joint) >= window + 5:
+        rc = joint[a].rolling(window).corr(joint[b]).dropna()
+        if not rc.empty:
+            latest = float(rc.iloc[-1])
+            mu, sd = float(rc.mean()), float(rc.std())
+            rolling = {
+                'a': a, 'b': b,
+                'a_label': _series_label(a), 'b_label': _series_label(b),
+                'window': window,
+                'dates': [str(d)[:10] for d in rc.index],
+                'values': [_safe(v) for v in rc.values],
+                'latest': _safe(latest),
+                'mean': _safe(mu), 'stdev': _safe(sd),
+                'z_vs_own_history': _safe((latest - mu) / sd) if sd else None,
+                'min': _safe(rc.min()), 'max': _safe(rc.max()),
+            }
+
+    warnings_out = []
+    if missing:
+        warnings_out.append(f'Unresolved: {", ".join(missing)}')
+    thin = [p for p in pairs if p['quality'] == 'thin']
+    if thin:
+        warnings_out.append(
+            f'{len(thin)} pair(s) have fewer than {_WEAK_OVERLAP} overlapping days — '
+            f'treat those coefficients as indicative only.')
+
+    return {
+        'ids': ids,
+        'labels': [_series_label(i) for i in ids],
+        'matrix': matrix,
+        'pairs': sorted(pairs, key=lambda p: abs(p['corr'] or 0), reverse=True),
+        'rolling': rolling,
+        'basis': 'log returns (first differences for series that cross zero)',
+        'window': window,
+        'warnings': warnings_out,
+    }

@@ -648,3 +648,45 @@ def get_baltic_dry_index():
         }
     except Exception as e:
         return {'error': f'Error fetching BDI proxy: {str(e)}'}
+
+
+# Major crypto assets. Hyperliquid gives richer (minutely) data but only since
+# 2026-03, which is far too short to correlate against the 5-year macro series.
+# yfinance daily closes go back 5 years and align with everything else here.
+CRYPTO_MAJORS = {
+    'BTC-USD': 'btc',
+    'ETH-USD': 'eth',
+    'SOL-USD': 'sol',
+}
+
+
+def get_crypto_majors():
+    """Batch fetch major crypto daily Close prices with 5-year history.
+
+    Returns one `<name>` latest price + `<name>_change_1d` per asset, plus
+    `historical_<name>` pd.Series — matching the get_sector_etfs() shape so the
+    analytics series resolver picks them up without a special case.
+    """
+    try:
+        result = {'source': 'yfinance (crypto majors)'}
+        for ticker, name in CRYPTO_MAJORS.items():
+            try:
+                hist = yf_safe.Ticker(ticker).history(period='5y')
+                if hist.empty:
+                    result[name] = None
+                    continue
+                close = hist['Close'].dropna()
+                latest = float(close.iloc[-1])
+                prev = float(close.iloc[-2]) if len(close) > 1 else latest
+                result[name] = round(latest, 2)
+                result[f'{name}_change_1d'] = round(((latest / prev) - 1) * 100, 2) if prev else 0.0
+                result[f'historical_{name}'] = close
+                result['latest_date'] = close.index[-1].strftime('%Y-%m-%d')
+            except Exception:
+                result[name] = None
+
+        if all(result.get(n) is None for n in CRYPTO_MAJORS.values()):
+            return {'error': 'No crypto data available from yfinance'}
+        return result
+    except Exception as e:
+        return {'error': f'Crypto majors fetch error: {str(e)}'}

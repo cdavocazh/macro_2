@@ -643,6 +643,35 @@ def get_forward_returns(
     return result
 
 
+@app.get("/api/series/catalog")
+def get_series_catalog():
+    """Every series that can be correlated, with its own coverage window."""
+    agg = _get_aggregator()
+    if not agg.indicators:
+        return JSONResponse(status_code=503, content={"error": "No data available."})
+    cat = analytics.build_series_catalog(agg.indicators, PROJECT_ROOT)
+    return {"catalog": cat, "total": len(cat)}
+
+
+@app.get("/api/analytics/correlation")
+def get_correlation(
+    ids: str = Query(..., description="Comma-separated series ids from /api/series/catalog"),
+    window: int = Query(60, description="Rolling-correlation window in observations"),
+):
+    """Pairwise correlation on RETURNS (never levels), plus the rolling
+    correlation of the first pair. Per-pair overlap counts are reported because
+    two series can share a catalog and barely share a calendar."""
+    agg = _get_aggregator()
+    if not agg.indicators:
+        return JSONResponse(status_code=503, content={"error": "No data available."})
+    series_ids = [i.strip() for i in ids.split(",") if i.strip()]
+    result = analytics.correlation_analysis(
+        agg.indicators, series_ids, window=window, project_root=PROJECT_ROOT)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
 @app.get("/api/calendar")
 def get_calendar(days_ahead: int = Query(45), limit: int = Query(20)):
     """Upcoming macro releases + FOMC dates from the catalyst-calendar CSV."""

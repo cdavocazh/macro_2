@@ -91,3 +91,15 @@ export async function fetchPositioning13F(topN = 8) {
   const resp = await api.get('/positioning/13f', { params: { top_n: topN } });
   return resp.data;
 }
+
+export async function fetchSeriesCatalog() {
+  const resp = await api.get('/series/catalog');
+  return resp.data;
+}
+
+export async function fetchCorrelation(ids, window = 60) {
+  const resp = await api.get('/analytics/correlation', {
+    params: { ids: ids.join(','), window },
+  });
+  return resp.data;
+}

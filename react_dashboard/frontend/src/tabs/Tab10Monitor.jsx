@@ -3,6 +3,7 @@ import { fetchMonitor, fetchRegime } from '../api';
 import SectionHeader from '../components/SectionHeader';
 import Sparkline from '../components/Sparkline';
 import ForwardReturnPanel from '../components/ForwardReturnPanel';
+import CorrelationPanel from '../components/CorrelationPanel';
 import { toGMT8 } from '../utils/time';
 
 const fmtNum = (v, d = 2) =>
@@ -179,6 +180,9 @@ export default function Tab10Monitor() {
         Percent change is shown for every row; on yields and spreads read it as relative, not basis points.
         Percentile ranks the latest reading within its own trailing ~252 observations.
       </div>
+
+      <SectionHeader title="Correlation" />
+      <CorrelationPanel />
 
       <SectionHeader title="Conditional Forward Returns" />
       <ForwardReturnPanel rows={rows} />

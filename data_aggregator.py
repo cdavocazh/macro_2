@@ -671,6 +671,14 @@ class MacroIndicatorAggregator:
             hyperliquid_extractor.get_hl_spot_stocks
         )
 
+        # 87. Crypto majors (daily, 5y) — Hyperliquid only goes back to 2026-03,
+        # which is too short to correlate against the 5-year macro series.
+        print("  [87/87] Fetching crypto majors (BTC, ETH, SOL — 5y daily)...")
+        self._fetch_with_error_handling(
+            '87_crypto_majors',
+            yfinance_extractors.get_crypto_majors
+        )
+
         print(f"\nCompleted! Last update: {self.last_update.strftime('%Y-%m-%d %H:%M:%S')}")
 
         if self.errors:
@@ -745,6 +753,7 @@ class MacroIndicatorAggregator:
             '83_cot_energy_metals': 'CFTC COT Positioning (Crude Oil, Brent, Copper, Nat Gas)',
             '84_hl_perps': 'Hyperliquid Perpetual Futures (BTC, ETH, SOL, PAXG, HYPE, OIL)',
             '85_hl_spot_stocks': 'Hyperliquid HIP-3 Spot Stocks (TSLA, NVDA, etc.)',
+            '87_crypto_majors': 'Crypto Majors (BTC, ETH, SOL — 5y daily)',
             '23_tga_balance': 'TGA Balance',
             '24_net_liquidity': 'Fed Net Liquidity',
             '25_sofr': 'SOFR',

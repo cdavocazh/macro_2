@@ -27,7 +27,8 @@ cd frontend && npm run build     # production build to frontend/dist/
 - `frontend/src/components/IntradayCandlestickChart.jsx` -- OHLCV candlestick chart for yfinance instruments (TradingView lightweight-charts)
 - `frontend/src/components/` -- MetricCard, ErrorCard, HistoryChart, etc.
 - `frontend/src/api.js` -- axios client for `/api/*` endpoints (`fetchAllIndicators(lite)`)
-- `backend/analytics.py` -- monitor grid, regime composite, forward-return study, calendar + 13F loaders (all derived from already-extracted data)
+- `backend/analytics.py` -- series resolver, correlation, monitor grid, regime composite, forward-return study, calendar + 13F loaders (all derived from already-extracted data). **Correlation runs on log returns, never levels**; `build_series_catalog()` / `resolve_series()` are the shared access layer every relationship analytic should use.
+- `frontend/src/components/CorrelationPanel.jsx` -- pair picker, rolling correlation with z-vs-own-history, heatmap
 - `frontend/src/components/ChartDrawer.jsx` -- full-width 82vh chart drawer + `useChartDrawer()` + `ExpandChartButton`
 - `frontend/src/components/TradingViewWidget.jsx` -- free Advanced Chart embed, lazy-loaded, attribution retained
 - `frontend/src/config/instruments.js` -- instrument → TradingView symbol map. **Futures are NOT licensed in the free widget** (`COMEX:GC1!` renders an error), so they map to free proxies carrying a `proxyNote` the drawer shows. Verify any new symbol in the actual widget, not just symbol search.

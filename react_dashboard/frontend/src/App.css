@@ -562,3 +562,23 @@ body {
   border: 1px solid #f6e05e; border-radius: 4px;
   padding: 3px 8px; margin-bottom: 4px;
 }
+
+/* ── Correlation panel ────────────────────────────────────────── */
+.corr-picker { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.corr-select { padding: 4px 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 0.78rem; max-width: 320px; }
+.corr-chips { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 200px; }
+.corr-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px 2px 9px; border-radius: 10px;
+  background: #ebf4ff; border: 1px solid #bee3f8; font-size: 0.73rem; color: #2c5282; }
+.corr-chip button { border: none; background: none; cursor: pointer; color: #2b6cb0; font-size: 0.9rem; line-height: 1; padding: 0 2px; }
+.corr-chip button:hover { color: #c53030; }
+.corr-rolling { border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; margin-top: 8px; background: #fbfdff; }
+.corr-rolling-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.corr-rolling-stats { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; margin-top: 6px; }
+.corr-big { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.corr-alert { margin-top: 8px; font-size: 0.76rem; color: #744210; background: #fffaf0;
+  border: 1px solid #f6e05e; border-radius: 4px; padding: 4px 8px; }
+.corr-matrix { border-collapse: collapse; font-size: 0.74rem; }
+.corr-matrix th { padding: 4px 7px; font-weight: 600; color: #4a5568; text-align: left; white-space: nowrap; }
+.corr-matrix thead th { writing-mode: horizontal-tb; max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+.corr-matrix td { padding: 5px 9px; text-align: center; font-variant-numeric: tabular-nums;
+  border: 1px solid #fff; min-width: 52px; }
