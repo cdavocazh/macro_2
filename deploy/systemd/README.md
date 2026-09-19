@@ -26,6 +26,7 @@ and `ib-health-monitor.timer` pre-date this work and are not maintained here.
 | Drop-in | Overrides | Purpose |
 |---------|-----------|---------|
 | `macro-extract.service.d/openbb-venv.conf` | `macro-extract.service` | Runs the daily full extraction under `/root/macro_2/venv-openbb` (OpenBB + cboe/ecb providers) and caps it at `MemoryMax=2G` |
+| `macro-extract.service.d/timeout.conf` | `macro-extract.service` | `TimeoutStartSec=900` (unit default 600). Runs take 5–10 min, so 600 s killed ~1 in 5 mid-way (2026-09-19) |
 
 **Why a separate venv:** `openbb-core` hard-pins `uvicorn<0.41`. Installing OpenBB into the
 shared `/root/macro_2/venv` would downgrade the uvicorn serving `macro-react.service`
@@ -36,6 +37,7 @@ never imports OpenBB — the import in `openbb_extractors.py` is lazy for exactl
 # Deploy the drop-in
 ssh root@"$VPS_HOST" "mkdir -p /etc/systemd/system/macro-extract.service.d"
 scp deploy/systemd/macro-extract.service.d/openbb-venv.conf \
+    deploy/systemd/macro-extract.service.d/timeout.conf \
     root@"$VPS_HOST":/etc/systemd/system/macro-extract.service.d/
 ssh root@"$VPS_HOST" "systemctl daemon-reload"
 
