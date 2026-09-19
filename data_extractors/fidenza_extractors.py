@@ -341,11 +341,60 @@ _AAII_HEADERS = {
 }
 
 
-def get_aaii_sentiment():
-    """Scrape AAII Investor Sentiment Survey.
+def _parse_aaii_gauge(soup):
+    """Current-week readings from the labelled results block.
 
-    Parses bullish / neutral / bearish percentages from the survey page
-    and computes the bull/bear ratio.
+    Returns (bullish, neutral, bearish, survey_date) or None. The block is
+    <div class="ssv2-gauge" aria-label="Current week sentiment readings"> with
+    <div class="ssv2-snum bull|neut|bear">38.0%</div> and
+    <span class="ssv2-gauge-week">Week ending September 9, 2026</span>.
+    """
+    gauge = soup.select_one('.ssv2-gauge')
+    if gauge is None:
+        return None
+    vals = {}
+    for node in gauge.select('.ssv2-snum'):
+        m = re.search(r'(\d+(?:\.\d+)?)\s*%', node.get_text(' ', strip=True))
+        kind = next((c for c in node.get('class', []) if c in ('bull', 'neut', 'bear')), None)
+        if m and kind:
+            vals[kind] = float(m.group(1))
+    if len(vals) != 3:
+        return None
+    survey_date = None
+    week = gauge.select_one('.ssv2-gauge-week')
+    if week is not None:
+        m = re.search(r'([A-Z][a-z]+ \d{1,2}, \d{4})', week.get_text(' ', strip=True))
+        if m:
+            try:
+                survey_date = datetime.strptime(m.group(1), '%B %d, %Y').strftime('%Y-%m-%d')
+            except ValueError:
+                survey_date = None
+    return vals['bull'], vals['neut'], vals['bear'], survey_date
+
+
+def _aaii_readings_valid(bullish, neutral, bearish):
+    """AAII's three shares sum to 100 and none has ever been near 0 or 100.
+
+    Without this check the old regex stored the all-time records table
+    ("Jan 6, 2000 Bullish 75.0%", "Mar 5, 2009 Bearish 70.3%") as this week's
+    reading — 75.0/22.7/70.3, a 168% total — for weeks.
+    """
+    parts = (bullish, neutral, bearish)
+    if any(v is None for v in parts):
+        return False
+    if not all(1.0 <= v <= 95.0 for v in parts):
+        return False
+    return abs(sum(parts) - 100.0) <= 1.5
+
+
+def get_aaii_sentiment():
+    """Scrape AAII Investor Sentiment Survey (current week).
+
+    Reads the labelled current-week results block, validates the readings
+    (shares sum to ~100), and reports the survey's week-ending date rather than
+    the collection date. Returns an error instead of guessing when the page is
+    a bot challenge or its layout changed — a missing reading is visible as
+    staleness downstream, a wrong one is not.
 
     Returns:
         dict with bullish, neutral, bearish, bull_bear_ratio, latest_date, source
@@ -355,70 +404,24 @@ def get_aaii_sentiment():
         resp = requests.get(_AAII_URL, headers=_AAII_HEADERS, timeout=15)
         resp.raise_for_status()
         text = resp.text
+        if 'Pardon Our Interruption' in text[:5000]:
+            return {'error': 'AAII served a bot-protection page; no reading this run'}
 
-        # Strategy 1: regex for percentage values near sentiment words
-        bullish = neutral = bearish = None
-
-        # Look for patterns like "Bullish: 38.5%" or "bullish</...>38.5%"
-        for label, setter in [
-            (r'[Bb]ullish', 'bullish'),
-            (r'[Nn]eutral', 'neutral'),
-            (r'[Bb]earish', 'bearish'),
-        ]:
-            # Pattern A: label followed by colon/space then percentage
-            m = re.search(label + r'[:\s]*(\d+\.?\d*)%', text)
-            if m:
-                if setter == 'bullish':
-                    bullish = float(m.group(1))
-                elif setter == 'neutral':
-                    neutral = float(m.group(1))
-                elif setter == 'bearish':
-                    bearish = float(m.group(1))
-                continue
-
-            # Pattern B: label in HTML then nearby percentage
-            m = re.search(label + r'[^%]{0,100}?(\d+\.?\d*)%', text, re.DOTALL)
-            if m:
-                if setter == 'bullish':
-                    bullish = float(m.group(1))
-                elif setter == 'neutral':
-                    neutral = float(m.group(1))
-                elif setter == 'bearish':
-                    bearish = float(m.group(1))
-
-        if bullish is None or bearish is None:
-            # Strategy 2: try parsing from BeautifulSoup tables
-            soup = BeautifulSoup(text, 'html.parser')
-            for table in soup.find_all('table'):
-                rows = table.find_all('tr')
-                for row in rows:
-                    cells = row.find_all(['td', 'th'])
-                    cell_text = [c.get_text(strip=True).lower() for c in cells]
-                    for i, ct in enumerate(cell_text):
-                        if 'bullish' in ct and i + 1 < len(cell_text):
-                            m = re.search(r'(\d+\.?\d*)', cell_text[i + 1])
-                            if m:
-                                bullish = float(m.group(1))
-                        elif 'neutral' in ct and i + 1 < len(cell_text):
-                            m = re.search(r'(\d+\.?\d*)', cell_text[i + 1])
-                            if m:
-                                neutral = float(m.group(1))
-                        elif 'bearish' in ct and i + 1 < len(cell_text):
-                            m = re.search(r'(\d+\.?\d*)', cell_text[i + 1])
-                            if m:
-                                bearish = float(m.group(1))
-
-        if bullish is None or bearish is None:
-            return {'error': 'Could not parse AAII sentiment data from page'}
-
-        bull_bear_ratio = round(bullish / bearish, 2) if bearish and bearish > 0 else float('inf') if bullish and bullish > 0 else None
+        parsed = _parse_aaii_gauge(BeautifulSoup(text, 'html.parser'))
+        if parsed is None:
+            return {'error': 'AAII current-week block (.ssv2-gauge) not found — page layout changed?'}
+        bullish, neutral, bearish, survey_date = parsed
+        if not _aaii_readings_valid(bullish, neutral, bearish):
+            return {'error': f'AAII readings failed validation: bullish={bullish} neutral={neutral} '
+                             f'bearish={bearish} (sum {round(bullish + neutral + bearish, 1)})'}
 
         return {
             'bullish': bullish,
             'neutral': neutral,
             'bearish': bearish,
-            'bull_bear_ratio': bull_bear_ratio,
-            'latest_date': datetime.now().strftime('%Y-%m-%d'),
+            'bull_bear_ratio': round(bullish / bearish, 2),
+            'latest_date': survey_date or datetime.now().strftime('%Y-%m-%d'),
+            'survey_week_ending': survey_date,
             'source': 'AAII (aaii.com/sentimentsurvey)',
         }
     except Exception as e:

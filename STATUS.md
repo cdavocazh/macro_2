@@ -36,6 +36,8 @@ Operator briefing for this repository. Read FIRST when opening this repo in a ne
 - **International PMI has no free source** — EU/JP/CN/UK manufacturing PMI remain `None` in `81_global_pmi`. EconDB carries no manufacturing PMI series (`obb.economy.pmi` was removed from the OpenBB router) and Trading Economics now renders the value client-side, breaking the `"last":` JSON regex. Needs a paid feed or a headless-browser scrape. The same TE change also costs `43_ism_services` its `change_1d`/`interpretation`.
 - **`openbb-yfinance` is unsatisfied in `venv-openbb`** — deliberately: `yfinance` is pinned to 1.2.0 there to match the shared venv so every extractor behaves identically across jobs, while `openbb-yfinance 1.6.3` wants >=1.4.0. No indicator uses the OpenBB yfinance provider as its serving path, so this is inert — but a future `pip install` in that venv may try to "fix" it.
 
+- **CSV writers are locked and atomic (v2.9.1, 2026-09-16)** — see CLAUDE.md "Append-only CSVs". Seven feed defects fixed the same day (gold blank-timestamp row, treasury curve column split, VIX/SKEW history frozen since 08-28, 10Y/2Y/VIX same-date duplicates, jpy date labels, AAII misparse, SPY trailing EPS); details in QA_SOP.md Bug Log and agent/QA_learnings.md. One-off cleanup: `scripts/repair_feed_defects_20260916.py`, backups in `/root/macro_2/.deploy_backup_20260916/`. **Open:** AAII weekly history needs a manually downloaded `sentiment.xls` (scripted requests hit Imperva); `natural_gas_fred.csv` mixes FRED Henry Hub *spot* with IBKR NG *futures* rows (`ibkr_streaming.py` NG spec).
+
 ## Known infrastructure quirks
 
 - **The full extraction transiently wipes `86_polymarket` (Tab 9 goes blank ≤3 min)** — `scheduled_extract.py` writes the WHOLE cache from `fetch_all_indicators()`, which does not produce Polymarket; that key is owned by `polymarket_extract.py` (5-min partial merge). So every daily full extraction drops it, and `polymarket_extract.py`'s 180 s freshness guard means an immediate re-run *skips* rather than restores — it self-heals only on the next scheduled tick. If you need it back now: `./venv/bin/python polymarket_extract.py --force`. The same shape applies to any partial-merge-owned key (`84`/`85` survive only because `hl_extract` happens to run after). Diagnosed 2026-08-30; not fixed — fixing means changing `scheduled_extract.py`'s whole-cache write semantics.
@@ -63,7 +65,7 @@ Operator briefing for this repository. Read FIRST when opening this repo in a ne
 _(Content below is preserved from prior hand-edited STATUS.md — auto-maintained sections above take precedence.)_
 
 ### Project: Macroeconomic Indicators Dashboard
-**Version:** 2.9.0 | **Repository:** https://github.com/cdavocazh/macro_2
+**Version:** 2.9.1 | **Repository:** https://github.com/cdavocazh/macro_2
 
 ### Dashboard Frontends (4 implementations)
 
@@ -82,7 +84,7 @@ _(Content below is preserved from prior hand-edited STATUS.md — auto-maintaine
 ### Known Limitations
 | Issue | Impact | Workaround |
 |-------|--------|------------|
-| Forward P/E 403 errors | MacroMicro bot detection; `1_sp500_forward_pe` falls back to SPY *trailing* P/E, so the card labelled "Forward P/E" is an approximation | Use `65_sp500_multiples` for a real index-level forward P/E. Corrected 2026-09-01: its Finviz tier is dead (provider returns `EmptyDataError`; the quote page dropped valuation ratios), so it is now served by multpl.com + a yfinance Top-20 supplement for PEG / Price-Cash |
+| Forward P/E 403 errors | MacroMicro bot detection; `1_sp500_forward_pe` falls back to SPY *trailing* P/E, so the card labelled "Forward P/E" is an approximation | **No real forward P/E is available anywhere in the project (2026-09-16).** `65_sp500_multiples` is served by multpl.com (its Finviz tier is dead), and its `forward_pe` is `100 / earnings yield` — a *trailing* yield — so it equals the trailing P/E; the forward ERP inherits this. Needs a real forward-estimate source |
 | TSM (IFRS) | SEC EDGAR returns no us-gaap data | Yahoo Finance only |
 | Baltic Dry Index | yfinance ^BDI/BDIY delisted | Returns error dict gracefully |
 | VX=F / ^PCPUT delisted | yfinance 404 | Returns error dict gracefully; logs suppressed |

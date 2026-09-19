@@ -102,6 +102,7 @@ These issues were investigated but could NOT be fixed with available data source
 | `jp_cpi_yoy` (in `72_global_cpi`) | All FRED Japan CPI series frozen at June 2021 | Wire in Bank of Japan API or OECD direct API |
 | `cn_gdp_growth` (in `78_intl_gdp`) | China quarterly GDP on FRED last updated 2023-Q2 | Consider NBS China data or alternative provider |
 | `51_housing_starts` | FRED HOUST series showing Jan 2026 despite Feb/Mar releases existing | FRED update lag for Census Bureau data — recheck in next cycle |
+| forward P/E / forward EPS (`65_sp500_multiples`, `3_sp500_fundamentals`, forward ERP) | No free forward-estimate source is live: SPY's yfinance `info` has no forward fields, Finviz is dead, and `_sp500_multiples_fallback()` computes `forward_pe = 100 / multpl earnings yield` — multpl's earnings yield is *trailing*, so the "forward" P/E equals the trailing P/E (25.91 vs 25.92 on 2026-09-16) and the forward ERP is a trailing ERP | Label it trailing (or blank it) and find a real forward source (e.g. a FactSet/Yardeni weekly forward P/E) |
 
 ---
 
@@ -158,3 +159,37 @@ When the QA agent reports HIGH stale indicators:
 - **Verified:** Live on awehawk.cloud — PEG 1.79, Price/Cash 11.82, source captioned `multpl.com (index) + yfinance Top-20 (PEG, P/Cash)`.
 - **Files changed:** `data_extractors/openbb_extractors.py`
 - **QA agent implication:** any ratio built from two fields of one API payload needs a unit/currency check — sibling fields are not guaranteed to share denomination (HL `openInterest` vs `dayNtlVlm` was the same class of bug).
+
+### 2026-09-16
+
+Found by a feed-integrity scan from the CC trading pipeline (`Agent_Orchestration/CC/backfill/data_guard.py feeds`), after a malformed gold price reached a live trade idea ("AT_52W_HIGH 4357.6"). One-off data cleanup: `scripts/repair_feed_defects_20260916.py` (backups in `.deploy_backup_20260916/data/`).
+
+#### `historical_data/*.csv` writer — `append_to_csv`
+- **Symptom:** `gold.csv` (VPS) ended with `,2026-09-01,4357.6` — no timestamp, older than the rows above it.
+- **Root cause:** Unlocked, non-atomic read-modify-write. `macro2-ibkr-stream` and `fast_extract` both rewrite `gold.csv` every 5 minutes; during the 2026-09-01 load spike their writes overlapped and interleaved bytes. The fragment's timestamp failed pandas' *inferred* format, became NaT, was written back blank, and `sort_values` parked it at the end of the file on every later write. The inferred format was a second trap: a file whose first row has no fractional seconds silently blanks any later row that has them.
+- **Fix:** per-file `fcntl` lock, atomic temp-file + `os.replace`, `format='ISO8601'`, unparseable timestamps dropped with a warning. Daily writers pass `replace_daily_dates=True` so one bar re-fetched under a different timezone convention replaces the old copy instead of duplicating it; NaN observations are no longer written.
+- **Verified:** 4 processes × 150 appends: old code kept 16/600 rows and produced a blank-timestamp row; new code keeps 600/600. The first collector write after deploy logged "gold.csv: dropped 1 row(s) with an unparseable timestamp".
+- **QA agent implication:** check the *tail* of every CSV for blank or out-of-order timestamps — a corrupt row is sorted to the end, exactly where "latest value" readers look.
+
+#### `75_treasury_curve`, `63_vix_futures_curve`, `70_iv_skew` — side effects of `venv-openbb`
+- **Symptom:** Since 2026-08-30 the curve's `1M`..`30Y` columns were blank and the VIX / SKEW history CSVs froze on 2026-08-28.
+- **Root cause:** Moving the full extraction to `venv-openbb` made the OpenBB branches succeed for the first time. They return a different shape from the fallbacks the CSV writers were built against: `month_N`/`year_N` maturity keys, and no `historical` series.
+- **Fix:** `_canonical_maturity()`; `_with_fallback_fields()` attaches the fallback's history to the OpenBB result; the curve reports the Fed's observation date.
+- **Verified:** curve dated 2026-09-14 with `1M`=3.94 … `30Y`=5.34; VIX history 1,383 rows through 2026-09-16; SKEW 616 rows through 2026-09-15.
+- **QA agent implication:** when an environment change makes a primary path start working, diff its output shape against the fallback's — "more indicators resolve" can mean "the CSVs stop updating".
+
+#### `jpy.csv` — mixed date conventions
+- **Root cause:** yfinance FX daily bars are dated in London time; IBKR rows were dated in UTC, so the `date` column stepped backwards 23:00–24:00 UTC each summer night.
+- **Fix:** IBKR forex rows use the London date (`ibkr_fast_extract._row_date`). Futures files needed nothing — their bars sit at New York midnight, where UTC agrees.
+
+#### `aaii_sentiment` — Fidenza AAII scraper
+- **Symptom:** 75.0 / 22.7 / 70.3 (168% total) since 2026-09-05; 66.7/33.3/0.0-style readings before; `bull_bear_ratio` blank Apr–Sep, so downstream readers carried the 2026-04-13 value for months.
+- **Root cause:** "first `Bullish … N%` in raw HTML" matched the all-time-records table (Jan 6 2000 bullish 75.0%, Mar 5 2009 bearish 70.3%) and, in earlier layouts, the voting widget. No validation. Rows were dated by collection, not survey week.
+- **Fix:** parse `.ssv2-gauge` (the labelled current-week block); require shares in 1–95 summing to 100±1.5; error on the bot page; `date` = survey week-ending. Every pre-fix row was removed — 29 of them passed the sum check but were voting-widget fractions (33.3/33.3/33.3, 25/50/25).
+- **Backfill:** AAII's history spreadsheet (`/files/surveys/sentiment.xls`) served once, then the VPS IP got the Imperva "Pardon Our Interruption" page. Do not retry from scripts; a manually downloaded copy can backfill the weekly history.
+- **QA agent implication:** a sum-to-100 check catches misparses but not every one — also compare against the site's own current-week block.
+
+#### `sp500_fundamentals` — ETF fields that do not exist
+- **Root cause:** yfinance `info` for SPY (an ETF) has trailing P/E and price but no forward P/E, trailing EPS or forward EPS.
+- **Fix:** trailing EPS = price / trailing P/E. Forward fields deliberately left empty (see Persistent Known Limitations).
+- **Not a defect:** `fed_funds_effective` flat at 3.63 since May is FRED `FEDFUNDS` (monthly average) with the Fed on hold — daily DFF 3.62–3.64 over the same period.

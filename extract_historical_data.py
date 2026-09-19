@@ -11,10 +11,18 @@ New data is appended (never overwrites existing rows).
 """
 
 import os
+import stat
+import tempfile
 import pandas as pd
+from contextlib import contextmanager
 from datetime import datetime
 import json
 from pathlib import Path
+
+try:  # POSIX advisory locks; the VPS (Linux) and the laptop (macOS) both have them
+    import fcntl
+except ImportError:  # pragma: no cover — no locking on platforms without fcntl
+    fcntl = None
 
 from data_aggregator import get_aggregator
 from data_extractors import (
@@ -70,53 +78,132 @@ def save_metadata(metadata):
         json.dump(metadata, f, indent=2, default=str)
 
 
-def append_to_csv(filename, new_data, timestamp_col='timestamp'):
+@contextmanager
+def _csv_lock(filepath):
+    """Hold an exclusive advisory lock for one CSV's read-modify-write.
+
+    Several processes rewrite the same files: macro2-ibkr-stream every 5 min,
+    fast_extract every 5 min and the full extraction 5x/day. Without a lock two
+    overlapping writers interleave their bytes. On 2026-09-01, during an IBKR
+    stream restart, that left gold.csv with a line fragment whose timestamp did
+    not parse; it was written back with a blank timestamp and re-sorted to the
+    end of the file on every later write, where "last row = latest price"
+    readers picked it up for two weeks (QA_SOP.md Bug Log, 2026-09-16).
+    """
+    if fcntl is None:
+        yield
+        return
+    d, base = os.path.split(filepath)
+    lock_path = os.path.join(d, f'.{base}.lock')
+    with open(lock_path, 'a') as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
+
+def _atomic_to_csv(df, filepath):
+    """Write via a temp file + rename so a reader never sees a half-written CSV."""
+    d = os.path.dirname(filepath) or '.'
+    mode = stat.S_IMODE(os.stat(filepath).st_mode) if os.path.exists(filepath) else 0o644
+    fd, tmp = tempfile.mkstemp(prefix=f'.{os.path.basename(filepath)}.', suffix='.tmp', dir=d)
+    try:
+        with os.fdopen(fd, 'w', newline='') as fh:
+            df.to_csv(fh, index=False)
+        os.chmod(tmp, mode)
+        os.replace(tmp, filepath)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _parse_timestamps(series):
+    """Parse a timestamp column strictly as ISO 8601, returning naive UTC.
+
+    An explicit format matters: with an inferred format, pandas turns any row
+    whose layout differs from the first row (fractional seconds, a fragment)
+    into NaT under errors='coerce', silently.
+    """
+    parsed = pd.to_datetime(series, errors='coerce', utc=True, format='ISO8601')
+    return parsed.dt.tz_localize(None)
+
+
+def append_to_csv(filename, new_data, timestamp_col='timestamp', replace_daily_dates=False):
     """
     Append new data to CSV file, avoiding duplicates.
+
+    The read-modify-write runs under a per-file lock and is written atomically.
+    Rows whose timestamp cannot be parsed are dropped with a warning: they can be
+    neither de-duplicated nor ordered, and a sort would park them at the end of
+    the file where "latest row" readers would take them for current data.
 
     Args:
         filename: CSV filename
         new_data: DataFrame with new data
         timestamp_col: Name of timestamp column for deduplication
+        replace_daily_dates: new_data holds daily bars. Existing whole-hour rows on
+            the same dates are replaced even when their timestamps differ: the same
+            bar re-fetched under another timezone convention (yfinance 1.2.0 dates
+            ^VIX at Chicago midnight, 05:00/06:00 UTC; older rows sat at New York
+            midnight, 04:00/05:00) was otherwise kept twice — the source of the
+            10Y/2Y/VIX same-date duplicates. Intraday rows (IBKR 5-minute
+            snapshots) are never touched.
     """
     filepath = os.path.join(OUTPUT_DIR, filename)
 
-    existing_data = None
-    if os.path.exists(filepath):
-        # Load existing data. A previously-truncated (0-byte) or otherwise
-        # corrupt CSV would raise EmptyDataError/ParserError here and wedge the
-        # indicator permanently — every subsequent run would fail to read and
-        # therefore never rewrite. Guard against it so the next run self-heals
-        # by writing fresh data instead of staying empty forever.
-        try:
-            existing_data = pd.read_csv(filepath)
-            if existing_data.shape[1] == 0:  # no columns parsed
+    with _csv_lock(filepath):
+        existing_data = None
+        if os.path.exists(filepath):
+            # Load existing data. A previously-truncated (0-byte) or otherwise
+            # corrupt CSV would raise EmptyDataError/ParserError here and wedge the
+            # indicator permanently — every subsequent run would fail to read and
+            # therefore never rewrite. Guard against it so the next run self-heals
+            # by writing fresh data instead of staying empty forever.
+            try:
+                existing_data = pd.read_csv(filepath)
+                if existing_data.shape[1] == 0:  # no columns parsed
+                    existing_data = None
+            except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
+                print(f"  ⚠️  Existing {filename} unreadable ({type(e).__name__}); rewriting fresh")
                 existing_data = None
-        except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
-            print(f"  ⚠️  Existing {filename} unreadable ({type(e).__name__}); rewriting fresh")
-            existing_data = None
 
-    if existing_data is not None:
-        # Combine and remove duplicates based on timestamp
-        if timestamp_col in new_data.columns and timestamp_col in existing_data.columns:
-            # Normalize timestamp types to avoid comparison errors
-            existing_data[timestamp_col] = pd.to_datetime(existing_data[timestamp_col], errors='coerce', utc=True)
-            new_data = new_data.copy()
-            new_data[timestamp_col] = pd.to_datetime(new_data[timestamp_col], errors='coerce', utc=True)
-            # Strip timezone info after normalizing to UTC for clean comparison
-            existing_data[timestamp_col] = existing_data[timestamp_col].dt.tz_localize(None)
-            new_data[timestamp_col] = new_data[timestamp_col].dt.tz_localize(None)
-            combined = pd.concat([existing_data, new_data], ignore_index=True)
-            combined = combined.drop_duplicates(subset=[timestamp_col], keep='last')
-            combined = combined.sort_values(timestamp_col)
+        if existing_data is not None:
+            # Combine and remove duplicates based on timestamp
+            if timestamp_col in new_data.columns and timestamp_col in existing_data.columns:
+                existing_data[timestamp_col] = _parse_timestamps(existing_data[timestamp_col])
+                new_data = new_data.copy()
+                new_data[timestamp_col] = _parse_timestamps(new_data[timestamp_col])
+                if replace_daily_dates and 'date' in new_data.columns and 'date' in existing_data.columns:
+                    ets = existing_data[timestamp_col]
+                    whole_hour = ets.notna() & (ets.dt.minute == 0) & (ets.dt.second == 0) & (ets.dt.microsecond == 0)
+                    # Daily bars recur at the same hour across many dates; an IBKR
+                    # snapshot that happens to land on hh:00:00 is a one-off.
+                    counts = ets[whole_hour].dt.hour.value_counts()
+                    bar_hours = set(counts[counts >= max(2, 0.01 * int(whole_hour.sum()))].index)
+                    bar_hours |= set(new_data[timestamp_col].dropna().dt.hour)
+                    is_bar = whole_hour & ets.dt.hour.isin(bar_hours)
+                    new_dates = set(pd.to_datetime(new_data['date'], errors='coerce').dropna().dt.date)
+                    old_dates = pd.to_datetime(existing_data['date'], errors='coerce').dt.date
+                    existing_data = existing_data[~(is_bar & old_dates.isin(new_dates))]
+                combined = pd.concat([existing_data, new_data], ignore_index=True)
+                unparseable = combined[timestamp_col].isna()
+                if unparseable.any():
+                    print(f"  ⚠️  {filename}: dropped {int(unparseable.sum())} row(s) with an unparseable timestamp")
+                    combined = combined[~unparseable]
+                combined = combined.drop_duplicates(subset=[timestamp_col], keep='last')
+                combined = combined.sort_values(timestamp_col)
+            else:
+                # If no timestamp column, just append
+                combined = pd.concat([existing_data, new_data], ignore_index=True)
         else:
-            # If no timestamp column, just append
-            combined = pd.concat([existing_data, new_data], ignore_index=True)
-    else:
-        combined = new_data
+            combined = new_data
 
-    # Save
-    combined.to_csv(filepath, index=False)
+        # Save
+        _atomic_to_csv(combined, filepath)
     print(f"  💾 Saved to: {filename} ({len(combined)} total rows)")
 
 
@@ -463,6 +550,9 @@ def _extract_simple_series(name, fetch_fn, csv_filename, value_col):
             return None
 
         if isinstance(hist, pd.Series):
+            # FRED returns NaN for holidays; writing them produced blank-value rows
+            # (720 in 10y_treasury_yield.csv) that carry no observation.
+            hist = hist.dropna()
             if hist.empty:
                 print(f"  ⚠️  Empty historical series for {name}")
                 return None
@@ -476,7 +566,7 @@ def _extract_simple_series(name, fetch_fn, csv_filename, value_col):
             print(f"  ⚠️  Unexpected historical type for {name}: {type(hist)}")
             return None
 
-        append_to_csv(csv_filename, df)
+        append_to_csv(csv_filename, df, replace_daily_dates=True)
         return {
             'indicator': name,
             'last_date': df['date'].max(),
@@ -516,7 +606,7 @@ def _extract_ohlcv_series(name, fetch_fn, csv_filename, prefix):
         })
         df['timestamp'] = pd.to_datetime(df['timestamp'])
 
-        append_to_csv(csv_filename, df)
+        append_to_csv(csv_filename, df, replace_daily_dates=True)
         return {
             'indicator': f'{name} OHLCV',
             'last_date': df['date'].max(),
@@ -1575,9 +1665,11 @@ def extract_aaii_sentiment():
         if isinstance(bbr, float) and (bbr == float('inf') or bbr != bbr):
             bbr = None
 
+        # 'date' is the survey's week-ending date: a reading collected on Tuesday
+        # describes the previous Wednesday, and readers treat 'date' as as-of.
         df = pd.DataFrame([{
             'timestamp': datetime.now(),
-            'date': datetime.now().date(),
+            'date': data.get('survey_week_ending') or datetime.now().date(),
             'bullish': data.get('bullish'),
             'neutral': data.get('neutral'),
             'bearish': data.get('bearish'),
@@ -1923,6 +2015,8 @@ def extract_financial_agent_historical():
             continue
 
         hist = data.get('historical')
+        if isinstance(hist, pd.Series):
+            hist = hist.dropna()  # FRED marks holidays NaN; don't write empty observations
         if hist is None or (hasattr(hist, 'empty') and hist.empty):
             print(f"  ⚠️  {key}: no historical data")
             continue
@@ -1935,7 +2029,7 @@ def extract_financial_agent_historical():
             })
             df['timestamp'] = pd.to_datetime(df['timestamp'])
             csv_filename = f'{key}.csv'
-            append_to_csv(csv_filename, df)
+            append_to_csv(csv_filename, df, replace_daily_dates=True)
             results.append({
                 'indicator': f'{key} ({series_id})',
                 'last_date': df['date'].max(),

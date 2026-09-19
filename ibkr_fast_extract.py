@@ -30,7 +30,8 @@ import signal
 import sys
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -285,13 +286,28 @@ def _apply_manifest_changes(service: IBKRStreamingService,
 
 # ── CSV write ────────────────────────────────────────────────────────────
 
+# The 'date' column must follow the convention of the daily bars already in each
+# file. yfinance dates FX daily bars in London time (the JPY=X bar for D starts at
+# 23:00 UTC on D-1 during BST); futures bars sit at New York midnight, where the
+# UTC date agrees. Labelling FX rows with the UTC date made jpy.csv's dates step
+# backwards every summer night between 23:00 and 24:00 UTC.
+_ROW_DATE_TZ = {"forex": ZoneInfo("Europe/London")}
+
+
+def _row_date(now_utc, spec) -> str:
+    tz = _ROW_DATE_TZ.get(spec.contract_type)
+    return (now_utc.astimezone(tz) if tz else now_utc).strftime('%Y-%m-%d')
+
+
 def _write_csv_summary(service: IBKRStreamingService):
     """Append 5-min summary rows to existing CSVs and summary CSV."""
     import pandas as pd
     from extract_historical_data import append_to_csv
 
     snapshot = service.get_snapshot()
-    now = datetime.now()
+    # Timestamps are naive UTC, like the yfinance rows append_to_csv normalises
+    # to (identical to datetime.now() on the UTC VPS; correct on other hosts too).
+    now = datetime.now(timezone.utc)
     ts = now.strftime('%Y-%m-%d %H:%M:%S')
     date_str = now.strftime('%Y-%m-%d')
 
@@ -305,7 +321,7 @@ def _write_csv_summary(service: IBKRStreamingService):
 
         df = pd.DataFrame([{
             'timestamp': ts,
-            'date': date_str,
+            'date': _row_date(now, spec),
             spec.csv_column: quote['last'],
         }])
         try:
@@ -363,7 +379,7 @@ def _run_main_loop(service: IBKRStreamingService, args=None):
     # Stale-subscription detector: if no quote has updated in STALE_WARN_SECS,
     # the IB subscriptions are likely dead (e.g. after a gateway restart).
     # We exit the main loop so the outer retry loop reconnects.
-    STALE_WARN_SECS = 900   # 15 minutes without ANY tick = likely dead
+    STALE_WARN_SECS = 1800  # 30 min without ANY tick = likely dead. Was 900s but triggered false reconnects every cycle, stressing gateway. (2026-05-02)
     last_stale_check = time.time()
 
     # Subscription manifest tracking: poll mtime, apply diffs to IBKR subs

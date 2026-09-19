@@ -17,6 +17,8 @@ Medium-value extractors (#11-#20):
   - Global PMI, equity risk premium
 """
 
+import re
+
 import pandas as pd
 from datetime import datetime, timedelta
 from . import yf_safe
@@ -65,6 +67,25 @@ def _as_percent(value, threshold=1.0):
     if value is None:
         return None
     return round(value * 100, 3) if abs(value) < threshold else round(value, 3)
+
+
+def _with_fallback_fields(result, fallback_fn, keys):
+    """Copy fields only a fallback provides onto an OpenBB result.
+
+    extract_historical_data writes vix_futures_curve.csv and spx_iv_skew.csv
+    from result['historical'] (the spot VIX / CBOE SKEW closes). The OpenBB
+    branches return snapshots without it, so once the full extraction moved to
+    venv-openbb (2026-08-30) both CSVs stopped updating ("No historical data").
+    """
+    try:
+        fb = fallback_fn()
+    except Exception:
+        return result
+    if isinstance(fb, dict) and 'error' not in fb:
+        for k in keys:
+            if result.get(k) is None and fb.get(k) is not None:
+                result[k] = fb[k]
+    return result
 
 
 def _degraded_note(capability, package):
@@ -159,6 +180,19 @@ def get_sp500_fundamentals_historical():
         forward_eps = info.get('forwardEps')
         current_price = info.get('previousClose') or info.get('regularMarketPrice')
 
+        # SPY is an ETF: Yahoo publishes its trailing P/E and price but no
+        # forwardPE / trailingEps / forwardEps, so those sp500_fundamentals.csv
+        # columns had never been populated. Trailing EPS follows exactly from
+        # price and trailing P/E (same source). Forward figures are left empty:
+        # the project has no real forward estimate — sp500_multiples' forward_pe
+        # is 100 / multpl.com's *trailing* earnings yield (25.91 vs trailing
+        # 25.92 on 2026-09-16), and dividing SPY's price by it produced a
+        # "forward EPS" below trailing EPS, i.e. a fabricated earnings decline.
+        derived = []
+        if not trailing_eps and trailing_pe and current_price:
+            trailing_eps = round(current_price / trailing_pe, 2)
+            derived.append('trailing_eps')
+
         earnings_yield = None
         if trailing_pe and trailing_pe > 0:
             earnings_yield = round(1.0 / trailing_pe * 100, 2)
@@ -182,6 +216,7 @@ def get_sp500_fundamentals_historical():
             'trailing_eps': trailing_eps,
             'forward_eps': forward_eps,
             'spy_price': current_price,
+            'derived_fields': derived,
             'latest_date': datetime.now().strftime('%Y-%m-%d'),
             'source': 'yfinance (SPY ETF)',
         }
@@ -277,14 +312,14 @@ def get_vix_futures_curve():
                     if len(curve_vals) >= 2:
                         contango = round((curve_vals[1] / curve_vals[0] - 1) * 100, 2) if curve_vals[0] > 0 else None
 
-                    return {
+                    return _with_fallback_fields({
                         'vix_spot': vix_spot,
                         'futures_curve': futures_curve,
                         'contango_pct': contango,
                         'n_expirations': len(expirations),
                         'latest_date': datetime.now().strftime('%Y-%m-%d'),
                         'source': 'OpenBB/CBOE'
-                    }
+                    }, _vix_futures_curve_fallback, ('historical', 'change_1d'))
         except Exception:
             pass  # Fall through to fallback
 
@@ -1184,14 +1219,14 @@ def get_spx_iv_skew():
 
                         skew = round((put_iv - call_iv) * 100, 2) if put_iv and call_iv else None
 
-                        return {
+                        return _with_fallback_fields({
                             'iv_skew_25d': skew,
                             'otm_put_iv': round(put_iv * 100, 2) if put_iv else None,
                             'otm_call_iv': round(call_iv * 100, 2) if call_iv else None,
                             'atm_iv': None,
                             'latest_date': datetime.now().strftime('%Y-%m-%d'),
                             'source': 'OpenBB/CBOE (SPX options)'
-                        }
+                        }, _spx_iv_skew_fallback, ('skew_index', 'change_1d', 'historical'))
         except Exception:
             pass
 
@@ -1536,6 +1571,23 @@ def get_sector_pe_ratios():
 
 # ── #13: Full Treasury Yield Curve ───────────────────────────────────────────
 
+_FED_MATURITY_RE = re.compile(r'^(month|year)_(\d+)$')
+
+
+def _canonical_maturity(label):
+    """'month_3' -> '3M', 'year_10' -> '10Y'; other labels pass through.
+
+    The FRED fallback and every full_treasury_curve.csv row before 2026-08-30
+    use 1M..30Y. OpenBB's federal_reserve provider names maturities month_N /
+    year_N, so once the full extraction moved to venv-openbb the curve landed in
+    a second set of columns and 1M, 3M, 6M... went blank for every reader.
+    """
+    m = _FED_MATURITY_RE.match(str(label))
+    if not m:
+        return str(label)
+    return f"{int(m.group(2))}{'M' if m.group(1) == 'month' else 'Y'}"
+
+
 def get_full_treasury_curve():
     """
     Full US Treasury yield curve (1M to 30Y).
@@ -1548,9 +1600,19 @@ def get_full_treasury_curve():
             if data and hasattr(data, 'results') and data.results:
                 df = data.to_df() if hasattr(data, 'to_df') else pd.DataFrame([vars(r) for r in data.results])
                 if not df.empty:
+                    # Keep only the latest observation date and report it, rather
+                    # than stamping the curve with the collection date.
+                    obs_date = None
+                    raw_dates = df['date'] if 'date' in df.columns else (df.index if df.index.name == 'date' else None)
+                    if raw_dates is not None:
+                        dates = pd.to_datetime(pd.Series(raw_dates).reset_index(drop=True), errors='coerce')
+                        if dates.notna().any():
+                            latest = dates.max()
+                            df = df[(dates == latest).to_numpy()]
+                            obs_date = latest.strftime('%Y-%m-%d')
                     curve = {}
                     for _, row in df.iterrows():
-                        mat = str(row.get('maturity', ''))
+                        mat = _canonical_maturity(row.get('maturity', ''))
                         rate = row.get('rate')
                         if mat and rate is not None:
                             # federal_reserve returns fractions (0.038); the FRED
@@ -1559,7 +1621,7 @@ def get_full_treasury_curve():
                     if curve:
                         return {
                             'curve': curve,
-                            'latest_date': datetime.now().strftime('%Y-%m-%d'),
+                            'latest_date': obs_date or datetime.now().strftime('%Y-%m-%d'),
                             'source': 'OpenBB/Federal Reserve'
                         }
         except Exception:
