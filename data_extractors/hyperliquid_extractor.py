@@ -25,6 +25,10 @@ HL_PERPS = {
     'SOL': {'key': 'sol', 'name': 'Solana', 'category': 'crypto'},
     'PAXG': {'key': 'paxg', 'name': 'PAX Gold', 'category': 'commodity'},
     'HYPE': {'key': 'hype', 'name': 'Hyperliquid', 'category': 'crypto'},
+    # XRP sits in the unqualified universe (no api_coin needed). It was dropped from
+    # this dict on 2026-03-19 while hl_extract.py kept advertising it, so the
+    # hl_xrp_* columns have been blank ever since; they refill by name.
+    'XRP': {'key': 'xrp', 'name': 'XRP', 'category': 'crypto'},
     # HIP-3 builder perps.  api_coin values verified against the per-dex
     # metaAndAssetCtxs universes on 2026-08-30; xyz:SP500, xyz:NATGAS, xyz:COPPER
     # and xyz:BRENTOIL never existed under those names, so the S&P/gas/copper
@@ -378,13 +382,21 @@ def get_hl_spot_stocks():
     except Exception as e:
         return {'error': f'Hyperliquid API error: {str(e)}'}
 
-    # Build mapping: token_index → universe pair index + context
+    # Build mapping: token_index → universe pair + its OWN context.
+    # Key the context by the pair name the API supplies, never by list position:
+    # spotMetaAndAssetCtxs returns a FILTERED universe (328 entries, names @1..@867)
+    # alongside the full ctxs array (868 entries, each carrying coin="@N"), so
+    # ctxs[i] binds a ticker to an unrelated market from @72 onward. Fail closed if a
+    # name does not resolve rather than falling back to the positional guess.
+    ctx_by_coin = {c.get('coin'): c for c in ctxs}
     pair_for_token = {}
-    for i, u in enumerate(universe):
-        tok_list = u.get('tokens', [])
-        for ti in tok_list:
+    for u in universe:
+        ctx = ctx_by_coin.get(u.get('name'))
+        if ctx is None:
+            continue
+        for ti in u.get('tokens', []):
             if ti != 0:  # token 0 is USDC
-                pair_for_token[ti] = (i, u, ctxs[i] if i < len(ctxs) else {})
+                pair_for_token[ti] = (u.get('index'), u, ctx)
 
     result = {}
     for ticker, info in HL_SPOT_STOCKS.items():
@@ -406,6 +418,19 @@ def get_hl_spot_stocks():
             result[key] = {
                 'error': f'{ticker} no mid price (possibly no liquidity)',
                 'volume_24h': vol,
+            }
+            continue
+
+        # A HIP-3 stock pair with no 24h volume still quotes a mid, and that mid can be
+        # wildly stale: on 2026-09-21 spot TSLA showed 180.5 while the same name traded
+        # at 363.8 as an xyz perp. Report it as untraded rather than passing a stale mid
+        # downstream as a price — the CSV column stays blank, which is the truth.
+        if vol == 0:
+            result[key] = {
+                'error': f'{ticker} spot pair untraded (0 24h volume); mid {mid_px} not used',
+                'illiquid': True,
+                'volume_24h': vol,
+                'stale_mid': float(mid_px),
             }
             continue
 

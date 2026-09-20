@@ -202,11 +202,19 @@ class HyperliquidWSRelay:
                                     tokens = spot_meta.get('tokens', [])
                                     spot_universe = spot_meta.get('universe', [])
                                     spot_ctxs = raw2[1] if raw2[1] is not None else []
+                                    # Key the context by the pair name the API supplies, not by
+                                    # list position: the universe is filtered (328 of 868) while
+                                    # ctxs is full, so ctxs[i] binds a ticker to an unrelated
+                                    # market from @72 onward. Fail closed on an unresolved name.
+                                    ctx_by_coin = {c.get('coin'): c for c in spot_ctxs if isinstance(c, dict)}
                                     pair_for_token = {}
-                                    for i, u in enumerate(spot_universe):
+                                    for u in spot_universe:
+                                        ctx = ctx_by_coin.get(u.get('name'))
+                                        if ctx is None:
+                                            continue
                                         for ti in u.get('tokens', []):
                                             if ti != 0:
-                                                pair_for_token[ti] = (i, u, spot_ctxs[i] if i < len(spot_ctxs) else {})
+                                                pair_for_token[ti] = (u.get('index'), u, ctx)
                                     self._spot_contexts = pair_for_token
                     except Exception:
                         pass  # Keep using cached spot contexts
