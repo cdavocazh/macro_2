@@ -102,25 +102,16 @@ def get_sp500_forward_pe_fallback():
             return {
                 'sp500_forward_pe': trailing_pe,
                 'source': 'yfinance (S&P 500 Trailing P/E)',
-                'note': 'Using S&P 500 trailing P/E as forward P/E approximation. Forward P/E typically 10-15% lower than trailing.'
+                'note': 'TRAILING P/E (SPY). Despite the key name this is not a forward estimate — no free forward source is available; see DATA gap in CLAUDE.md.'
             }
 
-        # If info doesn't have it, try to calculate from fast_info or estimate
-        # Return a reasonable estimate based on typical market conditions
-        return {
-            'sp500_forward_pe': 21.5,
-            'source': 'Historical average estimate',
-            'note': 'Could not fetch live data. Using long-term average (~21-22). Please refresh data or check data sources.',
-            'warning': 'This is an estimate, not live data'
-        }
+        # No estimate. This used to return a hardcoded 21.5 "long-term average", which is
+        # indistinguishable downstream from a live reading and was written into the CSVs
+        # as though it were one. An error surfaces as an error card instead.
+        return {'error': 'S&P 500 P/E unavailable from all sources'}
 
     except Exception as e:
-        return {
-            'sp500_forward_pe': 21.5,
-            'source': 'Historical average estimate',
-            'note': f'Error fetching live data: {str(e)}. Using long-term average (~21-22).',
-            'warning': 'This is an estimate, not live data'
-        }
+        return {'error': f'S&P 500 P/E unavailable: {str(e)}'}
 
 
 def get_sp500_put_call_ratio():

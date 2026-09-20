@@ -132,7 +132,7 @@ def _parse_timestamps(series):
     return parsed.dt.tz_localize(None)
 
 
-def append_to_csv(filename, new_data, timestamp_col='timestamp', replace_daily_dates=False):
+def append_to_csv(filename, new_data, timestamp_col='timestamp', replace_daily_dates=False, subset=None):
     """
     Append new data to CSV file, avoiding duplicates.
 
@@ -145,6 +145,11 @@ def append_to_csv(filename, new_data, timestamp_col='timestamp', replace_daily_d
         filename: CSV filename
         new_data: DataFrame with new data
         timestamp_col: Name of timestamp column for deduplication
+        subset: columns identifying a unique row. Defaults to [timestamp_col]. A file whose
+            writer emits SEVERAL rows per run sharing one timestamp needs the extra key, or
+            de-duplication keeps exactly one of them: _summary_latest.csv lost 11 of its 12
+            indicators on every write for seven months this way, and the concat means each
+            run also retro-collapsed the previous run's rows.
         replace_daily_dates: new_data holds daily bars. Existing whole-hour rows on
             the same dates are replaced even when their timestamps differ: the same
             bar re-fetched under another timezone convention (yfinance 1.2.0 dates
@@ -194,7 +199,7 @@ def append_to_csv(filename, new_data, timestamp_col='timestamp', replace_daily_d
                 if unparseable.any():
                     print(f"  ⚠️  {filename}: dropped {int(unparseable.sum())} row(s) with an unparseable timestamp")
                     combined = combined[~unparseable]
-                combined = combined.drop_duplicates(subset=[timestamp_col], keep='last')
+                combined = combined.drop_duplicates(subset=subset or [timestamp_col], keep='last')
                 combined = combined.sort_values(timestamp_col)
             else:
                 # If no timestamp column, just append
@@ -1159,7 +1164,7 @@ def create_summary_file(results):
             summary_data.append(row)
 
         df_summary = pd.DataFrame(summary_data)
-        append_to_csv('_summary_latest.csv', df_summary)
+        append_to_csv('_summary_latest.csv', df_summary, subset=['timestamp', 'indicator_key'])
 
         print(f"  ✅ Summary file created")
 

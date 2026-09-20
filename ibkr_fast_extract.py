@@ -299,6 +299,27 @@ def _row_date(now_utc, spec) -> str:
     return (now_utc.astimezone(tz) if tz else now_utc).strftime('%Y-%m-%d')
 
 
+# A price is only worth recording if it actually traded recently. IB serves the last
+# trade print indefinitely once a subscription goes quiet or dies, so without this gate
+# the 5-minute writer copies a frozen value into the history forever — micro_2y_yield
+# kept writing 4.182 for days, and every per-instrument CSV carried ~6 stale rows in 7.
+# Keyed on last_price_time (set only when `last` changes), never on last_update.
+STALE_PRICE_FACTOR = 3
+
+
+def _price_is_stale(quote: dict, now: datetime) -> bool:
+    ts = quote.get("last_price_time")
+    if not ts:
+        return True                      # no price timestamp -> treat as unusable
+    try:
+        seen = datetime.fromisoformat(ts)
+    except ValueError:
+        return True
+    if seen.tzinfo is None:
+        seen = seen.replace(tzinfo=now.tzinfo)
+    return (now - seen).total_seconds() > STALE_PRICE_FACTOR * IBKR_CSV_INTERVAL
+
+
 def _write_csv_summary(service: IBKRStreamingService):
     """Append 5-min summary rows to existing CSVs and summary CSV."""
     import pandas as pd
@@ -312,11 +333,15 @@ def _write_csv_summary(service: IBKRStreamingService):
     date_str = now.strftime('%Y-%m-%d')
 
     # Write to individual existing CSVs (matching yfinance format)
+    stale = []
     for sym, spec in INSTRUMENTS.items():
         if spec.csv_file is None:
             continue
         quote = snapshot.get(sym)
         if quote is None or quote.get("last") is None:
+            continue
+        if _price_is_stale(quote, now):
+            stale.append(sym)
             continue
 
         df = pd.DataFrame([{
@@ -334,7 +359,7 @@ def _write_csv_summary(service: IBKRStreamingService):
     has_data = False
     for sym, spec in INSTRUMENTS.items():
         quote = snapshot.get(sym)
-        if quote is not None and quote.get("last") is not None:
+        if quote is not None and quote.get("last") is not None and not _price_is_stale(quote, now):
             summary_row[spec.csv_column] = quote['last']
             has_data = True
         else:
@@ -347,7 +372,9 @@ def _write_csv_summary(service: IBKRStreamingService):
         except Exception as e:
             logger.warning(f"Summary CSV write failed: {e}")
 
-    logger.info(f"CSV snapshot written ({sum(1 for q in snapshot.values() if q.get('last'))} instruments)")
+    if stale:
+        logger.info(f"CSV snapshot: skipped {len(stale)} instrument(s) with a stale price: {','.join(stale)}")
+    logger.info(f"CSV snapshot written ({sum(1 for q in snapshot.values() if q.get('last') and not _price_is_stale(q, now))} instruments)")
 
 
 # ── Main loop ────────────────────────────────────────────────────────────

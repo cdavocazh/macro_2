@@ -98,7 +98,9 @@ INSTRUMENTS: dict[str, InstrumentSpec] = {
     "HG":  InstrumentSpec("HG",  "Copper Futures",       "future", "COMEX", "copper.csv",         "copper_price",     25000),
     # Energy
     "CL":  InstrumentSpec("CL",  "Crude Oil Futures",    "future", "NYMEX", "crude_oil.csv",      "crude_oil_price",  1000),
-    "NG":  InstrumentSpec("NG",  "Natural Gas Futures",  "future", "NYMEX", "natural_gas_fred.csv","natural_gas",     10000),
+    # NYMEX front-month futures — NOT the FRED Henry Hub spot series in natural_gas_fred.csv,
+    # which this used to append to, mixing two different instruments in one column.
+    "NG":  InstrumentSpec("NG",  "Natural Gas Futures",  "future", "NYMEX", "natural_gas_ibkr.csv", "natural_gas_futures", 10000),
     # Treasury futures
     "ZN":  InstrumentSpec("ZN",  "10-Year T-Note",       "future", "CBOT",  None,               "zn_price",         1000),
     "ZB":  InstrumentSpec("ZB",  "30-Year T-Bond",       "future", "CBOT",  None,               "zb_price",         1000),
@@ -186,6 +188,11 @@ class StreamingQuote:
     # Metadata
     tick_count: int = 0
     last_update: Optional[datetime] = None
+    # When `last` itself last CHANGED hands. last_update is bumped on every tick of any
+    # field, so it says nothing about whether the price is current: IB keeps returning the
+    # previous trade print for a thin or dead subscription, and the CSV writer happily wrote
+    # that stale price every 5 minutes (2026-09-20 audit: ~6 of 7 rows were stale repeats).
+    last_price_time: Optional[datetime] = None
 
     @property
     def mid(self) -> Optional[float]:
@@ -215,6 +222,7 @@ class StreamingQuote:
             "futures_open_interest": self.futures_open_interest,
             "tick_count": self.tick_count,
             "last_update": self.last_update.isoformat() if self.last_update else None,
+            "last_price_time": self.last_price_time.isoformat() if self.last_price_time else None,
         }
 
 
@@ -406,6 +414,7 @@ class IBKRStreamingService:
                 quote.ask = ask
             if last is not None:
                 quote.last = last
+                quote.last_price_time = datetime.now()
             if volume is not None:
                 quote.volume = volume
             if open_price is not None:

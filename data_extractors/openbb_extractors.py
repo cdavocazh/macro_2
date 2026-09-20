@@ -713,10 +713,13 @@ def _sp500_multiples_fallback():
     price_to_book = _scrape_multpl('s-p-500-price-to-book')
     earnings_yield = _scrape_multpl('s-p-500-earnings-yield')
 
-    # Compute forward P/E from earnings yield if available, else from yfinance
+    # No forward P/E here, deliberately. This used to compute 100 / earnings_yield, but
+    # multpl.com's earnings yield is TRAILING twelve-month earnings over price, so the
+    # "forward" P/E it produced simply equalled the trailing one (25.91 vs 25.92 on
+    # 2026-09-16) and the forward ERP built on it was a trailing ERP. multpl publishes
+    # as-reported trailing ratios only; leave the key present but empty so callers'
+    # .get() stays safe and a missing forward estimate stays visible as missing.
     forward_pe = None
-    if earnings_yield and earnings_yield > 0:
-        forward_pe = round(100.0 / earnings_yield, 2)
 
     if trailing_pe is not None:
         return {
@@ -2044,16 +2047,11 @@ def get_equity_risk_premium():
         trailing_pe = info.get('trailingPE')
         forward_pe = info.get('forwardPE')
 
-        # If yfinance doesn't provide forward PE, try OpenBB/Finviz via sp500 multiples
-        if not forward_pe:
-            try:
-                multiples = get_sp500_historical_multiples()
-                if multiples and 'error' not in multiples:
-                    fwd_pe_from_mult = multiples.get('forward_pe')
-                    if fwd_pe_from_mult and fwd_pe_from_mult > 0:
-                        forward_pe = fwd_pe_from_mult
-            except Exception:
-                pass
+        # Deliberately no fallback for forward_pe. It used to be back-filled from
+        # 65_sp500_multiples, whose forward_pe was itself the trailing P/E under another
+        # name, which made this a "forward" ERP computed from trailing earnings. With no
+        # genuine forward source available, forward_erp stays None and the card shows
+        # nothing rather than a wrong number.
 
         earnings_yield = round(1.0 / trailing_pe * 100, 2) if trailing_pe and trailing_pe > 0 else None
         forward_earnings_yield = round(1.0 / forward_pe * 100, 2) if forward_pe and forward_pe > 0 else None

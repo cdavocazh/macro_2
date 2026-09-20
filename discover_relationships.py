@@ -71,7 +71,10 @@ SERIES_MAP = {
     "copper": "copper",
     "gold_price_fred": "gold_price_fred",
     "copper_price_fred": "copper_price_fred",
-    "natural_gas_fred": "natural_gas_fred",
+    # The column is natural_gas_price; the old hint matched nothing and load_series fell
+    # through to numeric_cols[0], which happened to be the right column only because of
+    # column ORDER. Pin it so a rewrite of the file cannot silently switch the series.
+    "natural_gas_fred": "natural_gas_price",
     "gold_silver_ratio": "gold_silver_ratio",
     "xau_jpy": "xau_jpy",
 
