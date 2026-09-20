@@ -50,8 +50,10 @@ from extract_historical_data import OUTPUT_DIR, _atomic_to_csv, _csv_lock, _pars
 from data_extractors.fidenza_extractors import _aaii_readings_valid  # noqa: E402
 
 BACKUP_DIR = os.path.join(ROOT, '.deploy_backup_20260916', 'data')
-# fidenza_extractors.py with the anchored AAII parser went live at this time (UTC).
-AAII_FIX_DEPLOYED_AT = pd.Timestamp('2026-09-16 09:13:00')
+# fidenza_extractors.py with the anchored AAII parser went live at this time on the VPS
+# (UTC). Override with --aaii-cutoff on a host whose rows are stamped in local time or
+# that picked the fix up later.
+AAII_FIX_DEFAULT_CUTOFF = '2026-09-16 09:13:00'
 _OPENBB_COL = re.compile(r'^(month|year)_(\d+)$')
 
 
@@ -121,8 +123,8 @@ def fix_jpy_dates(df):
     return df, f'relabelled {changed} IBKR row(s) to the London date'
 
 
-def fix_aaii(df, reading, stamp):
-    pre_fix = _parse_timestamps(df['timestamp']) < AAII_FIX_DEPLOYED_AT
+def fix_aaii(df, reading, stamp, cutoff):
+    pre_fix = _parse_timestamps(df['timestamp']) < cutoff
     old = df[pre_fix]
     vals = old[['bullish', 'neutral', 'bearish']].apply(pd.to_numeric, errors='coerce')
     passing = int(vals.apply(lambda r: _aaii_readings_valid(r['bullish'], r['neutral'], r['bearish']), axis=1).sum()) if len(old) else 0
@@ -182,6 +184,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--apply', action='store_true', help='write changes (default: report only)')
     ap.add_argument('--aaii', help='verified current reading: bullish,neutral,bearish,YYYY-MM-DD (survey week ending)')
+    ap.add_argument('--aaii-cutoff', default=AAII_FIX_DEFAULT_CUTOFF,
+                    help=f'rows stamped before this are pre-fix and are dropped (default {AAII_FIX_DEFAULT_CUTOFF}, VPS/UTC)')
     a = ap.parse_args()
     reading = None
     if a.aaii:
@@ -192,7 +196,7 @@ def main():
     _rewrite('gold.csv', fix_bad_timestamps, a.apply)
     _rewrite('full_treasury_curve.csv', fix_treasury_curve, a.apply)
     _rewrite('jpy.csv', fix_jpy_dates, a.apply)
-    _rewrite('aaii_sentiment.csv', lambda df: fix_aaii(df, reading, stamp), a.apply)
+    _rewrite('aaii_sentiment.csv', lambda df: fix_aaii(df, reading, stamp, pd.Timestamp(a.aaii_cutoff)), a.apply)
     for name in ('10y_treasury_yield.csv', 'us_2y_yield.csv'):
         _rewrite(name, fix_yields, a.apply)
     _rewrite('sp500_fundamentals.csv', fix_sp500_eps, a.apply)
