@@ -71,6 +71,8 @@ HISTORICAL_DIR = 'historical_data'
 MANIFEST_POLL_SECS = 5
 # How often to refresh the available contracts list per symbol (1 hour)
 CONTRACTS_REFRESH_SECS = 3600
+# Max seconds per symbol for the hourly front-month roll check's qualify request
+ROLL_QUALIFY_TIMEOUT = 10
 
 # ── Logging ──────────────────────────────────────────────────────────────
 
@@ -274,7 +276,9 @@ def _apply_manifest_changes(service: IBKRStreamingService,
         else:
             target = None  # daemon will use ContFuture (only safe at startup)
 
-        result = service.request_swap_subscription(sym, target, timeout=30.0)
+        # Called directly: this thread pumps the IB loop (see _run_main_loop), so queueing
+        # the swap and waiting for another thread to drain it would only time out.
+        result = service._do_swap_subscription(sym, target)
         if result.get("ok"):
             logger.info(f"Manifest swap applied: {sym} {result.get('old')} -> {result.get('new')}")
             swaps += 1
@@ -282,6 +286,49 @@ def _apply_manifest_changes(service: IBKRStreamingService,
             logger.warning(f"Manifest swap failed for {sym}: {result.get('error')}")
     if swaps:
         logger.info(f"Applied {swaps} manifest changes")
+
+
+def _roll_front_months(service: IBKRStreamingService, manifest: dict):
+    """Follow IB's front-month roll for every future not pinned to an expiry.
+
+    ContFuture is resolved once, at subscribe. While the stream pumped nothing, it
+    reconnected every ~30 min and so re-resolved (rolled) as a side effect; a stream that
+    stays connected for days must re-resolve explicitly, or an expired contract (the
+    monthly 10Y/2YY on their last business day) goes silent until the weekend reconnect.
+    Each symbol is checked on its own: one that cannot be qualified must not block the rest.
+    """
+    try:
+        from ib_async import util as _ib_util
+    except ImportError:
+        from ib_insync import util as _ib_util
+
+    for sym, spec in INSTRUMENTS.items():
+        if spec.contract_type != "future":
+            continue
+        pin = manifest.get(sym) or {}
+        if pin.get("expiry") and not pin.get("reset_to_front_month"):
+            continue  # user-pinned expiry: leave it alone
+        current = service._contracts.get(sym)
+        try:
+            # Bounded: IB.RequestTimeout is 0 (wait forever) and this thread alone pumps
+            # the socket, writes JSON/CSV and runs the stale check.
+            qualified = _ib_util.run(service.ib.qualifyContractsAsync(spec.create_contract()),
+                                     timeout=ROLL_QUALIFY_TIMEOUT)
+            # ib_async 2.x returns [None] (does not raise) for a contract it cannot qualify
+            new = qualified[0] if qualified else None
+            if new is None or not getattr(new, "conId", 0):
+                logger.warning(f"Roll check: could not qualify {sym}; keeping "
+                               f"{getattr(current, 'localSymbol', None)}")
+                continue
+            if current is not None and new.conId == getattr(current, "conId", None):
+                continue
+            result = service._do_swap_subscription(sym, None)
+            if result.get("ok"):
+                logger.info(f"Rolled {sym}: {result.get('old')} -> {result.get('new')}")
+            else:
+                logger.warning(f"Roll of {sym} failed: {result.get('error')}")
+        except Exception as e:
+            logger.warning(f"Roll check failed for {sym}: {e!r}")
 
 
 # ── CSV write ────────────────────────────────────────────────────────────
@@ -389,16 +436,17 @@ def _run_main_loop(service: IBKRStreamingService, args=None):
     last_json = 0.0
     last_csv = 0.0
 
-    # Start IB event loop in daemon thread
-    ib_thread = threading.Thread(
-        target=service.run_event_loop,
-        args=(_shutdown,),
-        daemon=True,
-    )
-    ib_thread.start()
-
-    # Wait a few seconds for initial quotes to arrive
-    time.sleep(3)
+    # The IB socket belongs to the asyncio loop of the thread that connected - this one -
+    # and ticks are only read while THAT loop runs, so the pumping happens here via
+    # ib.sleep(). It used to happen in a daemon thread, where ib.sleep() spins a fresh,
+    # socket-less loop (ib_async's getLoop creates one per thread): ticks then arrived
+    # only while this thread happened to run the loop (connect, qualify, the contracts
+    # refresh), i.e. one snapshot per 30-min stale-reconnect, repeated in between.
+    try:
+        service.ib.sleep(3)  # let initial quotes arrive
+    except Exception as e:
+        logger.error(f"IB event loop error: {e}")
+        return
 
     logger.info("Entering main loop (JSON every %ds, CSV every %ds)",
                 IBKR_JSON_INTERVAL, IBKR_CSV_INTERVAL)
@@ -463,6 +511,10 @@ def _run_main_loop(service: IBKRStreamingService, args=None):
                 _refresh_available_contracts(service, args)
             except Exception as e:
                 logger.warning(f"Contracts refresh error: {e}")
+            try:
+                _roll_front_months(service, last_manifest)
+            except Exception as e:
+                logger.warning(f"Roll check error: {e}")
 
         # Stale-subscription check every 60s: find the most recent tick across
         # all instruments. If ALL are stale (>15 min old), reconnect.
@@ -488,7 +540,13 @@ def _run_main_loop(service: IBKRStreamingService, args=None):
                     )
                     break  # Exit main loop -> outer loop reconnects
 
-        _shutdown.wait(timeout=0.5)
+        try:
+            service.ib.sleep(0.5)  # pump the IB socket: ticks and request replies
+            service._drain_request_queue()
+            service.retry_rejected_subscriptions()  # e.g. USDJPY after Error 101
+        except Exception as e:  # e.g. ConnectionError("Socket disconnect") -> reconnect
+            logger.error(f"IB event loop error: {e}")
+            break
 
     # Write final stopped status
     try:

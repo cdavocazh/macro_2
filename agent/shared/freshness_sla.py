@@ -91,9 +91,11 @@ INDICATOR_FREQUENCY = {
 # IBKR symbols expected to have fresh ticks during US trading hours
 IBKR_LIVE_SYMBOLS = {
     "ES", "NQ", "RTY", "GC", "SI", "HG", "CL", "NG",
-    "ZN", "ZB", "ZF", "ZT", "10Y", "2YY",
+    "ZN", "ZB", "ZF", "ZT", "10Y",
     "EURUSD", "USDJPY",
     # VIX: index, only ticks during regular session
+    # 2YY: retired from the stream 2026-09-21 (see ibkr_streaming.INSTRUMENTS). CME Micro 2Y
+    # Yield barely trades: a price on only 5 of 132 streamed days since 2026-04-14.
 }
 
 

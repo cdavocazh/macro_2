@@ -108,7 +108,10 @@ INSTRUMENTS: dict[str, InstrumentSpec] = {
     "ZT":  InstrumentSpec("ZT",  "2-Year T-Note",        "future", "CBOT",  None,               "zt_price",         2000),
     # Micro treasury yield (quote directly in yield terms)
     "10Y": InstrumentSpec("10Y", "Micro 10Y Yield",      "future", "CBOT",  None,               "micro_10y_yield",  1000),
-    "2YY": InstrumentSpec("2YY", "Micro 2Y Yield",       "future", "CBOT",  None,               "micro_2y_yield",   2000),
+    # 2YY retired 2026-09-21: it printed on 5 of 132 streamed days, the prints sat ~25bp off
+    # FRED DGS2, and it held one of the account's market-data lines while Error 101 (max
+    # tickers) was blanking USDJPY. Use us_2y_yield.csv (FRED DGS2) for the 2Y. Restore:
+    # "2YY": InstrumentSpec("2YY", "Micro 2Y Yield", "future", "CBOT", None, "micro_2y_yield", 2000),
     # VIX index
     "VIX": InstrumentSpec("VIX", "CBOE VIX Index",       "index",  "CBOE",  None,               "vix_ibkr"),
     # FX
@@ -231,8 +234,9 @@ class StreamingQuote:
 class IBKRStreamingService:
     """Manages IBKR connection, contract streaming, and in-memory quotes.
 
-    Thread-safe: the IB event loop runs in a daemon thread; the main thread
-    reads snapshots and writes JSON/CSV via get_snapshot().
+    The IB socket is read only while the asyncio loop of the thread that called
+    connect() runs, so that thread must pump it (ib.sleep) - ibkr_fast_extract does
+    this in its main loop. get_snapshot() is lock-protected for other readers.
     """
 
     GENERIC_TICK_LIST = "106,411,588"  # IV, HV, Futures OI
@@ -258,6 +262,12 @@ class IBKRStreamingService:
         # Only the IB thread may touch self.ib for stateful calls.
         import queue as _queue
         self._request_queue: _queue.Queue = _queue.Queue()
+
+        # Subscriptions IB rejected with a transient error, re-requested by
+        # retry_rejected_subscriptions(): symbol -> monotonic time of next retry.
+        self._retry_at: dict[str, float] = {}
+        self._retry_attempts: dict[str, int] = {}
+        self.ib.errorEvent += self._on_ib_error
 
     # ── Connection ────────────────────────────────────────────────────
 
@@ -413,8 +423,12 @@ class IBKRStreamingService:
             if ask is not None:
                 quote.ask = ask
             if last is not None:
+                # ticker.last is re-delivered unchanged with every bid/ask tick, so an update
+                # is a NEW trade only when the price moved or the day's volume grew (a print
+                # at the same price). Stamping every update kept a frozen last "fresh".
+                if last != quote.last or (volume is not None and volume != quote.volume):
+                    quote.last_price_time = datetime.now()
                 quote.last = last
-                quote.last_price_time = datetime.now()
             if volume is not None:
                 quote.volume = volume
             if open_price is not None:
@@ -451,6 +465,62 @@ class IBKRStreamingService:
 
             quote.tick_count += 1
             quote.last_update = datetime.now()
+            self._retry_attempts.pop(symbol, None)  # data flows: reset the retry backoff
+
+    # ── Transient subscription rejects ────────────────────────────────
+    # 101 "Max number of tickers has been reached": the account's market-data lines
+    # are shared with the other IB jobs, so a line frees up again. The ~30-min stale
+    # reconnect used to re-request as a side effect; a long-lived connection must retry.
+    RETRY_ERROR_CODES = frozenset({101})
+    RETRY_BASE_SECS = 60.0
+    RETRY_MAX_SECS = 900.0
+
+    def _on_ib_error(self, reqId, errorCode, errorString, contract=None) -> None:
+        """ib.errorEvent handler: schedule a re-request for a transiently rejected symbol."""
+        if errorCode not in self.RETRY_ERROR_CODES or contract is None:
+            return
+        con_id = getattr(contract, "conId", None)
+        for sym, c in self._contracts.items():
+            if con_id and getattr(c, "conId", None) == con_id:
+                attempts = self._retry_attempts.get(sym, 0)
+                delay = min(self.RETRY_BASE_SECS * 2 ** attempts, self.RETRY_MAX_SECS)
+                self._retry_attempts[sym] = attempts + 1
+                self._retry_at[sym] = time.monotonic() + delay
+                logger.warning(f"{sym}: market data rejected (Error {errorCode}); "
+                               f"re-requesting in {delay:.0f}s")
+                return
+
+    def retry_rejected_subscriptions(self) -> list:
+        """Re-request market data for symbols whose retry time has come.
+
+        Call on the thread that pumps the IB loop. Returns the symbols re-requested.
+        """
+        now = time.monotonic()
+        retried = []
+        for sym, due in list(self._retry_at.items()):
+            if now < due:
+                continue
+            del self._retry_at[sym]
+            contract = self._contracts.get(sym)
+            if contract is None:
+                continue
+            try:
+                self.ib.cancelMktData(contract)  # drop the rejected reqId
+            except Exception:
+                pass
+            try:
+                ticker = self.ib.reqMktData(contract, genericTickList=self.GENERIC_TICK_LIST)
+                # ib_async keeps one Ticker per contract, so the handler attached at
+                # subscribe is usually still on it; attach only to a new Ticker.
+                if ticker is not self._tickers.get(sym):
+                    ticker.updateEvent += (lambda t, s=sym: self._on_ticker_update(t, s))
+                    self._tickers[sym] = ticker
+                logger.info(f"Re-requested market data for {sym} "
+                            f"(attempt {self._retry_attempts.get(sym, 1)})")
+                retried.append(sym)
+            except Exception as e:
+                logger.warning(f"Re-request of {sym} failed: {e}")
+        return retried
 
     def stop_streaming(self):
         """Cancel all market data subscriptions."""
@@ -579,6 +649,7 @@ class IBKRStreamingService:
             except Exception as e:
                 logger.warning(f"Cancel old {symbol} failed: {e}")
         self._tickers.pop(symbol, None)
+        self._retry_at.pop(symbol, None)  # superseded by the new subscription
 
         # Subscribe new
         try:
@@ -716,10 +787,11 @@ class IBKRStreamingService:
         except Exception as e:
             logger.error(f"[queue] drain error: {e}", exc_info=True)
 
-    # ── IB event loop (runs in daemon thread) ─────────────────────────
+    # ── IB event loop (must run on the thread that connected) ─────────
 
     def run_event_loop(self, stop_event: threading.Event):
-        """Blocking IB event loop. Call from a daemon thread.
+        """Blocking IB event loop. Call ONLY from the thread that called connect():
+        ib.sleep() in any other thread runs a new, socket-less loop and receives nothing.
 
         Processes IB events (ticker updates) via ib.sleep() AND drains
         the cross-thread request queue.
