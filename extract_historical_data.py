@@ -2745,6 +2745,58 @@ def extract_equity_risk_premium():
         return None
 
 
+# ── Macro-release consensus + surprises (data_extractors/consensus_extractors.py) ──
+# ForexFactory's weekly calendar (sell-side forecast/previous, current week only) and Kalshi's threshold
+# ladders (market-implied median) are snapshotted into macro_consensus.csv; macro_surprises.csv then
+# scores every passed release against its FRED first-release actual. See the module docstring.
+
+def extract_macro_consensus():
+    """ForexFactory + Kalshi consensus snapshot -> macro_consensus.csv (the day's last snapshot per release wins)."""
+    print("\n📊 Extracting macro-release consensus (ForexFactory + Kalshi)...")
+    try:
+        from data_extractors import consensus_extractors as cx
+        res = cx.run_snapshot(data_dir=OUTPUT_DIR)
+        if res['status'] == 'failed':
+            print(f"  ❌ Error: every consensus source failed: {'; '.join(res['failures'])}")
+            return None
+        declare_columns(cx.CONSENSUS_FILE, **cx.CONSENSUS_CONTRACT)
+        return {'indicator': 'Macro Consensus (FF+Kalshi)', 'last_date': res['asof'], 'rows': res['rows']}
+    except Exception as e:
+        print(f"  ❌ Error: {type(e).__name__}: {e}")
+        return None
+
+
+def extract_macro_surprises():
+    """macro_consensus.csv + FRED first releases -> macro_surprises.csv (releases of the last 60 days refreshed)."""
+    print("\n📊 Extracting macro-release surprises (FRED first-release actuals)...")
+    try:
+        from datetime import timedelta
+        from data_extractors import consensus_extractors as cx
+        since = datetime.now(timezone.utc).date() - timedelta(days=cx.SURPRISE_LOOKBACK_DAYS)
+        res = cx.run_surprises(data_dir=OUTPUT_DIR, since=since)
+        if res['status'] == 'failed':
+            print(f"  ❌ Error: FRED failed for every pending release: {'; '.join(res['failures'])}")
+            return None
+        declare_columns(cx.SURPRISES_FILE, **cx.SURPRISES_CONTRACT)
+        return {'indicator': 'Macro Surprises', 'last_date': str(datetime.now(timezone.utc).date()),
+                'rows': res['rows']}
+    except Exception as e:
+        print(f"  ❌ Error: {type(e).__name__}: {e}")
+        return None
+
+
+def extract_futures_history():
+    """Append finished sessions to vx_cfe_curve / vx_front_ohlcv / ief_ohlcv / zn_futures_ohlcv."""
+    try:
+        from data_extractors import futures_history_extractors as fhx
+        # _run reads item['indicator'] outside any try: keep only well-formed result dicts
+        res = [r for r in (fhx.extract_futures_history(OUTPUT_DIR) or []) if isinstance(r, dict) and r.get('indicator')]
+        return res or None
+    except Exception as e:
+        print(f"  Error: futures history: {type(e).__name__}: {e}")
+        return None
+
+
 def extract_all_historical_data():
     """
     Extract all available historical data and save to CSV files.
@@ -2928,6 +2980,13 @@ def extract_all_historical_data():
     _run(extract_money_measures, 'money_measures')
     _run(extract_global_pmi_openbb, 'global_pmi')
     _run(extract_equity_risk_premium, 'equity_risk_premium')
+
+    # ── Macro-release consensus & surprises (ForexFactory + Kalshi; FRED first-release actuals) ──
+    _run(extract_macro_consensus, 'macro_consensus')
+    _run(extract_macro_surprises, 'macro_surprises')
+
+    # ── Tradable-instrument history for CC execution (VX CBOE, IEF, ZN=F; append-only) ──
+    _run(extract_futures_history, 'futures_history')
 
     # Create summary file
     create_summary_file(results)
