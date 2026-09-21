@@ -29,19 +29,34 @@ HL_PERPS = {
     # this dict on 2026-03-19 while hl_extract.py kept advertising it, so the
     # hl_xrp_* columns have been blank ever since; they refill by name.
     'XRP': {'key': 'xrp', 'name': 'XRP', 'category': 'crypto'},
-    # HIP-3 builder perps.  api_coin values verified against the per-dex
-    # metaAndAssetCtxs universes on 2026-08-30; xyz:SP500, xyz:NATGAS, xyz:COPPER
-    # and xyz:BRENTOIL never existed under those names, so the S&P/gas/copper
-    # entries now point at their real flx listings and Brent is dropped (no
-    # builder lists it).
+    # LINK, DOGE, AVAX and SUI went out in the same 2026-03-19 pruning as XRP (last
+    # hl_perps.csv value 2026-03-19 23:29 GMT+8, the row before hl_oil_* first
+    # appears), yet all four are still live in the unqualified universe with deep
+    # books, so their hl_*_price/funding/oi/volume_24h columns were blank for six
+    # months. Restored by name like XRP.
+    'LINK': {'key': 'link', 'name': 'Chainlink', 'category': 'crypto'},
+    'DOGE': {'key': 'doge', 'name': 'Dogecoin', 'category': 'crypto'},
+    'AVAX': {'key': 'avax', 'name': 'Avalanche', 'category': 'crypto'},
+    'SUI': {'key': 'sui', 'name': 'Sui', 'category': 'crypto'},
+    # HIP-3 builder perps, all on the xyz dex. The 2026-08-30 note here said
+    # xyz:SP500 / xyz:NATGAS / xyz:COPPER / xyz:BRENTOIL "never existed" and moved
+    # oil, S&P, gas and copper to flx listings. Wrong: the xyz markets have traded
+    # daily since Jan–Mar 2026 (2026-09-21: $75M-$157M 24h volume on BRENTOIL, SP500
+    # and CL), while flx:OIL / flx:USA500 / flx:GAS / flx:COPPER last traded on
+    # 2026-06-19/20. Every hl_oil/sp500/natgas/copper_hl price written since
+    # 2026-08-30 15:33 UTC is therefore one frozen number (76.4, 7435.0, 3.2429,
+    # 6.33) and Brent was dropped for nothing. xyz:CL is WTI (93.99 vs NYMEX CL
+    # 94.15 on 2026-09-21) and xyz:BRENTOIL is Brent (97.62 vs ICE 97.66).
     'OIL': {'key': 'oil', 'name': 'WTI Crude Oil', 'category': 'commodity',
-            'api_coin': 'flx:OIL'},
+            'api_coin': 'xyz:CL'},
+    'BRENTOIL': {'key': 'brentoil', 'name': 'Brent Crude', 'category': 'commodity',
+                 'api_coin': 'xyz:BRENTOIL'},
     'SP500': {'key': 'sp500', 'name': 'S&P 500', 'category': 'index',
-              'api_coin': 'flx:USA500'},
+              'api_coin': 'xyz:SP500'},
     'NATGAS': {'key': 'natgas', 'name': 'Natural Gas', 'category': 'commodity',
-               'api_coin': 'flx:GAS'},
+               'api_coin': 'xyz:NATGAS'},
     'COPPER': {'key': 'copper_hl', 'name': 'Copper', 'category': 'commodity',
-               'api_coin': 'flx:COPPER'},
+               'api_coin': 'xyz:COPPER'},
     'XYZ100': {'key': 'xyz100', 'name': 'Nasdaq 100', 'category': 'index',
                'api_coin': 'xyz:XYZ100'},
 }
@@ -60,14 +75,19 @@ HL_INTERVAL_LOOKBACK = {
 # ── HIP-3 spot stock tokens (Wagyu.xyz deployed) ─────────────────────────────
 # These are tokenized equities on Hyperliquid spot.
 # Spot pairs use @{index} naming; we map token index → ticker.
+#
+# Retired 2026-09-21: NVDA (token 408 has no spot pair at all), AAPL (@268), GOOGL
+# (@266) and MSFT (@289). None of them ever wrote a price of their own: until 0697893
+# each ticker read the context of whatever market sat at its list position (AAPL,
+# GOOGL and MSFT landed on mid-less markets, hence blank since 2026-03-26/27), and
+# since then the pairs are withheld as untraded (0 24h volume; $250 / $8.4k / $2.1k
+# traded in the 30 days to 2026-09-21, against stale mids). The five below are in the
+# same state (0 24h volume, SPY ~$11); whether to retire the whole Wagyu family or
+# move to the liquid xStock pairs (SPYX @703, QQQX @704, NVDAX @702) is still open.
 HL_SPOT_STOCKS = {
     'TSLA': {'index': 407, 'name': 'Tesla'},
-    'NVDA': {'index': 408, 'name': 'Nvidia'},
-    'AAPL': {'index': 413, 'name': 'Apple'},
-    'GOOGL': {'index': 412, 'name': 'Alphabet'},
     'AMZN': {'index': 421, 'name': 'Amazon'},
     'META': {'index': 422, 'name': 'Meta'},
-    'MSFT': {'index': 429, 'name': 'Microsoft'},
     'SPY': {'index': 420, 'name': 'S&P 500 ETF'},
     'QQQ': {'index': 426, 'name': 'Nasdaq 100 ETF'},
 }

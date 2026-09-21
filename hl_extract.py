@@ -121,11 +121,22 @@ def _append_to_csv(perps_data, spot_data):
     for hl_ticker, info in HL_PERPS.items():
         k = info['key']
         coin = perps_data.get(k, {})
-        if isinstance(coin, dict) and 'price' in coin:
-            row[f'hl_{k}_price'] = coin.get('price')
+        if not (isinstance(coin, dict) and 'price' in coin):
+            continue
+        # An abandoned listing (no OI, no 24h volume) quotes its last trade forever:
+        # flx:OIL wrote 76.4 into every row for three weeks. Leave the columns blank.
+        if coin.get('illiquid'):
+            continue
+        row[f'hl_{k}_price'] = coin.get('price')
+        # Funding, OI, volume and premium come from the asset context. If that fetch
+        # failed the extractor reports them as 0 (2026-09-19 08:36 wrote OI=0 and
+        # funding=0 for every coin); a context always carries an oracle price.
+        if (coin.get('oracle_price') or 0) > 0:
             row[f'hl_{k}_funding'] = coin.get('funding_rate')
             row[f'hl_{k}_oi'] = coin.get('open_interest')
             row[f'hl_{k}_volume_24h'] = coin.get('volume_24h')
+            # hl_*_premium was last written 2026-03-21; the file kept the columns.
+            row[f'hl_{k}_premium'] = coin.get('premium')
 
     if len(row) > 2:
         df = pd.DataFrame([row])
@@ -150,9 +161,13 @@ def run_hl_extraction(force=False, quiet=False, dry_run=False):
     start_time = time.time()
 
     if dry_run:
+        # Read from the registries: a hard-coded list here kept advertising XRP, LINK,
+        # DOGE, AVAX and SUI for six months after they were dropped from HL_PERPS.
+        from data_extractors.hyperliquid_extractor import HL_PERPS, HL_SPOT_STOCKS
         print("Hyperliquid extract: would fetch perps + HIP-3 spot stocks")
-        print("  Perps: BTC, ETH, SOL, PAXG, HYPE, XRP, LINK, DOGE, AVAX, SUI")
-        print("  HIP-3 Stocks: TSLA, NVDA, AAPL, GOOGL, AMZN, META, MSFT, SPY, QQQ")
+        print("  Perps: " + ", ".join(
+            f"{t} ({i['api_coin']})" if 'api_coin' in i else t for t, i in HL_PERPS.items()))
+        print("  HIP-3 Stocks: " + ", ".join(HL_SPOT_STOCKS))
         return
 
     if not _check_freshness(force):
@@ -191,8 +206,10 @@ def run_hl_extraction(force=False, quiet=False, dry_run=False):
     # Append to historical CSVs
     try:
         _append_to_csv(perps_data, spot_data)
-    except Exception:
-        pass  # CSV append is best-effort
+    except Exception as e:
+        # Best-effort, but never silent: a swallowed error here stops both CSVs
+        # without a trace in the journal.
+        print(f"  CSV append error: {type(e).__name__}: {e}")
 
     _update_freshness()
 
@@ -228,6 +245,10 @@ def main():
 
 if __name__ == '__main__':
     main()
-    # Force exit — library threads can prevent process termination (blocks launchd)
+    # Force exit — library threads can prevent process termination (blocks launchd).
+    # os._exit skips the stdio flush, and under systemd stdout is a pipe, so without
+    # this every line printed above was discarded (the journal showed none).
+    sys.stdout.flush()
+    sys.stderr.flush()
     import os
     os._exit(0)
