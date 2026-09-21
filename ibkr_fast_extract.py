@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from data_extractors.ibkr_streaming import (
     INSTRUMENTS,
+    RETIRED_COLUMNS,
     IBKRStreamingService,
     write_realtime_json,
 )
@@ -331,6 +332,50 @@ def _roll_front_months(service: IBKRStreamingService, manifest: dict):
             logger.warning(f"Roll check failed for {sym}: {e!r}")
 
 
+# ── Column contracts ─────────────────────────────────────────────────────
+
+# Instruments that stay in INSTRUMENTS (so they come back by themselves the day the data does)
+# but have no data now: their summary column is blank by design, not broken.
+UNAVAILABLE_COLUMNS = {
+    "vix_ibkr": "IB Error 354: no CBOE index market-data subscription (account decision pending)",
+}
+CONTRACT_WRITER = "ibkr_fast_extract (macro2-ibkr-stream)"
+
+
+def _column_contracts() -> list[dict]:
+    """declare_columns() kwargs for every CSV this daemon writes (pure; no IB connection).
+
+    The per-instrument files also get daily bars from extract_historical_data's yfinance
+    extractors, which write the same single column, so this contract covers both writers.
+    """
+    columns = [spec.csv_column for spec in INSTRUMENTS.values()]
+    unavailable = {c: r for c, r in UNAVAILABLE_COLUMNS.items() if c in columns}
+    active = [c for c in columns if c not in unavailable]
+    # A retired column that is back in INSTRUMENTS is simply active again.
+    retired = {c: dict(m) for c, m in RETIRED_COLUMNS.items() if c not in columns}
+    contracts = [dict(filename=SUMMARY_CSV, active=active, retired=retired,
+                      unavailable=unavailable, writer=CONTRACT_WRITER)]
+    for spec in INSTRUMENTS.values():
+        if spec.csv_file is None:
+            continue
+        col = spec.csv_column
+        contracts.append(dict(filename=spec.csv_file,
+                              active=[] if col in unavailable else [col],
+                              unavailable={col: unavailable[col]} if col in unavailable else {},
+                              writer=CONTRACT_WRITER))
+    return contracts
+
+
+def _declare_column_contracts():
+    """Refresh the column contracts; never raises (the stream matters more than its paperwork)."""
+    try:
+        from extract_historical_data import declare_columns
+        for kw in _column_contracts():
+            declare_columns(**kw)
+    except Exception as e:
+        logger.warning(f"Column contract declaration failed: {type(e).__name__}: {e}")
+
+
 # ── CSV write ────────────────────────────────────────────────────────────
 
 # The 'date' column must follow the convention of the daily bars already in each
@@ -418,6 +463,8 @@ def _write_csv_summary(service: IBKRStreamingService):
             append_to_csv(SUMMARY_CSV, df)
         except Exception as e:
             logger.warning(f"Summary CSV write failed: {e}")
+
+    _declare_column_contracts()   # re-stamped at most hourly
 
     if stale:
         logger.info(f"CSV snapshot: skipped {len(stale)} instrument(s) with a stale price: {','.join(stale)}")
@@ -609,6 +656,9 @@ def main():
 
     # ── Outer retry loop ─────────────────────────────────────────────
     while not _shutdown.is_set():
+        # Also while the gateway is down (2FA pending: one pass per hour): the contract says
+        # what this writer fills, and a live daemon keeps asserting it.
+        _declare_column_contracts()
         service = IBKRStreamingService(
             host=args.host,
             port=port,

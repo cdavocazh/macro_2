@@ -15,7 +15,7 @@ import stat
 import tempfile
 import pandas as pd
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 
@@ -119,6 +119,171 @@ def _atomic_to_csv(df, filepath):
         except OSError:
             pass
         raise
+
+
+# ── Column contracts ─────────────────────────────────────────────────────────
+# A header says which columns a file HAS, not which ones anyone still fills. On 2026-03-19 a
+# Hyperliquid registry edit stopped 16 hl_perps.csv columns; the header kept them, every new
+# row left them blank, and six months passed before anyone noticed, because the feed scanner
+# (CLI_OS/Agent_Orchestration/CC/backfill/data_guard.py) cannot tell a column that was retired
+# on purpose from one that broke. So each writer declares its columns next to the file.
+
+_DECLARE_REFRESH_SECS = 3600   # an unchanged contract is re-stamped at most hourly
+
+
+def _contract_path(filename):
+    """historical_data/[subdir/].<stem>.columns.json — the leading dot keeps it out of *.csv globs."""
+    d, base = os.path.split(filename)
+    return os.path.join(OUTPUT_DIR, d, f'.{os.path.splitext(base)[0]}.columns.json')
+
+
+def _atomic_write_text(path, text):
+    """Temp file + rename in the target directory, like _atomic_to_csv."""
+    d = os.path.dirname(path) or '.'
+    mode = stat.S_IMODE(os.stat(path).st_mode) if os.path.exists(path) else 0o644
+    fd, tmp = tempfile.mkstemp(prefix=f'.{os.path.basename(path)}.', suffix='.tmp', dir=d)
+    try:
+        with os.fdopen(fd, 'w') as fh:
+            fh.write(text)
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _names(value, what):
+    if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
+        raise TypeError(f"declare_columns: {what} must be a list of column names, got {type(value).__name__}")
+    for c in value:
+        if not isinstance(c, str) or not c.strip():
+            raise ValueError(f"declare_columns: {what} holds an empty or non-string column name: {c!r}")
+    dup = sorted({c for c in value if list(value).count(c) > 1})
+    if dup:
+        raise ValueError(f"declare_columns: {what} lists {dup} more than once")
+    return list(value)
+
+
+def _validate_contract(filename, active, retired, unavailable, writer):
+    """Normalised (active, retired, unavailable); raises TypeError/ValueError on misuse."""
+    if not isinstance(filename, str) or not filename.lower().endswith('.csv') or not os.path.basename(filename)[:-4]:
+        raise ValueError(f"declare_columns: filename must name a .csv file, got {filename!r}")
+    if not isinstance(writer, str):
+        raise TypeError("declare_columns: writer must be a string")
+    active = _names(active, 'active')
+    if retired is None:
+        retired = {}
+    if not isinstance(retired, dict):
+        raise TypeError("declare_columns: retired must be a dict {column: {'since': 'YYYY-MM-DD', 'reason': str}}")
+    out_retired = {}
+    latest = datetime.now(timezone.utc).date().toordinal() + 1      # one day of slack for timezones
+    for col, meta in retired.items():
+        _names([col], 'retired')
+        if not isinstance(meta, dict) or set(meta) != {'since', 'reason'}:
+            raise ValueError(f"declare_columns: retired[{col!r}] must be exactly {{'since': 'YYYY-MM-DD', "
+                             f"'reason': str}}, got {meta!r}")
+        since = meta['since']
+        try:
+            day = datetime.strptime(since, '%Y-%m-%d').date()
+        except (TypeError, ValueError):
+            day = None
+        if day is None or day.isoformat() != since:
+            raise ValueError(f"declare_columns: retired[{col!r}]['since'] must be a YYYY-MM-DD date, got {since!r}")
+        if day.toordinal() > latest:
+            raise ValueError(f"declare_columns: retired[{col!r}]['since'] {since} is in the future")
+        if not isinstance(meta['reason'], str) or not meta['reason'].strip():
+            raise ValueError(f"declare_columns: retired[{col!r}] needs a non-empty reason")
+        out_retired[col] = {'since': since, 'reason': meta['reason'].strip()}
+    if unavailable is None:
+        unavailable = {}
+    if not isinstance(unavailable, dict):
+        raise TypeError("declare_columns: unavailable must be a dict {column: reason}")
+    out_unavailable = {}
+    for col, reason in unavailable.items():
+        _names([col], 'unavailable')
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError(f"declare_columns: unavailable[{col!r}] needs a non-empty reason")
+        out_unavailable[col] = reason.strip()
+    a, r, u = set(active), set(out_retired), set(out_unavailable)
+    both = sorted((a & r) | (a & u) | (r & u))
+    if both:
+        raise ValueError(f"declare_columns: {both} declared in more than one of active/retired/unavailable")
+    return active, out_retired, out_unavailable
+
+
+def declare_columns(filename: str, active: list[str], retired: dict[str, dict] | None = None,
+                    unavailable: dict[str, str] | None = None, writer: str = "") -> None:
+    """Declare which columns of historical_data/<filename> this writer fills.
+
+    Writes historical_data/.<stem>.columns.json (atomically; the leading dot keeps it out of
+    *.csv globs), which the feed scanner (CLI_OS .../CC/backfill/data_guard.py feeds) reads:
+
+        {"file": "<name>.csv", "writer": "<writer>", "declared_at": "2026-09-21T08:00:00Z",
+         "active": [...], "retired": {col: {"since": "YYYY-MM-DD", "reason": str}},
+         "unavailable": {col: reason}}
+
+    Args:
+        filename: the CSV's name under historical_data/, exactly as passed to append_to_csv.
+        active: every value column this writer fills (timestamp/date may be listed or left out).
+            An active column left blank past the file's cadence is flagged, as before.
+        retired: columns the writer USED to fill and stopped on purpose, with the date it stopped
+            and why. Not flagged while blank; flagged ("written again") if a row dated after
+            `since` has a value.
+        unavailable: columns in the header that have no source (never had, or not now), where
+            blank IS the correct value, with the reason. Never flagged while blank - the scanner
+            prints the reason as a note so the pending decision stays visible - and flagged if
+            the newest rows carry a value anyway.
+        writer: who declares (module/function), shown when the contract goes stale.
+    Every header value column (all but timestamp/date) must be in exactly one list; one in none
+    is flagged as an orphan. A column may not appear in two lists.
+
+    Call it on every run, after the write (skip it on runs that fail). It is cheap: an
+    unchanged contract is re-stamped at most once per hour. Misuse (a bad `since`, an empty
+    reason, a column in two lists, a non-list `active`) raises ValueError/TypeError, so a
+    unit test that builds the contract catches it; I/O errors are printed and swallowed, so a
+    declaration never fails a collector run. The scanner flags a contract whose declared_at
+    falls well behind the file's newest row (the writer stopped declaring).
+
+    Example - a writer, right after its append_to_csv('hl_perps.csv', df) (column names and
+    reasons are illustrative, not a statement about which hl_perps columns are live):
+
+        declare_columns(
+            'hl_perps.csv',
+            active=[f'hl_{c}_{f}' for c in ('btc', 'eth') for f in ('price', 'funding', 'oi', 'volume_24h')],
+            retired={'hl_xyz_price': {'since': '2026-03-19', 'reason': 'XYZ perp delisted by Hyperliquid'}},
+            unavailable={'hl_btc_premium': 'not in the API response this writer uses'},
+            writer='hl_extract.py',
+        )
+
+    The IBKR daemon (ibkr_fast_extract._column_contracts) and extract_sp500_fundamentals*
+    are wired examples.
+    """
+    active, retired, unavailable = _validate_contract(filename, active, retired, unavailable, writer)
+    path = _contract_path(filename)
+    payload = {'file': os.path.basename(filename), 'writer': writer, 'declared_at': None,
+               'active': active, 'retired': retired, 'unavailable': unavailable}
+    try:
+        now = datetime.now(timezone.utc)
+        try:
+            with open(path) as fh:
+                prev = json.load(fh)
+        except (OSError, ValueError):
+            prev = None
+        if isinstance(prev, dict) and all(prev.get(k) == payload[k] for k in payload if k != 'declared_at'):
+            try:
+                stamped = datetime.strptime(prev.get('declared_at') or '', '%Y-%m-%dT%H:%M:%SZ')
+                age = (now - stamped.replace(tzinfo=timezone.utc)).total_seconds()
+            except (TypeError, ValueError):
+                age = None
+            if age is not None and 0 <= age < _DECLARE_REFRESH_SECS:
+                return
+        payload['declared_at'] = now.strftime('%Y-%m-%dT%H:%M:%SZ')
+        _atomic_write_text(path, json.dumps(payload, indent=1) + '\n')
+    except Exception as e:  # never let a declaration fail the run that wrote the data
+        print(f"  ⚠️  declare_columns({filename}): could not write {path}: {type(e).__name__}: {e}")
 
 
 def _parse_timestamps(series):
@@ -494,6 +659,27 @@ def extract_shiller_cape():
         return None
 
 
+# sp500_fundamentals.csv has two writers (extract_sp500_fundamentals, and the _expanded one
+# below); both declare the file's whole contract. The forward fields stay blank on purpose:
+# no free S&P 500 forward estimate exists (Yahoo publishes no forwardPE/forwardEps for SPY),
+# and the obvious back-fill, sp500_multiples.forward_pe, was trailing P/E in disguise.
+_SP500_FORWARD_REASON = ("no free S&P 500 forward estimate: Yahoo publishes no forwardPE/forwardEps for SPY and "
+                         "sp500_multiples.forward_pe is trailing P/E in disguise - blank is correct, do not "
+                         "back-fill (macro_2 QA_learnings 2026-09-16)")
+SP500_FUNDAMENTALS_CONTRACT = dict(
+    active=['pe_ratio_trailing', 'pb_ratio', 'earnings_yield', 'dividend_yield_pct', 'trailing_eps', 'spy_price'],
+    unavailable={c: _SP500_FORWARD_REASON for c in ('pe_ratio_forward', 'forward_earnings_yield', 'forward_eps')},
+    writer='extract_historical_data.extract_sp500_fundamentals(_expanded)',
+)
+
+
+def _declare_sp500_fundamentals():
+    try:
+        declare_columns('sp500_fundamentals.csv', **SP500_FUNDAMENTALS_CONTRACT)
+    except Exception as e:  # a contract bug must not cost the data write that already happened
+        print(f"  ⚠️  sp500_fundamentals column contract not declared: {type(e).__name__}: {e}")
+
+
 def extract_sp500_fundamentals():
     """Extract S&P 500 P/E and P/B ratios (snapshot only)."""
     print("\n📊 Extracting S&P 500 Fundamentals...")
@@ -514,6 +700,7 @@ def extract_sp500_fundamentals():
         }])
 
         append_to_csv('sp500_fundamentals.csv', df)
+        _declare_sp500_fundamentals()
 
         return {
             'indicator': 'S&P 500 P/E & P/B',
@@ -1963,6 +2150,7 @@ def extract_sp500_fundamentals_expanded():
             'spy_price': data.get('spy_price'),
         }])
         append_to_csv('sp500_fundamentals.csv', df)
+        _declare_sp500_fundamentals()
         return {'indicator': 'S&P 500 Expanded Fundamentals', 'last_date': df['date'].max(), 'rows': 1}
     except Exception as e:
         print(f"  ❌ Error: {str(e)}")

@@ -119,6 +119,17 @@ INSTRUMENTS: dict[str, InstrumentSpec] = {
     "USDJPY": InstrumentSpec("USDJPY", "USD/JPY",        "forex",  "IDEALPRO", "jpy.csv",       "jpy_rate"),
 }
 
+# Summary columns (ibkr_realtime_summary.csv) of instruments taken OUT of INSTRUMENTS: the
+# header keeps them, new rows leave them blank. The daemon declares them retired in the file's
+# column contract (ibkr_fast_extract._column_contracts), so the feed scanner reads the blank
+# as deliberate - and flags the column if a row dated after `since` has a value again.
+# Retiring an instrument: move its line out of INSTRUMENTS and add its csv_column here.
+RETIRED_COLUMNS: dict[str, dict] = {
+    "micro_2y_yield": {"since": "2026-09-21",
+                       "reason": "2YY retired from INSTRUMENTS: barely trades, prints ~25bp off DGS2; "
+                                 "use us_2y_yield.csv"},
+}
+
 
 # ── Quote storage ────────────────────────────────────────────────────────
 
