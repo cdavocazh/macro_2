@@ -193,3 +193,27 @@ Found by a feed-integrity scan from the CC trading pipeline (`Agent_Orchestratio
 - **Root cause:** yfinance `info` for SPY (an ETF) has trailing P/E and price but no forward P/E, trailing EPS or forward EPS.
 - **Fix:** trailing EPS = price / trailing P/E. Forward fields deliberately left empty (see Persistent Known Limitations).
 - **Not a defect:** `fed_funds_effective` flat at 3.63 since May is FRED `FEDFUNDS` (monthly average) with the Fed on hold — daily DFF 3.62–3.64 over the same period.
+
+#### `adp_employment` — two FRED series in one file (2026-09-21)
+- **Symptom:** scanner read the file as a weekly series 51 days stale; the monthly data was in fact current.
+- **Root cause:** 82e651f switched the extractor from weekly ADPWNUSNERSA to monthly ADPMNUSNERSA without migrating the file; `append_to_csv` merged the two.
+- **Fix:** monthly-only `adp_employment.csv` with a `series_id` on every row; weekly series in `adp_employment_weekly.csv` (FRED publishes it monthly, 6–11 weeks late). The writer asserts series id and date grid.
+- **QA agent implication:** a collector whose source series changes must migrate or relabel its file. Label rows with the source id and have the writer assert it.
+
+#### `earnings_calendar` — an unkeyed append log (2026-09-21)
+- **Root cause:** `date` held the REPORT date and there was no timestamp, so `append_to_csv` skipped de-duplication.
+- **Fix:** snapshot log `timestamp,date,symbol,report_date,source` keyed (as-of day, symbol).
+- **QA agent implication:** `append_to_csv` silently skips de-duplication when the frame has no timestamp column — multi-row-per-day writers must pass `subset=`. A `date` column must mean the observation date; store event dates under their own name.
+
+#### IBKR stream — a dead event-loop pump (2026-09-21)
+- **Symptom:** a burst of ticks right after every (re)subscribe, then values frozen until the next ~30-min stale-reconnect; 84% of ES rows in US hours repeated the previous row.
+- **Root cause:** `ib.sleep()` ran on a daemon thread; ib_async's `getLoop` gave that thread a fresh, socket-less event loop.
+- **QA agent implication:** an asyncio / ib_async connection must be pumped by the thread that created it. And once a long-lived connection replaces periodic reconnects, anything the reconnect used to redo as a side effect (contract roll, re-subscribing after transient rejects) needs its own explicit mechanism.
+
+#### Hyperliquid — dead and frozen columns nobody saw (2026-09-21)
+- **Symptom:** 31 hl_perps columns blank for up to six months; 4 builder-perp columns frozen at one value for 5,626 rows.
+- **Root cause:** a registry edit removed coins while the CSV header kept their columns; a later edit pointed builder perps at listings that no longer traded, and the writer ignored the extractor's own `illiquid` flag.
+- **QA agent implication:** a blank column is only a symptom. Look for header columns no writer claims (orphans) and for columns frozen at one value, not just for old blank ones. Registries duplicated across files (a dry-run string, the dashboard relay) drift apart silently.
+
+#### Column contracts (2026-09-21)
+- Writers declare their columns with `declare_columns()` → `historical_data/.<stem>.columns.json`. When retiring a column, move it to the writer's RETIRED registry with `since` and `reason` rather than just deleting it from the registry — that is what stops the scanner reporting a deliberate blank as a broken feed, and what makes a column that silently stops (an orphan) visible on the first scan.
