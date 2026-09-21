@@ -132,7 +132,8 @@ def _parse_timestamps(series):
     return parsed.dt.tz_localize(None)
 
 
-def append_to_csv(filename, new_data, timestamp_col='timestamp', replace_daily_dates=False, subset=None):
+def append_to_csv(filename, new_data, timestamp_col='timestamp', replace_daily_dates=False, subset=None,
+                  guard=None, sort_by=None):
     """
     Append new data to CSV file, avoiding duplicates.
 
@@ -157,6 +158,12 @@ def append_to_csv(filename, new_data, timestamp_col='timestamp', replace_daily_d
             midnight, 04:00/05:00) was otherwise kept twice — the source of the
             10Y/2Y/VIX same-date duplicates. Intraday rows (IBKR 5-minute
             snapshots) are never touched.
+        guard: optional callable(existing_df_or_None, new_df) -> new_df, run under the lock
+            before the merge. It returns the rows that may be written, or raises to abort
+            the write and leave the file untouched — the hook a collector uses to refuse
+            mixing a second series or schema into a file (see _series_guard).
+        sort_by: columns to order the result by (default [timestamp_col]). The sort is
+            stable, so rows tied on these keep their order.
     """
     filepath = os.path.join(OUTPUT_DIR, filename)
 
@@ -175,6 +182,9 @@ def append_to_csv(filename, new_data, timestamp_col='timestamp', replace_daily_d
             except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
                 print(f"  ⚠️  Existing {filename} unreadable ({type(e).__name__}); rewriting fresh")
                 existing_data = None
+
+        if guard is not None:
+            new_data = guard(existing_data, new_data)
 
         if existing_data is not None:
             # Combine and remove duplicates based on timestamp
@@ -200,7 +210,10 @@ def append_to_csv(filename, new_data, timestamp_col='timestamp', replace_daily_d
                     print(f"  ⚠️  {filename}: dropped {int(unparseable.sum())} row(s) with an unparseable timestamp")
                     combined = combined[~unparseable]
                 combined = combined.drop_duplicates(subset=subset or [timestamp_col], keep='last')
-                combined = combined.sort_values(timestamp_col)
+                if sort_by:
+                    combined = combined.sort_values(list(sort_by), kind='stable')
+                else:
+                    combined = combined.sort_values(timestamp_col)
             else:
                 # If no timestamp column, just append
                 combined = pd.concat([existing_data, new_data], ignore_index=True)
@@ -210,6 +223,73 @@ def append_to_csv(filename, new_data, timestamp_col='timestamp', replace_daily_d
         # Save
         _atomic_to_csv(combined, filepath)
     print(f"  💾 Saved to: {filename} ({len(combined)} total rows)")
+
+
+_WEEKDAYS = {'MON': 0, 'TUE': 1, 'WED': 2, 'THU': 3, 'FRI': 4, 'SAT': 5, 'SUN': 6}
+
+
+def _off_cadence(timestamps, cadence):
+    """Mask of observations that do NOT sit on a series' date grid.
+
+    cadence: 'MS' — dated midnight on the 1st of the month (how FRED dates monthly series);
+             'W-<DAY>' — dated midnight on one weekday, e.g. 'W-SAT' for week-ending Saturday.
+    Explicit checks rather than pandas offset aliases, whose names changed between
+    pandas 2.2 and 3.0 (the VPS runs both). Unparseable timestamps count as off-grid.
+    """
+    ts = _parse_timestamps(timestamps)
+    if cadence == 'MS':
+        on = ts.dt.day == 1
+    elif cadence.startswith('W-') and cadence[2:] in _WEEKDAYS:
+        on = ts.dt.dayofweek == _WEEKDAYS[cadence[2:]]
+    else:
+        raise ValueError(f"unknown cadence {cadence!r}")
+    return ~(on & (ts == ts.dt.normalize()))
+
+
+def _series_guard(filename, series_id, cadence, timestamp_col='timestamp'):
+    """append_to_csv guard for a file that must hold exactly ONE source series.
+
+    adp_employment.csv held two FRED series for six months — weekly ADPWNUSNERSA rows to
+    2026-01-17, then monthly ADPMNUSNERSA rows after the fetch was switched — because
+    nothing tied the file to a series. Now every row carries its series_id, and:
+      * new rows off the series' date grid are rejected (warned, not written);
+      * the write is refused outright when the existing file holds another series,
+        rows off the grid, or no series_id at all (a file from before 2026-09-21 that
+        scripts/repair_adp_earnings_20260921.py has not split yet).
+    Refusing leaves the file untouched and surfaces as a failed indicator in the run.
+    """
+    def guard(existing, new):
+        off = _off_cadence(new[timestamp_col], cadence)
+        if off.any():
+            print(f"  ⚠️  {filename}: rejected {int(off.sum())} row(s) off the {series_id} {cadence} "
+                  f"date grid (first: {new.loc[off, timestamp_col].iloc[0]})")
+            new = new[~off]
+        if new.empty:
+            raise ValueError(f"{filename}: no rows on the {series_id} {cadence} grid — nothing written")
+        if existing is not None and len(existing):
+            if 'series_id' not in existing.columns:
+                raise ValueError(f"{filename} has no series_id column (pre-2026-09-21 layout) — "
+                                 f"run scripts/repair_adp_earnings_20260921.py, then with --apply; not written")
+            labels = existing['series_id'].where(existing['series_id'].notna(), '').astype(str).str.strip()
+            blank = labels == ''
+            if blank.any():
+                # Code from before 2026-09-21 rewrites the rows it fetched without a label
+                # (a stray old-code run, or a code-only rollback). The repair script
+                # re-derives the label from the date grid.
+                raise ValueError(f"{filename}: {int(blank.sum())} existing row(s) without a series_id "
+                                 f"(written by pre-2026-09-21 code) — run scripts/repair_adp_earnings_20260921.py, "
+                                 f"then with --apply; not written")
+            other = labels != series_id
+            if other.any():
+                raise ValueError(f"{filename}: {int(other.sum())} existing row(s) labelled "
+                                 f"{sorted(set(labels[other]))}, not {series_id} — refusing to mix series; "
+                                 f"inspect by hand")
+            off_existing = _off_cadence(existing[timestamp_col], cadence)
+            if off_existing.any():
+                raise ValueError(f"{filename}: {int(off_existing.sum())} existing row(s) off the "
+                                 f"{series_id} {cadence} grid — refusing to append; inspect by hand")
+        return new
+    return guard
 
 
 def extract_russell_2000_historical():
@@ -540,13 +620,22 @@ def extract_fred_indicators():
         return None
 
 
-def _extract_simple_series(name, fetch_fn, csv_filename, value_col):
-    """Generic extraction for indicators returning a 'historical' pd.Series."""
+def _extract_simple_series(name, fetch_fn, csv_filename, value_col, series_id=None, cadence=None):
+    """Generic extraction for indicators returning a 'historical' pd.Series.
+
+    series_id / cadence pin the file to one source series (see _series_guard): the fetch
+    must report that series_id, every row is labelled with it, and rows off the cadence's
+    date grid are rejected. Pass both or neither.
+    """
     print(f"\n📊 Extracting {name}...")
     try:
         data = fetch_fn()
         if isinstance(data, dict) and 'error' in data:
             print(f"  ❌ Error: {data['error']}")
+            return None
+        if series_id is not None and data.get('series_id') != series_id:
+            print(f"  ❌ {name}: fetch returned series {data.get('series_id')!r}, "
+                  f"{csv_filename} holds {series_id!r} — not written")
             return None
 
         hist = data.get('historical')
@@ -571,7 +660,11 @@ def _extract_simple_series(name, fetch_fn, csv_filename, value_col):
             print(f"  ⚠️  Unexpected historical type for {name}: {type(hist)}")
             return None
 
-        append_to_csv(csv_filename, df, replace_daily_dates=True)
+        guard = None
+        if series_id is not None:
+            df['series_id'] = series_id
+            guard = _series_guard(csv_filename, series_id, cadence)
+        append_to_csv(csv_filename, df, replace_daily_dates=True, guard=guard)
         return {
             'indicator': name,
             'last_date': df['date'].max(),
@@ -1598,10 +1691,31 @@ def extract_gold_silver_ratio():
 # ── FRED-based (new series in fred_extractors) ──────────────────────────────
 
 def extract_adp_employment():
-    """Extract ADP Employment (ADPWNUSNERSA) to CSV."""
+    """Extract ADP Employment, MONTHLY (FRED ADPMNUSNERSA), to adp_employment.csv.
+
+    Monthly is the canonical series for this file: it is the headline ADP report, it is
+    what every reader expects (discover_relationships resamples to month-end, the freshness
+    SLA treats unlisted keys as monthly) and it is the MORE timely of the two on FRED — the
+    weekly series is only updated with the monthly release, 46-74 days after its week.
+    """
     return _extract_simple_series(
         'ADP Employment', fred_extractors.get_adp_employment,
         'adp_employment.csv', 'adp_employment',
+        series_id=fred_extractors.ADP_MONTHLY_SERIES, cadence='MS',
+    )
+
+
+def extract_adp_employment_weekly():
+    """Extract ADP Employment, WEEKLY (FRED ADPWNUSNERSA), to adp_employment_weekly.csv.
+
+    Its own file so the two cadences never share one (they did until 2026-09-21). FRED
+    publishes it once a month with the monthly report, so its newest week is normally
+    6-11 weeks old — that is the source's lag, not a stalled collector.
+    """
+    return _extract_simple_series(
+        'ADP Employment (weekly)', fred_extractors.get_adp_employment_weekly,
+        'adp_employment_weekly.csv', 'adp_employment_weekly',
+        series_id=fred_extractors.ADP_WEEKLY_SERIES, cadence='W-SAT',
     )
 
 
@@ -2223,8 +2337,74 @@ def extract_global_cpi():
     )
 
 
+# earnings_calendar.csv is a point-in-time SNAPSHOT LOG, one row per (as-of date, symbol).
+EARNINGS_CALENDAR_COLUMNS = ['timestamp', 'date', 'symbol', 'report_date', 'source']
+
+
+def _earnings_source_label(source):
+    s = (source or '').lower()
+    return 'finviz' if 'finviz' in s else 'yfinance' if 'yfinance' in s else (source or 'unknown')
+
+
+def _earnings_snapshot(earnings, source, asof=None):
+    """One day's snapshot of upcoming report dates in the EARNINGS_CALENDAR_COLUMNS layout.
+
+    Accepts either provider's records: the yfinance fallback gives {symbol, date}, the
+    OpenBB/Finviz path gives {symbol, report_date, name, eps_consensus, ...}. Only the
+    (symbol, report date) pair is kept, so a provider switch cannot change the schema.
+    """
+    df = pd.DataFrame(earnings)
+    rd_col = next((c for c in ('report_date', 'date') if c in df.columns), None)
+    if rd_col is None or 'symbol' not in df.columns:
+        return pd.DataFrame(columns=EARNINGS_CALENDAR_COLUMNS)
+    day = pd.Timestamp(asof if asof is not None else datetime.now()).normalize()
+    symbol = df['symbol'].where(df['symbol'].notna(), '').astype(str).str.strip().str.upper()
+    # A report date is a calendar day: keep the YYYY-MM-DD part of whatever the provider
+    # sent (str, date, or a tz-aware Timestamp) instead of converting between zones.
+    report = pd.to_datetime(df[rd_col].astype(str).str.slice(0, 10), errors='coerce', format='%Y-%m-%d')
+    snap = pd.DataFrame({
+        'timestamp': day,
+        'date': day.strftime('%Y-%m-%d'),
+        'symbol': symbol,
+        'report_date': report.dt.strftime('%Y-%m-%d'),
+        'source': _earnings_source_label(source),
+    }, index=df.index)
+    snap = snap[(snap['symbol'] != '') & report.notna()]
+    # One row per symbol: the soonest date if a provider lists a symbol twice.
+    snap = snap.sort_values(['report_date', 'symbol'], kind='stable').drop_duplicates('symbol', keep='first')
+    return snap.sort_values('symbol', kind='stable')[EARNINGS_CALENDAR_COLUMNS].reset_index(drop=True)
+
+
+def _earnings_schema_guard(existing, new):
+    """Refuse to append to an earnings_calendar.csv in any other layout (never mix schemas)."""
+    if existing is not None and len(existing) and list(existing.columns) != EARNINGS_CALENDAR_COLUMNS:
+        # Two known causes, both handled by the repair script: the pre-2026-09-21 layout
+        # (symbol,date,extraction_date), or that layout's rows appended to this one by
+        # pre-2026-09-21 code (adds an extraction_date column). Anything else it refuses.
+        raise ValueError(f"earnings_calendar.csv has columns {list(existing.columns)}, expected "
+                         f"{EARNINGS_CALENDAR_COLUMNS} — run scripts/repair_adp_earnings_20260921.py "
+                         f"(dry run), then with --apply; not written")
+    return new
+
+
 def extract_earnings_calendar():
-    """Extract Upcoming Earnings Calendar to CSV."""
+    """Append today's snapshot of upcoming report dates to earnings_calendar.csv.
+
+    The file is a point-in-time SNAPSHOT LOG with key (date, symbol):
+        timestamp, date  the as-of day (midnight) the provider was asked
+        symbol           ticker
+        report_date      the next report date the provider gave that day
+        source           'yfinance' (Top-10 fallback) or 'finviz' (OpenBB)
+    A symbol repeats once per day while its report date firms up and rolls to the next
+    quarter; that history is the content. The 5 daily runs collapse to one row per
+    (date, symbol), last run wins. It is deliberately NOT one row per report: overwriting
+    an estimated date with the later confirmed one would leak hindsight into as-of reads.
+
+    Until 2026-09-21 each run appended its rows verbatim as `symbol,date,extraction_date`
+    with date = the REPORT date (append_to_csv skips de-duplication without a timestamp
+    column): 6,720 rows holding 1,470 (day, symbol) facts, which the feed scanner read as
+    1,036 conflicting repeat-dates and 671 out-of-order rows.
+    """
     print("\n📊 Extracting Earnings Calendar...")
     try:
         data = openbb_extractors.get_upcoming_earnings()
@@ -2232,12 +2412,15 @@ def extract_earnings_calendar():
             print(f"  ❌ Error: {data['error']}")
             return None
         earnings = data.get('earnings', [])
-        if earnings:
-            df = pd.DataFrame(earnings)
-            df['extraction_date'] = datetime.now().date()
-            append_to_csv('earnings_calendar.csv', df)
-            return {'indicator': 'Earnings Calendar', 'last_date': str(datetime.now().date()), 'rows': len(df)}
-        return None
+        if not earnings:
+            return None
+        snap = _earnings_snapshot(earnings, data.get('source', ''))
+        if snap.empty:
+            print("  ⚠️  No usable (symbol, report date) pairs in the earnings response — not written")
+            return None
+        append_to_csv('earnings_calendar.csv', snap, subset=['timestamp', 'symbol'],
+                      guard=_earnings_schema_guard, sort_by=['timestamp', 'symbol'])
+        return {'indicator': 'Earnings Calendar', 'last_date': str(snap['date'].iloc[0]), 'rows': len(snap)}
     except Exception as e:
         print(f"  ❌ Error: {str(e)}")
         return None
@@ -2497,6 +2680,7 @@ def extract_all_historical_data():
     _run(extract_xau_jpy, 'xau_jpy')
     _run(extract_gold_silver_ratio, 'gold_silver_ratio')
     _run(extract_adp_employment, 'adp_employment')
+    _run(extract_adp_employment_weekly, 'adp_employment_weekly')
     _run(extract_fed_balance_sheet, 'fed_balance_sheet')
     _run(extract_treasury_term_premia, 'treasury_term_premia')
 

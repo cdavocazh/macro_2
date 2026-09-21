@@ -1619,37 +1619,61 @@ def get_bbb_credit_spread():
 # Fidenza Macro Gap-Fill — Additional FRED Series
 # ──────────────────────────────────────────────────────────────────────────────
 
+# ADP publishes the same employment count at two cadences. They are different series
+# and must never share a file: adp_employment.csv held both for six months (weekly rows
+# to 2026-01-17, then monthly rows), so its cadence, its "latest change" and every
+# month-end resample silently changed meaning mid-series (QA_SOP Bug Log, 2026-09-21).
+ADP_MONTHLY_SERIES = 'ADPMNUSNERSA'   # dated the 1st of the month
+ADP_WEEKLY_SERIES = 'ADPWNUSNERSA'    # dated the week-ending Saturday
+
+
+def _get_adp_series(series_id, frequency, value_key, change_key):
+    fred = get_fred_client()
+    data = fred.get_series(series_id)
+    if data is None or data.empty:
+        return {'error': f'No ADP employment data available ({series_id})'}
+    data = data.dropna()
+    latest = float(data.iloc[-1])
+    prev = float(data.iloc[-2]) if len(data) >= 2 else latest
+    return {
+        value_key: latest,
+        change_key: round(latest - prev, 1),
+        'latest_date': data.index[-1].strftime('%Y-%m-%d'),
+        'units': 'Persons',
+        'source': f'FRED ({series_id})',
+        'series_id': series_id,
+        'frequency': frequency,
+        'historical': data,
+    }
+
+
 def get_adp_employment():
     """
-    Get ADP National Employment Report from FRED.
-    Series: ADPMNUSNERSA (ADP Nonfarm Private Payroll Employment, Monthly, SA)
-    Note: Previously used ADPWNUSNERSA (weekly), switched to monthly for consistency
-    with the standard ADP monthly report and more timely publication.
+    Get ADP National Employment Report from FRED — the MONTHLY headline series.
+    Series: ADPMNUSNERSA (Total Nonfarm Private Payroll Employment, Monthly, SA),
+    observations dated the 1st of the reference month and first released with the ADP
+    report early the following month (29-37 days after that date in 2025-26). This is the
+    series behind adp_employment.csv.
+
+    The weekly series is get_adp_employment_weekly(); it is NOT more timely: FRED updates
+    it once a month alongside this one, 46-74 days after the week it describes.
     """
     try:
-        fred = get_fred_client()
-        data = fred.get_series('ADPMNUSNERSA')
-
-        if data is None or data.empty:
-            return {'error': 'No ADP employment data available'}
-
-        data = data.dropna()
-        latest = float(data.iloc[-1])
-        latest_date = data.index[-1]
-
-        prev = float(data.iloc[-2]) if len(data) >= 2 else latest
-        change = round(latest - prev, 1)
-
-        return {
-            'adp_employment': latest,
-            'change_mom': change,
-            'latest_date': latest_date.strftime('%Y-%m-%d'),
-            'units': 'Persons',
-            'source': 'FRED (ADPMNUSNERSA)',
-            'historical': data,
-        }
+        return _get_adp_series(ADP_MONTHLY_SERIES, 'monthly', 'adp_employment', 'change_mom')
     except Exception as e:
         return {'error': f"Error fetching ADP employment: {str(e)}"}
+
+
+def get_adp_employment_weekly():
+    """
+    Get ADP weekly private employment from FRED.
+    Series: ADPWNUSNERSA (Total Nonfarm Private Payroll Employment, Weekly, SA),
+    observations dated the week-ending Saturday. Written to adp_employment_weekly.csv.
+    """
+    try:
+        return _get_adp_series(ADP_WEEKLY_SERIES, 'weekly', 'adp_employment_weekly', 'change_wow')
+    except Exception as e:
+        return {'error': f"Error fetching ADP weekly employment: {str(e)}"}
 
 
 def get_fed_balance_sheet():
