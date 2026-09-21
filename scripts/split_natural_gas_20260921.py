@@ -39,10 +39,50 @@ DST_COL = "natural_gas_futures"    # what ibkr_streaming.py writes from now on
 BACKUP_DIR = os.path.join(ROOT, ".deploy_backup_20260921", "data")
 
 
+def merge_summary_column() -> None:
+    """Fold the summary's legacy `natural_gas` column into `natural_gas_futures`.
+
+    ibkr_realtime_summary.csv is written from InstrumentSpec.csv_column, so renaming NG's
+    column started a new one and left the old header behind. Both hold the same NYMEX
+    front-month series, so merging is lossless — and it stops the old column reading as a
+    feed that silently died.
+    """
+    path = os.path.join(OUTPUT_DIR, "ibkr_realtime_summary.csv")
+    if not os.path.exists(path):
+        return
+    with _csv_lock(path):
+        d = pd.read_csv(path)
+        if "natural_gas" not in d.columns:
+            print("  ibkr_realtime_summary.csv: already merged")
+            return
+        if DST_COL not in d.columns:
+            d[DST_COL] = pd.NA
+        clash = int((d["natural_gas"].notna() & d[DST_COL].notna() & (d["natural_gas"] != d[DST_COL])).sum())
+        if clash:
+            raise SystemExit(f"ibkr_realtime_summary.csv: {clash} rows disagree between the two NG columns")
+        moved = int((d["natural_gas"].notna() & d[DST_COL].isna()).sum())
+        d[DST_COL] = d[DST_COL].where(d[DST_COL].notna(), d["natural_gas"])
+        d = d.drop(columns=["natural_gas"])
+        verb = "merged" if APPLY else "would merge"
+        print(f"  ibkr_realtime_summary.csv: {verb} {moved} legacy natural_gas value(s) into {DST_COL}")
+        if APPLY:
+            os.makedirs(BACKUP_DIR, exist_ok=True)
+            b = os.path.join(BACKUP_DIR, "ibkr_realtime_summary.csv")
+            if not os.path.exists(b):
+                shutil.copy2(path, b)
+            _atomic_to_csv(d, path)
+
+
+APPLY = False
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="write changes (default: report only)")
     a = ap.parse_args()
+    global APPLY
+    APPLY = a.apply
+    merge_summary_column()
     src_path = os.path.join(OUTPUT_DIR, SRC)
     dst_path = os.path.join(OUTPUT_DIR, DST)
     if not os.path.exists(src_path):
