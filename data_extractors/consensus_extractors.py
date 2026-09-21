@@ -165,10 +165,14 @@ SURPRISES_COLUMNS = ["timestamp", "date", "release_key", "release_time_utc", "ac
 CONSENSUS_CONTRACT = dict(
     active=["release_key", "release_time_utc", "source", "consensus", "previous", "unit", "detail"],
     writer="data_extractors/consensus_extractors.py snapshot",
+    key=["date", "release_key", "release_time_utc", "source"],
 )
 SURPRISES_CONTRACT = dict(
     active=[c for c in SURPRISES_COLUMNS if c not in ("timestamp", "date")],
     writer="data_extractors/consensus_extractors.py surprises",
+    key=["release_key", "release_time_utc"],
+    # ForexFactory snapshots start with this module's deploy; earlier releases are Kalshi-only.
+    active_since={"consensus_ff": "2026-09-22", "surprise_ff": "2026-09-22", "consensus_ff_asof": "2026-09-22"},
 )
 
 MIN_Z_HISTORY = 8                  # surprise_z needs at least this many earlier surprises

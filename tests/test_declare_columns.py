@@ -255,3 +255,42 @@ class ScannerRoundTripTest(_TmpOutput):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DeclareKeyAndActiveSinceTest(unittest.TestCase):
+    """key= and active_since= (2026-09-22): written only when given, validated."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.old = ehd.OUTPUT_DIR
+        ehd.OUTPUT_DIR = self.tmp
+
+    def tearDown(self):
+        ehd.OUTPUT_DIR = self.old
+
+    def side(self, name):
+        with open(os.path.join(self.tmp, f".{name}.columns.json")) as fh:
+            return json.load(fh)
+
+    def test_omitted_fields_are_not_written(self):
+        ehd.declare_columns("plain.csv", active=["a"])
+        self.assertNotIn("key", self.side("plain"))
+        self.assertNotIn("active_since", self.side("plain"))
+
+    def test_key_and_active_since_round_trip(self):
+        ehd.declare_columns("snap.csv", active=["k", "v"], key=["date", "k"], active_since={"v": "2026-09-22"})
+        s = self.side("snap")
+        self.assertEqual(s["key"], ["date", "k"])
+        self.assertEqual(s["active_since"], {"v": "2026-09-22"})
+
+    def test_key_must_be_active_or_date(self):
+        with self.assertRaises(ValueError):
+            ehd.declare_columns("x.csv", active=["a"], key=["b"])
+
+    def test_active_since_validation(self):
+        with self.assertRaises(ValueError):
+            ehd.declare_columns("x.csv", active=["a"], active_since={"b": "2026-01-01"})
+        with self.assertRaises(ValueError):
+            ehd.declare_columns("x.csv", active=["a"], active_since={"a": "2099-01-01"})
+        with self.assertRaises(ValueError):
+            ehd.declare_columns("x.csv", active=["a"], active_since={"a": "2026-1-1"})

@@ -167,8 +167,8 @@ def _names(value, what):
     return list(value)
 
 
-def _validate_contract(filename, active, retired, unavailable, writer):
-    """Normalised (active, retired, unavailable); raises TypeError/ValueError on misuse."""
+def _validate_contract(filename, active, retired, unavailable, writer, key=None, active_since=None):
+    """Normalised (active, retired, unavailable, key, active_since); raises TypeError/ValueError on misuse."""
     if not isinstance(filename, str) or not filename.lower().endswith('.csv') or not os.path.basename(filename)[:-4]:
         raise ValueError(f"declare_columns: filename must name a .csv file, got {filename!r}")
     if not isinstance(writer, str):
@@ -211,11 +211,35 @@ def _validate_contract(filename, active, retired, unavailable, writer):
     both = sorted((a & r) | (a & u) | (r & u))
     if both:
         raise ValueError(f"declare_columns: {both} declared in more than one of active/retired/unavailable")
-    return active, out_retired, out_unavailable
+    out_key = None
+    if key is not None:
+        out_key = _names(key, 'key')
+        bad = [c for c in out_key if c not in a and c not in ('date', 'timestamp')]
+        if bad:
+            raise ValueError(f"declare_columns: key column(s) {bad} must be active (or date/timestamp)")
+    out_since = None
+    if active_since is not None:
+        if not isinstance(active_since, dict):
+            raise TypeError("declare_columns: active_since must be a dict {column: 'YYYY-MM-DD'}")
+        out_since = {}
+        for col, since in active_since.items():
+            if col not in a:
+                raise ValueError(f"declare_columns: active_since[{col!r}]: column is not active")
+            try:
+                day = datetime.strptime(since, '%Y-%m-%d').date()
+            except (TypeError, ValueError):
+                day = None
+            if day is None or day.isoformat() != since:
+                raise ValueError(f"declare_columns: active_since[{col!r}] must be a YYYY-MM-DD date, got {since!r}")
+            if day.toordinal() > latest:
+                raise ValueError(f"declare_columns: active_since[{col!r}] {since} is in the future")
+            out_since[col] = since
+    return active, out_retired, out_unavailable, out_key, out_since
 
 
 def declare_columns(filename: str, active: list[str], retired: dict[str, dict] | None = None,
-                    unavailable: dict[str, str] | None = None, writer: str = "") -> None:
+                    unavailable: dict[str, str] | None = None, writer: str = "",
+                    key: list[str] | None = None, active_since: dict[str, str] | None = None) -> None:
     """Declare which columns of historical_data/<filename> this writer fills.
 
     Writes historical_data/.<stem>.columns.json (atomically; the leading dot keeps it out of
@@ -237,6 +261,13 @@ def declare_columns(filename: str, active: list[str], retired: dict[str, dict] |
             prints the reason as a note so the pending decision stays visible - and flagged if
             the newest rows carry a value anyway.
         writer: who declares (module/function), shown when the contract goes stale.
+        key: optional - the columns that identify a row (e.g. ['date', 'release_key', 'source']
+            for a snapshot log). The scanner then counts conflicts per declared key instead of
+            guessing a single-column panel key. Key columns must be active (or date/timestamp).
+        active_since: optional {column: 'YYYY-MM-DD'} - the day an active column started being
+            written; the scanner judges it blank only on rows from that day on (a source added
+            later is not "blank since never").
+    Both are written only when given, so existing contracts are unchanged.
     Every header value column (all but timestamp/date) must be in exactly one list; one in none
     is flagged as an orphan. A column may not appear in two lists.
 
@@ -261,10 +292,15 @@ def declare_columns(filename: str, active: list[str], retired: dict[str, dict] |
     The IBKR daemon (ibkr_fast_extract._column_contracts) and extract_sp500_fundamentals*
     are wired examples.
     """
-    active, retired, unavailable = _validate_contract(filename, active, retired, unavailable, writer)
+    active, retired, unavailable, key, active_since = _validate_contract(
+        filename, active, retired, unavailable, writer, key, active_since)
     path = _contract_path(filename)
     payload = {'file': os.path.basename(filename), 'writer': writer, 'declared_at': None,
                'active': active, 'retired': retired, 'unavailable': unavailable}
+    if key:
+        payload['key'] = key
+    if active_since:
+        payload['active_since'] = active_since
     try:
         now = datetime.now(timezone.utc)
         try:
