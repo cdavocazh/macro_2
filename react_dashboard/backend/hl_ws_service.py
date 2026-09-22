@@ -15,18 +15,45 @@ Rate limits (per Hyperliquid docs):
   - 10 WebSocket connections per IP
   - 1,000 subscriptions per IP
   - 2,000 messages/min across all WS
-  We use 1 connection + 2 subscriptions — well within limits.
+  We use 1 connection + 1 subscription — well within limits. The REST context cycle makes
+  one metaAndAssetCtxs call per dex (main + each builder dex in HL_PERPS) and one
+  spotMetaAndAssetCtxs call every ~10 s.
+
+Instruments and rules come from data_extractors/hyperliquid_extractor.py, the registry
+hl_extract.py writes the CSVs from: which perps and spot tickers exist (HL_PERPS,
+HL_SPOT_STOCKS), how funding is annualised and OI converted to USD, when a builder listing
+is illiquid (flagged, as in the cached indicator) and when a spot pair is untraded (not
+published). This module used to keep its own copies, which drifted: XRP/LINK/DOGE/AVAX/SUI
+missing, oil on the dead flx:OIL listing, retired spot tickers listed, untraded spot mids
+published as prices, and builder perps shown with 0 funding / 0 OI.
 """
 
 import asyncio
 import json
 import logging
-import time
-from datetime import datetime, timedelta, timezone
+import os
+import sys
+from datetime import datetime, timezone
 from typing import Dict, Optional, Set
 
 import websockets
 from websockets.exceptions import ConnectionClosed
+
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _PROJECT_ROOT not in sys.path:     # main.py already adds it; this covers a standalone import
+    sys.path.insert(0, _PROJECT_ROOT)
+
+from data_extractors.hyperliquid_extractor import (  # noqa: E402
+    HL_API_URL,
+    HL_PERPS as _HL_PERPS_REGISTRY,
+    HL_SPOT_STOCKS as _HL_SPOT_REGISTRY,
+    build_perp_entry,
+    context_loaded,
+    meta_ctx_payloads,
+    parse_meta_and_asset_ctxs,
+    spot_pairs_by_token,
+    spot_stock_entry,
+)
 
 logger = logging.getLogger("hl_ws_relay")
 
@@ -35,26 +62,21 @@ PING_INTERVAL = 50  # seconds (HL timeout is 60s)
 RECONNECT_BASE = 1.0
 RECONNECT_MAX = 60.0
 
-# Tracked perps (same as hyperliquid_extractor.py)
-HL_PERPS = {
-    'BTC': 'btc', 'ETH': 'eth', 'SOL': 'sol', 'PAXG': 'paxg',
-    'HYPE': 'hype',
-}
-# Builder-deployed perps not in allMids WebSocket — fetched via REST candles instead.
-BUILDER_PERPS = {
-    'flx:OIL': 'oil',
-    'xyz:SP500': 'sp500',
-    'xyz:NATGAS': 'natgas',
-    'xyz:COPPER': 'copper_hl',
-    'xyz:BRENTOIL': 'brentoil',
-    'xyz:XYZ100': 'xyz100',
-}
+# Views of the extractor registries, kept under the old names. Derived, never edited here.
+# Main-universe perps: prices stream over the allMids WebSocket channel.
+HL_PERPS = {t: info['key'] for t, info in _HL_PERPS_REGISTRY.items() if 'api_coin' not in info}
+# HIP-3 builder perps: absent from allMids; price, funding, OI and volume come from their
+# dex's metaAndAssetCtxs context (REST, every ~10 s).
+BUILDER_PERPS = {info['api_coin']: info['key'] for info in _HL_PERPS_REGISTRY.values() if 'api_coin' in info}
+# HIP-3 spot stocks: ticker -> token index.
+HL_SPOT_STOCKS = {t: info['index'] for t, info in _HL_SPOT_REGISTRY.items()}
 
-# HIP-3 spot stock token indices (same as hyperliquid_extractor.py)
-HL_SPOT_STOCKS = {
-    'TSLA': 407, 'NVDA': 408, 'AAPL': 413, 'GOOGL': 412,
-    'AMZN': 421, 'META': 422, 'MSFT': 429, 'SPY': 420, 'QQQ': 426,
-}
+# Fields of a perp entry the relay publishes (a subset of the extractor's entry).
+_PERP_FIELDS = ('price', 'change_1d', 'mark_price', 'oracle_price', 'funding_rate', 'funding_rate_1h',
+                'open_interest', 'volume_24h', 'premium', 'illiquid')
+# Context-derived fields: None (the dashboard shows N/A) until a context has loaded, rather
+# than 0 - the same rule hl_extract.py applies before writing them to hl_perps.csv.
+_CONTEXT_FIELDS = ('funding_rate', 'funding_rate_1h', 'open_interest', 'volume_24h', 'premium')
 
 
 class HyperliquidWSRelay:
@@ -80,13 +102,9 @@ class HyperliquidWSRelay:
         self.last_update: Optional[str] = None
 
         # Context data (from REST, refreshed periodically)
-        self._contexts: Dict = {}
-        self._spot_contexts: Dict = {}
+        self._contexts: Dict = {}          # coin (qualified for builder perps) -> parsed context
+        self._spot_contexts: Dict = {}     # token index -> (pair index, pair meta, pair context)
         self._context_task: Optional[asyncio.Task] = None
-
-        # Builder perps (not in allMids, fetched via REST candles)
-        self._builder_prices: Dict[str, float] = {}  # api_coin → price
-        self._builder_volumes: Dict[str, float] = {}  # api_coin → volume
 
     def add_client(self, queue: asyncio.Queue):
         """Register a dashboard client's message queue."""
@@ -114,108 +132,59 @@ class HyperliquidWSRelay:
         for q in dead:
             self._clients.discard(q)
 
+    def _ingest_perp_contexts(self, replies) -> None:
+        """Merge parsed metaAndAssetCtxs replies (main universe + builder dexes) into the cache.
+
+        A dex whose call failed keeps its previous contexts: only coins present in a reply
+        are replaced."""
+        merged = dict(self._contexts)
+        for raw in replies:
+            merged.update(parse_meta_and_asset_ctxs(raw))
+        self._contexts = merged
+
+    def _ingest_spot(self, raw) -> None:
+        """Cache the name-keyed spot pair contexts from one spotMetaAndAssetCtxs reply."""
+        if isinstance(raw, list) and len(raw) >= 2 and isinstance(raw[0], dict):
+            pairs = spot_pairs_by_token(raw[0].get('universe', []), raw[1] or [])
+            if pairs:
+                self._spot_contexts = pairs
+
     async def _fetch_contexts_rest(self):
         """
-        Periodically fetch full context data (funding, OI, volume) via REST.
-        allMids WebSocket only gives prices; contexts come from REST.
-        Runs every 5 seconds to keep funding/OI/volume fresh.
+        Periodically fetch full context data (funding, OI, volume, builder-perp mids) via REST.
+        allMids WebSocket only gives main-universe prices; contexts come from REST: one
+        metaAndAssetCtxs per dex (meta_ctx_payloads) and one spotMetaAndAssetCtxs per cycle.
         """
         import httpx
 
         while self._running:
             try:
                 async with httpx.AsyncClient(timeout=10) as client:
-                    # Perp contexts (1 call)
-                    try:
-                        resp = await client.post(
-                            "https://api.hyperliquid.xyz/info",
-                            json={"type": "metaAndAssetCtxs"},
-                        )
-                        if resp.status_code == 429:
-                            logger.debug("HL rate limited, backing off")
-                            await asyncio.sleep(30)
-                            continue
-                        raw = resp.json()
-                        if isinstance(raw, list) and len(raw) >= 2 and raw[0] is not None:
-                            meta = raw[0]
-                            ctxs = raw[1]
-                            universe = meta.get('universe', []) if isinstance(meta, dict) else []
-                            contexts = {}
-                            for i, asset in enumerate(universe):
-                                coin = asset.get('name', '')
-                                if i < len(ctxs) and ctxs[i] is not None:
-                                    ctx = ctxs[i]
-                                    contexts[coin] = {
-                                        'funding': ctx.get('funding', '0'),
-                                        'open_interest': ctx.get('openInterest', '0'),
-                                        'volume_24h': ctx.get('dayNtlVlm', '0'),
-                                        'mark_price': ctx.get('markPx', '0'),
-                                        'oracle_price': ctx.get('oraclePx', '0'),
-                                        'prev_day_px': ctx.get('prevDayPx', '0'),
-                                    }
-                            self._contexts = contexts
-                    except Exception:
-                        pass  # Keep using cached contexts
-
-                    await asyncio.sleep(0.3)  # Brief pause between API calls
-
-                    # Fetch builder perps (6 calls with spacing)
-                    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
-                    start_ms = int((datetime.now(timezone.utc) - timedelta(minutes=5)).timestamp() * 1000)
-                    for api_coin in BUILDER_PERPS:
+                    replies = []
+                    limited = False
+                    for payload in meta_ctx_payloads():
                         try:
-                            bp_resp = await client.post(
-                                "https://api.hyperliquid.xyz/info",
-                                json={
-                                    "type": "candleSnapshot",
-                                    "req": {
-                                        "coin": api_coin,
-                                        "interval": "1m",
-                                        "startTime": start_ms,
-                                        "endTime": now_ms,
-                                    }
-                                },
-                            )
-                            if bp_resp.status_code == 200:
-                                bp_candles = bp_resp.json()
-                                if bp_candles and isinstance(bp_candles, list) and len(bp_candles) > 0:
-                                    last = bp_candles[-1]
-                                    self._builder_prices[api_coin] = float(last['c'])
-                                    self._builder_volumes[api_coin] = float(last['v'])
-                            await asyncio.sleep(0.2)  # 200ms between candle requests
+                            resp = await client.post(HL_API_URL, json=payload)
+                            if resp.status_code == 429:
+                                limited = True
+                                break
+                            if resp.status_code == 200:
+                                replies.append(resp.json())
                         except Exception:
-                            pass
-
-                    await asyncio.sleep(0.3)
+                            pass  # keep this dex's cached contexts
+                        await asyncio.sleep(0.3)  # brief pause between API calls
+                    if replies:
+                        self._ingest_perp_contexts(replies)
+                    if limited:
+                        logger.debug("HL rate limited, backing off")
+                        await asyncio.sleep(30)
+                        continue
 
                     # Spot contexts (1 call)
                     try:
-                        resp2 = await client.post(
-                            "https://api.hyperliquid.xyz/info",
-                            json={"type": "spotMetaAndAssetCtxs"},
-                        )
+                        resp2 = await client.post(HL_API_URL, json={"type": "spotMetaAndAssetCtxs"})
                         if resp2.status_code == 200:
-                            raw2 = resp2.json()
-                            if isinstance(raw2, list) and len(raw2) >= 2 and raw2[0] is not None:
-                                spot_meta = raw2[0]
-                                if isinstance(spot_meta, dict):
-                                    tokens = spot_meta.get('tokens', [])
-                                    spot_universe = spot_meta.get('universe', [])
-                                    spot_ctxs = raw2[1] if raw2[1] is not None else []
-                                    # Key the context by the pair name the API supplies, not by
-                                    # list position: the universe is filtered (328 of 868) while
-                                    # ctxs is full, so ctxs[i] binds a ticker to an unrelated
-                                    # market from @72 onward. Fail closed on an unresolved name.
-                                    ctx_by_coin = {c.get('coin'): c for c in spot_ctxs if isinstance(c, dict)}
-                                    pair_for_token = {}
-                                    for u in spot_universe:
-                                        ctx = ctx_by_coin.get(u.get('name'))
-                                        if ctx is None:
-                                            continue
-                                        for ti in u.get('tokens', []):
-                                            if ti != 0:
-                                                pair_for_token[ti] = (u.get('index'), u, ctx)
-                                    self._spot_contexts = pair_for_token
+                            self._ingest_spot(resp2.json())
                     except Exception:
                         pass  # Keep using cached spot contexts
 
@@ -224,98 +193,61 @@ class HyperliquidWSRelay:
 
             await asyncio.sleep(10)  # 10s between full context cycles
 
+    def _perp_entry(self, hl_ticker: str, mids: Dict[str, str], now: str) -> Optional[Dict]:
+        """One published perp entry, or None when the extractor has no price for it."""
+        try:
+            entry = build_perp_entry(hl_ticker, mids, self._contexts)
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(entry, dict) or 'error' in entry or not entry.get('price'):
+            return None
+        out = {f: entry.get(f) for f in _PERP_FIELDS}
+        if not context_loaded(entry):
+            out.update({f: None for f in _CONTEXT_FIELDS})
+        if entry.get('illiquid'):
+            out['note'] = entry.get('note')
+        if 'api_coin' in _HL_PERPS_REGISTRY[hl_ticker]:
+            out['api_coin'] = entry.get('api_coin')
+        out['latest_date'] = now
+        return out
+
     def _build_perp_snapshot(self, mids: Dict[str, str]) -> Dict:
-        """Build perp data from allMids + cached contexts."""
+        """Build perp data for every HL_PERPS instrument from allMids + cached contexts.
+
+        Main-universe perps take their price from the allMids message; builder perps take
+        theirs from the dex context (they are not in allMids). An illiquid builder listing
+        (no OI, no 24h volume) is published with illiquid=True, exactly as the cached
+        indicator is, and the dashboard frames it as an inactive market."""
+        now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
         result = {}
-        for hl_ticker, key in HL_PERPS.items():
-            mid_str = mids.get(hl_ticker)
-            if mid_str is None:
-                continue
-            try:
-                price = float(mid_str)
-            except (ValueError, TypeError):
-                continue
-
-            ctx = self._contexts.get(hl_ticker, {})
-            funding_raw = float(ctx.get('funding', '0'))
-            # Hyperliquid funds HOURLY (24 events/day), not the 8h Binance convention.
-            funding_ann = funding_raw * 24 * 365 * 100
-            # openInterest is denominated in base coin units (dayNtlVlm is already
-            # notional USD), so convert before publishing — the UI renders it as "$M".
-            oi = float(ctx.get('open_interest', '0')) * price
-            vol = float(ctx.get('volume_24h', '0'))
-            mark = float(ctx.get('mark_price', '0'))
-            oracle = float(ctx.get('oracle_price', '0'))
-            prev = float(ctx.get('prev_day_px', '0'))
-
-            change_24h = ((price - prev) / prev * 100) if prev > 0 else 0.0
-            premium = ((mark - oracle) / oracle * 100) if oracle > 0 else 0.0
-
-            result[key] = {
-                'price': price,
-                'change_1d': round(change_24h, 2),
-                'mark_price': mark,
-                'oracle_price': oracle,
-                'funding_rate': round(funding_ann, 2),
-                'funding_rate_1h': round(funding_raw * 100, 6),
-                'open_interest': round(oi, 2),
-                'volume_24h': round(vol, 2),
-                'premium': round(premium, 4),
-                'latest_date': datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC'),
-            }
-
-        # Add builder-deployed perps (not in allMids)
-        for api_coin, key in BUILDER_PERPS.items():
-            price = self._builder_prices.get(api_coin)
-            if price:
-                result[key] = {
-                    'price': price,
-                    'change_1d': 0.0,
-                    'mark_price': price,
-                    'oracle_price': 0.0,
-                    'funding_rate': 0.0,
-                    'funding_rate_1h': 0.0,
-                    'open_interest': 0.0,
-                    'volume_24h': self._builder_volumes.get(api_coin, 0.0),
-                    'premium': 0.0,
-                    'latest_date': datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC'),
-                    'api_coin': api_coin,
-                }
-
-        result['latest_date'] = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+        for hl_ticker, info in _HL_PERPS_REGISTRY.items():
+            entry = self._perp_entry(hl_ticker, mids, now)
+            if entry is not None:
+                result[info['key']] = entry
+        result['latest_date'] = now
         result['source'] = 'Hyperliquid WS'
         return result
 
     def _build_spot_snapshot(self) -> Dict:
-        """Build spot stock data from cached spot contexts."""
+        """Build spot stock data from cached spot contexts. Untraded pairs are not published."""
+        now = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
         result = {}
-        for ticker, idx in HL_SPOT_STOCKS.items():
-            key = ticker.lower()
-            pair_info = self._spot_contexts.get(idx)
-            if pair_info is None:
-                continue
-            _, pair_meta, ctx = pair_info
-            mid_px = ctx.get('midPx')
-            if mid_px is None or mid_px == 'N/A':
-                continue
+        for ticker, info in _HL_SPOT_REGISTRY.items():
             try:
-                price = float(mid_px)
-            except (ValueError, TypeError):
+                entry = spot_stock_entry(ticker, info, self._spot_contexts.get(info['index']))
+            except (TypeError, ValueError):
                 continue
-
-            vol = float(ctx.get('dayNtlVlm', '0'))
-            prev = float(ctx.get('prevDayPx', '0')) if ctx.get('prevDayPx') else 0
-            change = ((price - prev) / prev * 100) if prev > 0 else 0.0
-
-            result[key] = {
-                'price': price,
-                'change_1d': round(change, 2),
-                'volume_24h': round(vol, 2),
-                'latest_date': datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC'),
+            if 'price' not in entry:
+                continue          # pair missing, no mid, or untraded (stale mid withheld)
+            result[ticker.lower()] = {
+                'price': entry['price'],
+                'change_1d': entry.get('change_1d', 0.0),
+                'volume_24h': entry.get('volume_24h'),
+                'latest_date': now,
                 'source': 'Hyperliquid HIP-3 WS',
             }
 
-        result['latest_date'] = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+        result['latest_date'] = now
         result['source'] = 'Hyperliquid HIP-3 WS'
         return result
 

@@ -6,13 +6,22 @@ Only calls the Hyperliquid REST API (2-3 HTTP calls, ~0.5s total).
 Updates the shared cache via partial merge (only keys 84/85).
 Crypto markets are 24/7, so this runs continuously.
 
+Appends one row per run to historical_data/hl_perps.csv and hl_spot_stocks.csv, then
+declares each file's column contract (historical_data/.<stem>.columns.json, read by the CC
+feed scanner) from the registries in data_extractors/hyperliquid_extractor.py
+(hl_column_contracts): active = what this writer emits, retired = HL_*_RETIRED.
+
+Timestamps are naive LOCAL time (datetime.now()): UTC on the VPS, GMT+8 on the Mac. Never
+copy a Mac-written hl_*.csv onto the VPS - that is how the files got their GMT+8 prefix
+(scripts/repair_hl_20260921.py, repair 3).
+
 Usage:
     python hl_extract.py             # normal run
     python hl_extract.py --cron      # quiet mode for launchd logs
     python hl_extract.py --force     # ignore freshness guard
     python hl_extract.py --dry-run   # show what would be extracted
 
-Schedule: com.macro2.hl-extract.plist (every 60 seconds)
+Schedule: VPS macro-hl-extract.timer (every 5 min); Mac com.macro2.hl-extract.plist (every 60 s)
 """
 
 import argparse
@@ -108,15 +117,11 @@ def _partial_cache_update(perps_data, spot_data):
         return False
 
 
-def _append_to_csv(perps_data, spot_data):
-    """Append snapshot to historical CSVs."""
-    import pandas as pd
-    from extract_historical_data import append_to_csv
-    from data_extractors.hyperliquid_extractor import HL_PERPS, HL_SPOT_STOCKS
+def _perp_row(perps_data, ts):
+    """The hl_perps.csv row for one snapshot (timestamp/date plus the columns that have data)."""
+    from data_extractors.hyperliquid_extractor import (
+        HL_PERPS, HL_PERP_CSV_FIELDS, HL_PERP_CONTEXT_FIELDS, context_loaded)
 
-    ts = datetime.now()
-
-    # Perps CSV
     row = {'timestamp': ts, 'date': ts.date()}
     for hl_ticker, info in HL_PERPS.items():
         k = info['key']
@@ -127,33 +132,62 @@ def _append_to_csv(perps_data, spot_data):
         # flx:OIL wrote 76.4 into every row for three weeks. Leave the columns blank.
         if coin.get('illiquid'):
             continue
-        row[f'hl_{k}_price'] = coin.get('price')
         # Funding, OI, volume and premium come from the asset context. If that fetch
         # failed the extractor reports them as 0 (2026-09-19 08:36 wrote OI=0 and
         # funding=0 for every coin); a context always carries an oracle price.
-        if (coin.get('oracle_price') or 0) > 0:
-            row[f'hl_{k}_funding'] = coin.get('funding_rate')
-            row[f'hl_{k}_oi'] = coin.get('open_interest')
-            row[f'hl_{k}_volume_24h'] = coin.get('volume_24h')
-            # hl_*_premium was last written 2026-03-21; the file kept the columns.
-            row[f'hl_{k}_premium'] = coin.get('premium')
+        # (hl_*_premium was unwritten from 2026-03-21 to 2026-09-21; the file kept the columns.)
+        loaded = context_loaded(coin)
+        for field, entry_key in HL_PERP_CSV_FIELDS.items():
+            if field in HL_PERP_CONTEXT_FIELDS and not loaded:
+                continue
+            row[f'hl_{k}_{field}'] = coin.get(entry_key)
+    return row
 
-    if len(row) > 2:
-        df = pd.DataFrame([row])
-        append_to_csv('hl_perps.csv', df)
 
-    # Spot stocks CSV
-    row2 = {'timestamp': ts, 'date': ts.date()}
+def _spot_row(spot_data, ts):
+    """The hl_spot_stocks.csv row for one snapshot. Untraded pairs carry no 'price' and stay blank."""
+    from data_extractors.hyperliquid_extractor import HL_SPOT_STOCKS, HL_SPOT_CSV_FIELDS
+
+    row = {'timestamp': ts, 'date': ts.date()}
     for ticker in HL_SPOT_STOCKS:
         k = ticker.lower()
         coin = spot_data.get(k, {})
         if isinstance(coin, dict) and 'price' in coin:
-            row2[f'hl_{k}_price'] = coin.get('price')
-            row2[f'hl_{k}_volume_24h'] = coin.get('volume_24h')
+            for field, entry_key in HL_SPOT_CSV_FIELDS.items():
+                row[f'hl_{k}_{field}'] = coin.get(entry_key)
+    return row
 
+
+def _declare(filename):
+    """Declare filename's column contract (historical_data/.<stem>.columns.json) for the feed
+    scanner. Called after a successful append only; never lets a declaration fail the run."""
+    try:
+        from extract_historical_data import declare_columns
+        from data_extractors.hyperliquid_extractor import hl_column_contracts
+        declare_columns(filename, writer='hl_extract.py', **hl_column_contracts()[filename])
+    except Exception as e:
+        print(f"  declare_columns({filename}) error: {type(e).__name__}: {e}")
+
+
+def _append_to_csv(perps_data, spot_data):
+    """Append snapshot to historical CSVs, then declare each written file's column contract."""
+    import pandas as pd
+    from extract_historical_data import append_to_csv
+    from data_extractors.hyperliquid_extractor import HL_PERPS_CSV, HL_SPOT_STOCKS_CSV
+
+    ts = datetime.now()
+
+    # Perps CSV
+    row = _perp_row(perps_data, ts)
+    if len(row) > 2:
+        append_to_csv(HL_PERPS_CSV, pd.DataFrame([row]))
+        _declare(HL_PERPS_CSV)
+
+    # Spot stocks CSV
+    row2 = _spot_row(spot_data, ts)
     if len(row2) > 2:
-        df2 = pd.DataFrame([row2])
-        append_to_csv('hl_spot_stocks.csv', df2)
+        append_to_csv(HL_SPOT_STOCKS_CSV, pd.DataFrame([row2]))
+        _declare(HL_SPOT_STOCKS_CSV)
 
 
 def run_hl_extraction(force=False, quiet=False, dry_run=False):

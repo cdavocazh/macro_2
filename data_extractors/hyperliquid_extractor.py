@@ -1,9 +1,15 @@
 """
 Data extractors for Hyperliquid perpetual futures & HIP-3 spot tokens.
 
-Fetches perp data (BTC, ETH, SOL, PAXG, etc.) and HIP-3 spot stock tokens
-(TSLA, NVDA, AAPL, etc.) from the Hyperliquid REST API.
+Fetches perp data (BTC, ETH, SOL, PAXG, etc., plus HIP-3 builder perps on the xyz dex)
+and HIP-3 spot stock tokens (TSLA, AMZN, META, SPY, QQQ) from the Hyperliquid REST API.
 No API key required. All markets are 24/7.
+
+This module is the single registry for Hyperliquid instruments: hl_extract.py (CSV writer
+and its column contracts, see hl_column_contracts) and the dashboard's live relay
+(react_dashboard/backend/hl_ws_service.py) both import HL_PERPS / HL_SPOT_STOCKS, the
+*_RETIRED registries and the entry builders (build_perp_entry, spot_stock_entry), so the
+instrument list, the funding/OI units and the illiquid/untraded rules cannot drift apart.
 
 API: POST https://api.hyperliquid.xyz/info
 Docs: https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api
@@ -61,9 +67,16 @@ HL_PERPS = {
                'api_coin': 'xyz:XYZ100'},
 }
 
-# Builder-deployed perps (flx:OIL, xyz:SP500 etc.) are not in allMids or metaAndAssetCtxs.
-# They need the qualified name for candle requests, and their price/volume comes from
-# recent candle data instead of allMids.
+# Builder-deployed perps (xyz:CL, xyz:SP500, ...) are absent from allMids and from the
+# unqualified metaAndAssetCtxs; they appear in metaAndAssetCtxs only when the request
+# carries their `dex` (see meta_ctx_payloads), keyed by the qualified name, and need
+# that name for candle requests too.
+
+# Perps that stopped being collected ON PURPOSE: {ticker: {'key', 'since': 'YYYY-MM-DD',
+# 'reason'}}. hl_perps.csv keeps their columns (the header only grows), so the column
+# contract declares them retired instead of leaving them to look broken. Empty today:
+# every hl_perps.csv header column belongs to a perp in HL_PERPS.
+HL_PERPS_RETIRED = {}
 
 # Max lookback days by candle interval (respects 5000 candle API limit)
 HL_INTERVAL_LOOKBACK = {
@@ -92,6 +105,79 @@ HL_SPOT_STOCKS = {
     'QQQ': {'index': 426, 'name': 'Nasdaq 100 ETF'},
 }
 
+# The tickers retired from HL_SPOT_STOCKS on 2026-09-21, kept as a registry so the column
+# contract can say so and the dashboard relay (react_dashboard/backend/hl_ws_service.py)
+# cannot keep listing them. `pair` is the ticker's own spot pair (None: token without a
+# pair); `columns` says whether hl_spot_stocks.csv ever got hl_<ticker>_* columns (NVDA
+# never did, so it has nothing to declare).
+_SPOT_RETIRED_WHY = ("never priced its own market: until 0697893 (2026-09-20 16:34 UTC) the column read "
+                     "whichever market sat at the ticker's list position; since then the pair is withheld "
+                     "as untraded (0 24h volume). Retired from HL_SPOT_STOCKS 2026-09-21.")
+HL_SPOT_STOCKS_RETIRED = {
+    'AAPL': {'index': 413, 'pair': '@268', 'name': 'Apple', 'since': '2026-09-21', 'columns': True,
+             'reason': f'AAPL spot pair @268 (Wagyu token 413) {_SPOT_RETIRED_WHY}'},
+    'GOOGL': {'index': 412, 'pair': '@266', 'name': 'Alphabet', 'since': '2026-09-21', 'columns': True,
+              'reason': f'GOOGL spot pair @266 (Wagyu token 412) {_SPOT_RETIRED_WHY}'},
+    'MSFT': {'index': 429, 'pair': '@289', 'name': 'Microsoft', 'since': '2026-09-21', 'columns': True,
+             'reason': f'MSFT spot pair @289 (Wagyu token 429) {_SPOT_RETIRED_WHY}'},
+    'NVDA': {'index': 408, 'pair': None, 'name': 'Nvidia', 'since': '2026-09-21', 'columns': False,
+             'reason': 'Wagyu token 408 has no spot pair; retired from HL_SPOT_STOCKS 2026-09-21.'},
+}
+
+# ── CSV layout: what hl_extract.py writes, derived from the registries above ──
+# hl_perps.csv column hl_<key>_<field> <- snapshot entry[<entry key>]; same for spot.
+HL_PERP_CSV_FIELDS = {'price': 'price', 'funding': 'funding_rate', 'oi': 'open_interest',
+                      'volume_24h': 'volume_24h', 'premium': 'premium'}
+# Fields that come from the asset context. A snapshot whose context did not load reports
+# them as 0 (2026-09-19 08:36 UTC wrote OI=0 and funding=0 for every coin), so they are
+# only written when context_loaded() says the context was there.
+HL_PERP_CONTEXT_FIELDS = ('funding', 'oi', 'volume_24h', 'premium')
+HL_SPOT_CSV_FIELDS = {'price': 'price', 'volume_24h': 'volume_24h'}
+HL_PERPS_CSV = 'hl_perps.csv'
+HL_SPOT_STOCKS_CSV = 'hl_spot_stocks.csv'
+# Header columns with no source, where blank is the correct value: {csv: {column: reason}}.
+# None today (every column of both files has a live source or is retired above).
+HL_UNAVAILABLE_COLUMNS = {HL_PERPS_CSV: {}, HL_SPOT_STOCKS_CSV: {}}
+
+
+def perp_csv_columns(key):
+    """hl_perps.csv columns of one perp key, in writer order."""
+    return [f'hl_{key}_{f}' for f in HL_PERP_CSV_FIELDS]
+
+
+def spot_csv_columns(ticker):
+    """hl_spot_stocks.csv columns of one ticker, in writer order."""
+    return [f'hl_{ticker.lower()}_{f}' for f in HL_SPOT_CSV_FIELDS]
+
+
+def context_loaded(entry):
+    """True when a perp snapshot entry's funding/OI/volume/premium came from a real context
+    (a context always carries an oracle price; a missing one leaves every field at 0)."""
+    return isinstance(entry, dict) and (entry.get('oracle_price') or 0) > 0
+
+
+def hl_column_contracts():
+    """{csv name: {'active', 'retired', 'unavailable'}} for extract_historical_data.declare_columns.
+
+    active: every column hl_extract.py writes now (HL_PERPS x HL_PERP_CSV_FIELDS, HL_SPOT_STOCKS x
+    HL_SPOT_CSV_FIELDS). retired: the columns of HL_PERPS_RETIRED / HL_SPOT_STOCKS_RETIRED with
+    their date and reason. unavailable: HL_UNAVAILABLE_COLUMNS. A ticker still in the live
+    registry is never declared retired: a registry edit that forgets to remove one shows up
+    here (declare_columns rejects a column in two lists) rather than on the dashboard."""
+    perp_active = [c for info in HL_PERPS.values() for c in perp_csv_columns(info['key'])]
+    perp_retired = {c: {'since': r['since'], 'reason': r['reason']}
+                    for r in HL_PERPS_RETIRED.values() for c in perp_csv_columns(r['key'])}
+    spot_active = [c for t in HL_SPOT_STOCKS for c in spot_csv_columns(t)]
+    spot_retired = {c: {'since': r['since'], 'reason': r['reason']}
+                    for t, r in HL_SPOT_STOCKS_RETIRED.items() if r.get('columns', True)
+                    for c in spot_csv_columns(t)}
+    return {
+        HL_PERPS_CSV: {'active': perp_active, 'retired': perp_retired,
+                       'unavailable': dict(HL_UNAVAILABLE_COLUMNS[HL_PERPS_CSV])},
+        HL_SPOT_STOCKS_CSV: {'active': spot_active, 'retired': spot_retired,
+                             'unavailable': dict(HL_UNAVAILABLE_COLUMNS[HL_SPOT_STOCKS_CSV])},
+    }
+
 
 def _hl_post(body):
     """POST to Hyperliquid info endpoint."""
@@ -117,34 +203,44 @@ def get_hl_meta_and_contexts():
     which is why they previously resolved to "not found on Hyperliquid".
     """
     result = {}
-
-    payloads = [{"type": "metaAndAssetCtxs"}]
-    for dex in _builder_dexes():
-        payloads.append({"type": "metaAndAssetCtxs", "dex": dex})
-
-    for payload in payloads:
+    for payload in meta_ctx_payloads():
         try:
             raw = _hl_post(payload)
         except Exception:
             continue  # one dead builder dex must not sink the main universe
+        result.update(parse_meta_and_asset_ctxs(raw))
+    return result
 
-        meta, ctxs = raw[0], raw[1]
-        for i, asset_meta in enumerate(meta.get('universe', [])):
-            coin = asset_meta.get('name', '')
-            if i >= len(ctxs):
-                continue
-            ctx = ctxs[i]
-            result[coin] = {
-                'funding': ctx.get('funding', '0'),
-                'open_interest': ctx.get('openInterest', '0'),
-                'volume_24h': ctx.get('dayNtlVlm', '0'),
-                'mark_price': ctx.get('markPx', '0'),
-                'oracle_price': ctx.get('oraclePx', '0'),
-                'prev_day_px': ctx.get('prevDayPx', '0'),
-                'premium': ctx.get('premium', '0'),
-                'max_leverage': asset_meta.get('maxLeverage', 0),
-                'mid_px': ctx.get('midPx') or ctx.get('markPx') or '0',
-            }
+
+def meta_ctx_payloads():
+    """The metaAndAssetCtxs requests that cover every perp in HL_PERPS: the main universe
+    plus one per builder dex. Shared with the dashboard relay."""
+    return [{"type": "metaAndAssetCtxs"}] + [{"type": "metaAndAssetCtxs", "dex": dex}
+                                               for dex in _builder_dexes()]
+
+
+def parse_meta_and_asset_ctxs(raw):
+    """{coin: context} from one metaAndAssetCtxs reply ([meta, ctxs]); {} if malformed."""
+    if not (isinstance(raw, list) and len(raw) >= 2 and isinstance(raw[0], dict)):
+        return {}
+    meta, ctxs = raw[0], raw[1] or []
+    result = {}
+    for i, asset_meta in enumerate(meta.get('universe', [])):
+        coin = asset_meta.get('name', '')
+        if i >= len(ctxs) or not isinstance(ctxs[i], dict):
+            continue
+        ctx = ctxs[i]
+        result[coin] = {
+            'funding': ctx.get('funding', '0'),
+            'open_interest': ctx.get('openInterest', '0'),
+            'volume_24h': ctx.get('dayNtlVlm', '0'),
+            'mark_price': ctx.get('markPx', '0'),
+            'oracle_price': ctx.get('oraclePx', '0'),
+            'prev_day_px': ctx.get('prevDayPx', '0'),
+            'premium': ctx.get('premium', '0'),
+            'max_leverage': asset_meta.get('maxLeverage', 0),
+            'mid_px': ctx.get('midPx') or ctx.get('markPx') or '0',
+        }
     return result
 
 
@@ -402,77 +498,98 @@ def get_hl_spot_stocks():
     except Exception as e:
         return {'error': f'Hyperliquid API error: {str(e)}'}
 
-    # Build mapping: token_index → universe pair + its OWN context.
-    # Key the context by the pair name the API supplies, never by list position:
-    # spotMetaAndAssetCtxs returns a FILTERED universe (328 entries, names @1..@867)
-    # alongside the full ctxs array (868 entries, each carrying coin="@N"), so
-    # ctxs[i] binds a ticker to an unrelated market from @72 onward. Fail closed if a
-    # name does not resolve rather than falling back to the positional guess.
-    ctx_by_coin = {c.get('coin'): c for c in ctxs}
+    pair_for_token = spot_pairs_by_token(universe, ctxs)
+    result = {}
+    for ticker, info in HL_SPOT_STOCKS.items():
+        result[ticker.lower()] = spot_stock_entry(ticker, info, pair_for_token.get(info['index']))
+
+    result['latest_date'] = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+    result['source'] = 'Hyperliquid HIP-3'
+    return result
+
+
+def spot_pairs_by_token(universe, ctxs):
+    """{token index: (pair index, pair meta, the pair's OWN context)} from spotMetaAndAssetCtxs.
+
+    Key the context by the pair name the API supplies, never by list position:
+    spotMetaAndAssetCtxs returns a FILTERED universe (328 entries, names @1..@867)
+    alongside the full ctxs array (868 entries, each carrying coin="@N"), so
+    ctxs[i] binds a ticker to an unrelated market from @72 onward. Fail closed if a
+    name does not resolve rather than falling back to the positional guess.
+    Shared with the dashboard relay.
+    """
+    ctx_by_coin = {c.get('coin'): c for c in (ctxs or []) if isinstance(c, dict)}
     pair_for_token = {}
-    for u in universe:
+    for u in universe or []:
         ctx = ctx_by_coin.get(u.get('name'))
         if ctx is None:
             continue
         for ti in u.get('tokens', []):
             if ti != 0:  # token 0 is USDC
                 pair_for_token[ti] = (u.get('index'), u, ctx)
+    return pair_for_token
 
-    result = {}
-    for ticker, info in HL_SPOT_STOCKS.items():
-        key = ticker.lower()
-        idx = info['index']
-        pair_info = pair_for_token.get(idx)
 
-        if pair_info is None:
-            result[key] = {'error': f'{ticker} spot pair not found'}
-            continue
+def spot_stock_entry(ticker, info, pair_info):
+    """The snapshot entry of one HL_SPOT_STOCKS ticker; pair_info from spot_pairs_by_token.
 
-        pair_idx, pair_meta, ctx = pair_info
-        mid_px = ctx.get('midPx')
-        vol = float(ctx.get('dayNtlVlm', '0'))
-        prev_day_px_str = ctx.get('prevDayPx', '0')
-        prev_day_px = float(prev_day_px_str) if prev_day_px_str else 0
+    Only a traded pair gets a 'price'. Everything else is an entry with 'error' (and, for an
+    untraded pair, 'illiquid': True and the 'stale_mid' that was NOT used): the CSV column
+    stays blank and the relay publishes nothing. Shared with the dashboard relay.
+    """
+    if pair_info is None:
+        return {'error': f'{ticker} spot pair not found'}
 
-        if mid_px is None or mid_px == 'N/A':
-            result[key] = {
-                'error': f'{ticker} no mid price (possibly no liquidity)',
-                'volume_24h': vol,
-            }
-            continue
+    pair_idx, pair_meta, ctx = pair_info
+    mid_px = ctx.get('midPx')
+    vol = float(ctx.get('dayNtlVlm', '0') or 0)
+    prev_day_px_str = ctx.get('prevDayPx', '0')
+    prev_day_px = float(prev_day_px_str) if prev_day_px_str else 0
 
-        # A HIP-3 stock pair with no 24h volume still quotes a mid, and that mid can be
-        # wildly stale: on 2026-09-21 spot TSLA showed 180.5 while the same name traded
-        # at 363.8 as an xyz perp. Report it as untraded rather than passing a stale mid
-        # downstream as a price — the CSV column stays blank, which is the truth.
-        if vol == 0:
-            result[key] = {
-                'error': f'{ticker} spot pair untraded (0 24h volume); mid {mid_px} not used',
-                'illiquid': True,
-                'volume_24h': vol,
-                'stale_mid': float(mid_px),
-            }
-            continue
-
-        price = float(mid_px)
-        change_24h = 0.0
-        if prev_day_px > 0:
-            change_24h = (price - prev_day_px) / prev_day_px * 100
-
-        result[key] = {
-            'price': price,
-            'change_24h': round(change_24h, 2),
-            'change_1d': round(change_24h, 2),
-            'volume_24h': round(vol, 2),
-            'latest_date': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'),
-            'source': 'Hyperliquid HIP-3',
-            'note': f'{info["name"]} (Wagyu.xyz) | Vol: ${vol:,.0f}',
-            'spot_pair': pair_meta.get('name', ''),
+    if mid_px is None or mid_px == 'N/A':
+        return {
+            'error': f'{ticker} no mid price (possibly no liquidity)',
+            'volume_24h': vol,
         }
 
-    result['latest_date'] = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
-    result['source'] = 'Hyperliquid HIP-3'
-    return result
+    # A HIP-3 stock pair with no 24h volume still quotes a mid, and that mid can be
+    # wildly stale: on 2026-09-21 spot TSLA showed 180.5 while the same name traded
+    # at 363.8 as an xyz perp. Report it as untraded rather than passing a stale mid
+    # downstream as a price — the CSV column stays blank, which is the truth.
+    if vol == 0:
+        return {
+            'error': f'{ticker} spot pair untraded (0 24h volume); mid {mid_px} not used',
+            'illiquid': True,
+            'volume_24h': vol,
+            'stale_mid': float(mid_px),
+        }
+
+    price = float(mid_px)
+    change_24h = 0.0
+    if prev_day_px > 0:
+        change_24h = (price - prev_day_px) / prev_day_px * 100
+
+    return {
+        'price': price,
+        'change_24h': round(change_24h, 2),
+        'change_1d': round(change_24h, 2),
+        'volume_24h': round(vol, 2),
+        'latest_date': datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'),
+        'source': 'Hyperliquid HIP-3',
+        'note': f'{info["name"]} (Wagyu.xyz) | Vol: ${vol:,.0f}',
+        'spot_pair': pair_meta.get('name', ''),
+    }
+
+
+def build_perp_entry(hl_ticker, mids, contexts):
+    """Snapshot entry of one HL_PERPS ticker from allMids + parsed contexts, no candle calls.
+
+    The one computation of price / annualised funding (x24x365) / OI in USD / illiquid flag,
+    used by hl_extract.py (via get_hl_snapshot) and the dashboard relay. `mids` is an allMids
+    dict (REST reply or the WS channel's data.mids); `contexts` merges
+    parse_meta_and_asset_ctxs() over meta_ctx_payloads().
+    """
+    return _build_perp_data(hl_ticker, mids, contexts, fetch_candles=False)
 
 
 def get_hl_snapshot():
@@ -489,8 +606,7 @@ def get_hl_snapshot():
         for hl_ticker, info in HL_PERPS.items():
             key = info['key']
             try:
-                perps[key] = _build_perp_data(hl_ticker, mids, contexts,
-                                               fetch_candles=False)
+                perps[key] = build_perp_entry(hl_ticker, mids, contexts)
             except Exception as e:
                 perps[key] = {'error': str(e)}
         perps['latest_date'] = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
